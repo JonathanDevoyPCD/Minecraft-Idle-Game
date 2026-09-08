@@ -35,21 +35,22 @@ sun.shadow.camera.top = 5;
 sun.shadow.camera.bottom = -5;
 scene.add(sun);
 
+const BLOCK_SIZE = 0.9;
 const shadowPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(4.8, 4.8),
+  new THREE.PlaneGeometry(BLOCK_SIZE * 2.7, BLOCK_SIZE * 2.7),
   new THREE.ShadowMaterial({ color: 0x1d7288, opacity: 0.17 }),
 );
 shadowPlane.rotation.x = -Math.PI / 2;
-shadowPlane.position.y = -1.18;
+shadowPlane.position.y = -BLOCK_SIZE * 0.56;
 shadowPlane.receiveShadow = true;
 scene.add(shadowPlane);
 
 const shadowBase = new THREE.Mesh(
-  new THREE.PlaneGeometry(5.4, 5.4),
+  new THREE.PlaneGeometry(BLOCK_SIZE * 3.2, BLOCK_SIZE * 3.2),
   new THREE.MeshBasicMaterial({ color: 0x2b879c, transparent: true, opacity: 0.07, depthWrite: false }),
 );
 shadowBase.rotation.x = -Math.PI / 2;
-shadowBase.position.y = -1.2;
+shadowBase.position.y = -BLOCK_SIZE * 0.58;
 scene.add(shadowBase);
 
 const block = new THREE.Group();
@@ -71,7 +72,7 @@ const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color:
 const grassSideMaterial = new THREE.MeshStandardMaterial({ map: grassSideTexture, roughness: 1 });
 const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
 const cube = new THREE.Mesh(
-  new THREE.BoxGeometry(2.35, 2.35, 2.35),
+  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
   [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial],
 );
 cube.castShadow = true;
@@ -80,27 +81,38 @@ block.add(cube);
 
 const miningTargets = [cube];
 
-function createCloud(x: number, y: number, scale: number): THREE.Group {
+const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
+const CLOUD_BLOCK_HEIGHT = BLOCK_SIZE;
+const viewRight = new THREE.Vector3(1, 0, -1).normalize();
+const viewUp = new THREE.Vector3(-1, 2, -1).normalize();
+const viewBack = new THREE.Vector3(-1, -1, -1).normalize();
+
+function createCloud(screenX: number, screenY: number): THREE.Group {
   const cloud = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({ color: 0xf7fbf4, roughness: 1 });
-  [[0, 0, 0], [0.6, 0, 0], [-0.6, 0, 0], [0.05, 0.28, 0], [0.55, 0.22, 0]]
+  [[0, 0, 0], [1, 0, 0], [0, -0.8, 0]]
     .forEach(([cx, cy, cz]) => {
-      const piece = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.38, 0.55), material);
-      piece.position.set(cx, cy, cz);
+      const piece = new THREE.Mesh(
+        new THREE.BoxGeometry(CLOUD_BLOCK_SIZE, CLOUD_BLOCK_HEIGHT, CLOUD_BLOCK_SIZE),
+        material,
+      );
+      piece.position.set(cx * CLOUD_BLOCK_SIZE, cy * CLOUD_BLOCK_HEIGHT, cz * CLOUD_BLOCK_SIZE);
       cloud.add(piece);
     });
-  cloud.position.set(x, y, -2.2);
-  cloud.scale.setScalar(scale);
+  cloud.position
+    .addScaledVector(viewRight, screenX)
+    .addScaledVector(viewUp, screenY)
+    .addScaledVector(viewBack, 4);
   scene.add(cloud);
   return cloud;
 }
 
-const clouds = [createCloud(-5.2, 2.8, 0.65), createCloud(4.2, 2.2, 0.48), createCloud(3.2, 3.4, 0.32)];
+const clouds = [createCloud(-5.5, 4.5), createCloud(5.5, 4.5), createCloud(-4, 7)];
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const VIEW_ZOOM_LEVELS = [0.5, 0.62, 0.72, 0.86, 1, 1.14, 1.28];
-let viewZoomIndex = 2;
+const VIEW_ZOOM_LEVELS = [0.5, 0.65, 0.8, 1, 1.2, 1.4];
+let viewZoomIndex = 0;
 let rotationStep = 0;
 let pulse = 0;
 let lastAutoHit = performance.now();

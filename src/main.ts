@@ -55,46 +55,30 @@ scene.add(shadowBase);
 const block = new THREE.Group();
 scene.add(block);
 
-const dirtMaterials = [
-  new THREE.MeshStandardMaterial({ color: 0x694329, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x52331f, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x694329, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x432a1b, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x75482a, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x5c3923, roughness: 1 }),
-];
+function loadBlockTexture(fileName: string): THREE.Texture {
+  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/blocks/${fileName}`);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
 
-const cube = new THREE.Mesh(new THREE.BoxGeometry(2.45, 1.75, 2.45), dirtMaterials);
-cube.position.y = -0.15;
+const grassTexture = loadBlockTexture('grass_block_top.png');
+const grassSideTexture = loadBlockTexture('grass_block_side.png');
+const dirtTexture = loadBlockTexture('dirt.png');
+const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color: 0x82bd4a, roughness: 1 });
+const grassSideMaterial = new THREE.MeshStandardMaterial({ map: grassSideTexture, roughness: 1 });
+const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(2.35, 2.35, 2.35),
+  [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial],
+);
 cube.castShadow = true;
 cube.receiveShadow = true;
 block.add(cube);
 
-const grassCapMaterials = [
-  new THREE.MeshStandardMaterial({ color: 0x568b37, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x47732e, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x56883b, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x3c6128, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x5a8835, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x4b782f, roughness: 1 }),
-];
-const grassCap = new THREE.Mesh(new THREE.BoxGeometry(2.58, 0.34, 2.58), grassCapMaterials);
-grassCap.position.y = 0.9;
-grassCap.castShadow = true;
-grassCap.receiveShadow = true;
-block.add(grassCap);
-
-const grassTufts = new THREE.Group();
-const tuftMaterial = new THREE.MeshStandardMaterial({ color: 0x4c8a31, roughness: 1 });
-for (const [x, z, height] of [[-0.7, -0.2, 0.24], [0.62, 0.45, 0.18], [0.15, -0.62, 0.14]] as const) {
-  const tuft = new THREE.Mesh(new THREE.BoxGeometry(0.09, height, 0.09), tuftMaterial);
-  tuft.position.set(x, 1.08 + height / 2, z);
-  tuft.castShadow = true;
-  grassTufts.add(tuft);
-}
-block.add(grassTufts);
-
-const miningTargets = [cube, grassCap];
+const miningTargets = [cube];
 
 function createCloud(x: number, y: number, scale: number): THREE.Group {
   const cloud = new THREE.Group();
@@ -115,8 +99,8 @@ const clouds = [createCloud(-5.2, 2.8, 0.65), createCloud(4.2, 2.2, 0.48), creat
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const VIEW_ZOOM_LEVELS = [0.72, 0.86, 1, 1.14, 1.28];
-let viewZoomIndex = 0;
+const VIEW_ZOOM_LEVELS = [0.5, 0.62, 0.72, 0.86, 1, 1.14, 1.28];
+let viewZoomIndex = 2;
 let rotationStep = 0;
 let pulse = 0;
 let lastAutoHit = performance.now();

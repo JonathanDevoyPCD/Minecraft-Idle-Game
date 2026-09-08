@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#65c6e6" />
+    <meta name="description" content="Grow one tiny block into a living world in IdleCraft." />
+    <title>IdleCraft — One Block. Endless World.</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="world" aria-label="An isometric grass block floating in the sky"></canvas>
+
+      <header class="topbar">
+        <section class="player-card panel" aria-label="Player progress">
+          <div class="level-badge"><span>LVL</span><strong id="level">1</strong></div>
+          <div class="progress-copy">
+            <div class="row"><strong>World Seed</strong><span id="xp-label">0 / 100 XP</span></div>
+            <div class="xp-track"><div id="xp-fill" class="xp-fill"></div></div>
+          </div>
+        </section>
+
+        <div class="brand" aria-label="IdleCraft">
+          <span class="brand-cube" aria-hidden="true"></span>
+          <div><strong>IDLECRAFT</strong><small>ONE BLOCK. ENDLESS WORLD.</small></div>
+        </div>
+
+        <button id="reset-button" class="icon-button panel" type="button" title="Reset saved game" aria-label="Reset saved game">↻</button>
+      </header>
+
+      <section class="world-copy" aria-live="polite">
+        <p class="eyebrow">YOUR FIRST BLOCK</p>
+        <h1>Grass Block</h1>
+        <p id="hint">Click the block to help it grow</p>
+      </section>
+
+      <div id="float-layer" class="float-layer" aria-hidden="true"></div>
+
+      <section class="bottom-hud">
+        <article class="stat-card panel">
+          <span class="stat-icon">✦</span>
+          <div><small>TOTAL XP</small><strong id="total-xp">0</strong></div>
+        </article>
+
+        <button id="mine-button" class="mine-button" type="button">
+          <span class="mine-icon">✊</span>
+          <span><strong>MINE BLOCK</strong><small>Click or press SPACE</small></span>
+        </button>
+
+        <article class="stat-card panel rate-card">
+          <span class="stat-icon">⚡</span>
+          <div><small>AUTO RATE</small><strong><span id="auto-rate">1.0</span>/sec</strong></div>
+        </article>
+      </section>
+
+      <aside id="upgrade-panel" class="upgrade-panel panel" aria-live="polite">
+        <div class="upgrade-heading">
+          <div><small>FIRST UPGRADE</small><strong>Quicker Rhythm</strong></div>
+          <span id="upgrade-points" class="point-pill">0 CP</span>
+        </div>
+        <p>Increase automatic mining from <span id="current-rate">1.0</span> to <span id="next-rate">1.5</span> strikes per second.</p>
+        <button id="speed-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
+      </aside>
+
+      <div id="offline-modal" class="modal" hidden>
+        <div class="modal-card panel">
+          <span class="modal-icon">☀</span>
+          <p class="eyebrow">WELCOME BACK</p>
+          <h2>Your block kept working</h2>
+          <p>You earned <strong id="offline-xp">0 XP</strong> while you were away.</p>
+          <button id="offline-close" type="button">Collect</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

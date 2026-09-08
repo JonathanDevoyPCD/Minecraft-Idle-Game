@@ -1,0 +1,253 @@
+import * as THREE from 'three';
+import './style.css';
+import {
+  SAVE_KEY,
+  SPEED_RATES,
+  addXp,
+  buySpeedUpgrade,
+  calculateOfflineXp,
+  getAutoRate,
+  loadState,
+  saveState,
+  xpRequired,
+} from './game';
+
+const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
+camera.position.set(5.4, 4.5, 5.4);
+camera.lookAt(0, 0, 0);
+
+scene.add(new THREE.HemisphereLight(0xcff5ff, 0x57734b, 2.1));
+const sun = new THREE.DirectionalLight(0xfff4cf, 4.2);
+sun.position.set(-5, 9, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -5;
+sun.shadow.camera.right = 5;
+sun.shadow.camera.top = 5;
+sun.shadow.camera.bottom = -5;
+scene.add(sun);
+
+const shadowPlane = new THREE.Mesh(
+  new THREE.CircleGeometry(2.3, 64),
+  new THREE.ShadowMaterial({ color: 0x155f77, opacity: 0.2 }),
+);
+shadowPlane.rotation.x = -Math.PI / 2;
+shadowPlane.position.y = -1.75;
+shadowPlane.scale.y = 0.48;
+shadowPlane.receiveShadow = true;
+scene.add(shadowPlane);
+
+const block = new THREE.Group();
+scene.add(block);
+
+const grassMaterials = [
+  new THREE.MeshStandardMaterial({ color: 0x8a613c, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x795034, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x79b849, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x503822, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x7b5537, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x8b603d, roughness: 1 }),
+];
+
+const cube = new THREE.Mesh(new THREE.BoxGeometry(2.25, 2.25, 2.25), grassMaterials);
+cube.castShadow = true;
+cube.receiveShadow = true;
+block.add(cube);
+
+const grassLipMaterial = new THREE.MeshStandardMaterial({ color: 0x5f9d3b, roughness: 1 });
+for (const side of [-1, 1]) {
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(2.29, 0.28, 0.08), grassLipMaterial);
+  lip.position.set(0, 0.87, side * 1.13);
+  block.add(lip);
+  const lipSide = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 2.29), grassLipMaterial);
+  lipSide.position.set(side * 1.13, 0.87, 0);
+  block.add(lipSide);
+}
+
+const grassTufts = new THREE.Group();
+const tuftMaterial = new THREE.MeshStandardMaterial({ color: 0x4c8a31, roughness: 1 });
+for (const [x, z, height] of [[-0.7, -0.2, 0.24], [0.62, 0.45, 0.18], [0.15, -0.62, 0.14]] as const) {
+  const tuft = new THREE.Mesh(new THREE.BoxGeometry(0.09, height, 0.09), tuftMaterial);
+  tuft.position.set(x, 1.14 + height / 2, z);
+  tuft.castShadow = true;
+  grassTufts.add(tuft);
+}
+block.add(grassTufts);
+block.rotation.y = Math.PI / 4;
+
+function createCloud(x: number, y: number, scale: number): THREE.Group {
+  const cloud = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial({ color: 0xf7fbf4, roughness: 1 });
+  [[0, 0, 0], [0.6, 0, 0], [-0.6, 0, 0], [0.05, 0.28, 0], [0.55, 0.22, 0]]
+    .forEach(([cx, cy, cz]) => {
+      const piece = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.38, 0.55), material);
+      piece.position.set(cx, cy, cz);
+      cloud.add(piece);
+    });
+  cloud.position.set(x, y, -2.2);
+  cloud.scale.setScalar(scale);
+  scene.add(cloud);
+  return cloud;
+}
+
+const clouds = [createCloud(-3.8, 2.3, 0.7), createCloud(4.2, 1.8, 0.48), createCloud(2.8, 3.2, 0.35)];
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let pulse = 0;
+let lastAutoHit = performance.now();
+let state = loadState(localStorage);
+let isResetting = false;
+const offlineXp = calculateOfflineXp(state);
+
+const levelEl = document.querySelector('#level')!;
+const xpLabelEl = document.querySelector('#xp-label')!;
+const xpFillEl = document.querySelector<HTMLElement>('#xp-fill')!;
+const totalXpEl = document.querySelector('#total-xp')!;
+const autoRateEl = document.querySelector('#auto-rate')!;
+const pointsEl = document.querySelector('#upgrade-points')!;
+const speedButton = document.querySelector<HTMLButtonElement>('#speed-upgrade')!;
+const currentRateEl = document.querySelector('#current-rate')!;
+const nextRateEl = document.querySelector('#next-rate')!;
+const upgradePanel = document.querySelector('#upgrade-panel')!;
+const floatLayer = document.querySelector('#float-layer')!;
+const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
+
+if (offlineXp > 0) {
+  addXp(state, offlineXp);
+  document.querySelector('#offline-xp')!.textContent = `${offlineXp.toLocaleString()} XP`;
+  offlineModal.hidden = false;
+}
+
+function updateUi(): void {
+  const required = xpRequired(state.level);
+  const rate = getAutoRate(state);
+  levelEl.textContent = String(state.level);
+  xpLabelEl.textContent = `${state.xp.toLocaleString()} / ${required.toLocaleString()} XP`;
+  xpFillEl.style.width = `${Math.min(100, state.xp / required * 100)}%`;
+  totalXpEl.textContent = state.totalXp.toLocaleString();
+  autoRateEl.textContent = rate.toFixed(1);
+  pointsEl.textContent = `${state.craftingPoints} CP`;
+  currentRateEl.textContent = rate.toFixed(1);
+  const maxed = state.speedRank >= SPEED_RATES.length - 1;
+  nextRateEl.textContent = maxed ? 'MAX' : SPEED_RATES[state.speedRank + 1].toFixed(1);
+  speedButton.disabled = state.level < 2 || state.craftingPoints < 1 || maxed;
+  speedButton.textContent = maxed
+    ? 'Maximum prototype speed reached'
+    : state.level < 2
+      ? 'Unlock at Level 2 · Costs 1 CP'
+      : state.craftingPoints < 1
+        ? 'Requires 1 Crafting Point'
+        : 'Upgrade Auto Rate · Costs 1 CP';
+  upgradePanel.classList.toggle('is-unlocked', state.level >= 2);
+}
+
+function floatingXp(manual: boolean): void {
+  const label = document.createElement('span');
+  label.className = `floating-xp${manual ? ' manual' : ''}`;
+  label.textContent = '+1 XP';
+  label.style.setProperty('--drift', `${(Math.random() - 0.5) * 70}px`);
+  floatLayer.append(label);
+  label.addEventListener('animationend', () => label.remove());
+}
+
+function mine(manual = false): void {
+  const levelUps = addXp(state, 1);
+  pulse = 1;
+  floatingXp(manual);
+  if (levelUps > 0) {
+    document.body.classList.add('level-up');
+    window.setTimeout(() => document.body.classList.remove('level-up'), 900);
+  }
+  updateUi();
+}
+
+function handleCanvasPointer(event: PointerEvent): void {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  if (raycaster.intersectObject(cube).length > 0) mine(true);
+}
+
+canvas.addEventListener('pointerdown', handleCanvasPointer);
+document.querySelector('#mine-button')!.addEventListener('click', () => mine(true));
+document.addEventListener('keydown', (event) => {
+  if (event.code === 'Space' && !event.repeat) {
+    event.preventDefault();
+    mine(true);
+  }
+});
+
+speedButton.addEventListener('click', () => {
+  if (buySpeedUpgrade(state)) {
+    lastAutoHit = performance.now();
+    updateUi();
+    saveState(localStorage, state);
+  }
+});
+
+document.querySelector('#offline-close')!.addEventListener('click', () => {
+  offlineModal.hidden = true;
+});
+
+document.querySelector('#reset-button')!.addEventListener('click', () => {
+  if (window.confirm('Reset all IdleCraft prototype progress?')) {
+    isResetting = true;
+    localStorage.removeItem(SAVE_KEY);
+    window.location.reload();
+  }
+});
+
+function resize(): void {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  renderer.setSize(width, height, false);
+  const aspect = width / height;
+  const viewHeight = width < 700 ? 7.8 : 6.4;
+  camera.left = -viewHeight * aspect / 2;
+  camera.right = viewHeight * aspect / 2;
+  camera.top = viewHeight / 2;
+  camera.bottom = -viewHeight / 2;
+  camera.updateProjectionMatrix();
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('beforeunload', () => {
+  if (!isResetting) saveState(localStorage, state);
+});
+window.setInterval(() => saveState(localStorage, state), 5000);
+resize();
+updateUi();
+
+const clock = new THREE.Clock();
+function render(now: number): void {
+  const delta = Math.min(clock.getDelta(), 0.05);
+  const interval = 1000 / getAutoRate(state);
+  if (now - lastAutoHit >= interval) {
+    const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));
+    for (let i = 0; i < hits; i += 1) mine(false);
+    lastAutoHit += hits * interval;
+  }
+
+  pulse = Math.max(0, pulse - delta * 5.8);
+  const squash = Math.sin((1 - pulse) * Math.PI) * 0.065;
+  block.scale.set(1 + squash, 1 - squash * 0.7, 1 + squash);
+  block.position.y = Math.sin(now * 0.0008) * 0.05;
+  clouds.forEach((cloud, index) => {
+    cloud.position.x += delta * (0.045 + index * 0.012);
+    if (cloud.position.x > 6) cloud.position.x = -6;
+  });
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);

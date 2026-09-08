@@ -3,7 +3,7 @@
 :root {
   font-family: 'Nunito', system-ui, sans-serif;
   color: #17394a;
-  background: #64c8e8;
+  background: #48b4d5;
   font-synthesis: none;
   --ink: #17394a;
   --cream: #fff8dd;
@@ -21,8 +21,8 @@ button { font: inherit; }
   position: relative;
   isolation: isolate;
   background:
-    radial-gradient(circle at 50% 45%, rgba(255,255,255,.2), transparent 35%),
-    linear-gradient(180deg, #35aadd 0%, #73d1e8 60%, #b5e7dc 100%);
+    radial-gradient(circle at 50% 45%, rgba(255,255,255,.12), transparent 38%),
+    linear-gradient(180deg, #3aa9d2 0%, #4db6d7 64%, #78c8d7 100%);
 }
 
 #app::before {
@@ -150,6 +150,10 @@ button { font: inherit; }
   .stat-card .stat-icon { display: none; }
   .mine-button { min-width: 160px; padding: 10px; }
   .mine-button small { display: none; }
+}
+
+@media (max-width: 900px) {
+  .upgrade-panel { top: auto; right: 14px; bottom: 112px; width: min(340px, calc(100vw - 28px)); }
 }
 
 @media (max-width: 480px) {

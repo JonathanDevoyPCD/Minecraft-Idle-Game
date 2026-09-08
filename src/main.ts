@@ -21,12 +21,12 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
-camera.position.set(5.4, 4.5, 5.4);
+camera.position.set(6, 6, 6);
 camera.lookAt(0, 0, 0);
 
-scene.add(new THREE.HemisphereLight(0xcff5ff, 0x57734b, 2.1));
+scene.add(new THREE.HemisphereLight(0xcff5ff, 0x57734b, 2.4));
 const sun = new THREE.DirectionalLight(0xfff4cf, 4.2);
-sun.position.set(-5, 9, 6);
+sun.position.set(6, 10, -6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.left = -5;
@@ -36,52 +36,65 @@ sun.shadow.camera.bottom = -5;
 scene.add(sun);
 
 const shadowPlane = new THREE.Mesh(
-  new THREE.CircleGeometry(2.3, 64),
-  new THREE.ShadowMaterial({ color: 0x155f77, opacity: 0.2 }),
+  new THREE.PlaneGeometry(4.8, 4.8),
+  new THREE.ShadowMaterial({ color: 0x1d7288, opacity: 0.17 }),
 );
 shadowPlane.rotation.x = -Math.PI / 2;
-shadowPlane.position.y = -1.75;
-shadowPlane.scale.y = 0.48;
+shadowPlane.position.y = -1.18;
 shadowPlane.receiveShadow = true;
 scene.add(shadowPlane);
+
+const shadowBase = new THREE.Mesh(
+  new THREE.PlaneGeometry(5.4, 5.4),
+  new THREE.MeshBasicMaterial({ color: 0x2b879c, transparent: true, opacity: 0.07, depthWrite: false }),
+);
+shadowBase.rotation.x = -Math.PI / 2;
+shadowBase.position.y = -1.2;
+scene.add(shadowBase);
 
 const block = new THREE.Group();
 scene.add(block);
 
-const grassMaterials = [
-  new THREE.MeshStandardMaterial({ color: 0x8a613c, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x795034, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x79b849, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x503822, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x7b5537, roughness: 1 }),
-  new THREE.MeshStandardMaterial({ color: 0x8b603d, roughness: 1 }),
+const dirtMaterials = [
+  new THREE.MeshStandardMaterial({ color: 0x694329, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x52331f, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x694329, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x432a1b, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x75482a, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x5c3923, roughness: 1 }),
 ];
 
-const cube = new THREE.Mesh(new THREE.BoxGeometry(2.25, 2.25, 2.25), grassMaterials);
+const cube = new THREE.Mesh(new THREE.BoxGeometry(2.45, 1.75, 2.45), dirtMaterials);
+cube.position.y = -0.15;
 cube.castShadow = true;
 cube.receiveShadow = true;
 block.add(cube);
 
-const grassLipMaterial = new THREE.MeshStandardMaterial({ color: 0x5f9d3b, roughness: 1 });
-for (const side of [-1, 1]) {
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(2.29, 0.28, 0.08), grassLipMaterial);
-  lip.position.set(0, 0.87, side * 1.13);
-  block.add(lip);
-  const lipSide = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 2.29), grassLipMaterial);
-  lipSide.position.set(side * 1.13, 0.87, 0);
-  block.add(lipSide);
-}
+const grassCapMaterials = [
+  new THREE.MeshStandardMaterial({ color: 0x568b37, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x47732e, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x56883b, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x3c6128, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x5a8835, roughness: 1 }),
+  new THREE.MeshStandardMaterial({ color: 0x4b782f, roughness: 1 }),
+];
+const grassCap = new THREE.Mesh(new THREE.BoxGeometry(2.58, 0.34, 2.58), grassCapMaterials);
+grassCap.position.y = 0.9;
+grassCap.castShadow = true;
+grassCap.receiveShadow = true;
+block.add(grassCap);
 
 const grassTufts = new THREE.Group();
 const tuftMaterial = new THREE.MeshStandardMaterial({ color: 0x4c8a31, roughness: 1 });
 for (const [x, z, height] of [[-0.7, -0.2, 0.24], [0.62, 0.45, 0.18], [0.15, -0.62, 0.14]] as const) {
   const tuft = new THREE.Mesh(new THREE.BoxGeometry(0.09, height, 0.09), tuftMaterial);
-  tuft.position.set(x, 1.14 + height / 2, z);
+  tuft.position.set(x, 1.08 + height / 2, z);
   tuft.castShadow = true;
   grassTufts.add(tuft);
 }
 block.add(grassTufts);
-block.rotation.y = Math.PI / 4;
+
+const miningTargets = [cube, grassCap];
 
 function createCloud(x: number, y: number, scale: number): THREE.Group {
   const cloud = new THREE.Group();
@@ -98,7 +111,7 @@ function createCloud(x: number, y: number, scale: number): THREE.Group {
   return cloud;
 }
 
-const clouds = [createCloud(-3.8, 2.3, 0.7), createCloud(4.2, 1.8, 0.48), createCloud(2.8, 3.2, 0.35)];
+const clouds = [createCloud(-5.2, 2.8, 0.65), createCloud(4.2, 2.2, 0.48), createCloud(3.2, 3.4, 0.32)];
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -175,7 +188,7 @@ function handleCanvasPointer(event: PointerEvent): void {
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  if (raycaster.intersectObject(cube).length > 0) mine(true);
+  if (raycaster.intersectObjects(miningTargets).length > 0) mine(true);
 }
 
 canvas.addEventListener('pointerdown', handleCanvasPointer);
@@ -212,7 +225,7 @@ function resize(): void {
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
   const aspect = width / height;
-  const viewHeight = width < 700 ? 7.8 : 6.4;
+  const viewHeight = width < 700 ? 9.6 : width < 900 ? 10.4 : 8.4;
   camera.left = -viewHeight * aspect / 2;
   camera.right = viewHeight * aspect / 2;
   camera.top = viewHeight / 2;

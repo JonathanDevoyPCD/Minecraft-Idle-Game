@@ -115,6 +115,9 @@ const clouds = [createCloud(-5.2, 2.8, 0.65), createCloud(4.2, 2.2, 0.48), creat
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+const VIEW_ZOOM_LEVELS = [0.72, 0.86, 1, 1.14, 1.28];
+let viewZoomIndex = 0;
+let rotationStep = 0;
 let pulse = 0;
 let lastAutoHit = performance.now();
 let state = loadState(localStorage);
@@ -133,6 +136,10 @@ const nextRateEl = document.querySelector('#next-rate')!;
 const upgradePanel = document.querySelector('#upgrade-panel')!;
 const floatLayer = document.querySelector('#float-layer')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
+const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
+const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
+const rotateViewButton = document.querySelector<HTMLButtonElement>('#rotate-view')!;
+const zoomLevelEl = document.querySelector('#zoom-level')!;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -220,6 +227,33 @@ document.querySelector('#reset-button')!.addEventListener('click', () => {
   }
 });
 
+function updateViewControls(): void {
+  const zoom = VIEW_ZOOM_LEVELS[viewZoomIndex];
+  camera.zoom = zoom;
+  camera.updateProjectionMatrix();
+  zoomLevelEl.textContent = `${Math.round(zoom * 100)}%`;
+  zoomOutButton.disabled = viewZoomIndex === 0;
+  zoomInButton.disabled = viewZoomIndex === VIEW_ZOOM_LEVELS.length - 1;
+}
+
+function changeZoom(direction: number): void {
+  const nextIndex = Math.max(0, Math.min(VIEW_ZOOM_LEVELS.length - 1, viewZoomIndex + direction));
+  if (nextIndex === viewZoomIndex) return;
+  viewZoomIndex = nextIndex;
+  updateViewControls();
+}
+
+zoomOutButton.addEventListener('click', () => changeZoom(-1));
+zoomInButton.addEventListener('click', () => changeZoom(1));
+rotateViewButton.addEventListener('click', () => {
+  rotationStep = (rotationStep + 1) % 4;
+  block.rotation.y = rotationStep * Math.PI / 2;
+});
+canvas.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  changeZoom(event.deltaY < 0 ? 1 : -1);
+}, { passive: false });
+
 function resize(): void {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -230,7 +264,7 @@ function resize(): void {
   camera.right = viewHeight * aspect / 2;
   camera.top = viewHeight / 2;
   camera.bottom = -viewHeight / 2;
-  camera.updateProjectionMatrix();
+  updateViewControls();
 }
 
 window.addEventListener('resize', resize);

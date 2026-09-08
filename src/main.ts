@@ -21,8 +21,22 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 100);
-camera.position.set(6, 6, 6);
-camera.lookAt(0, 0, 0);
+const cameraTarget = new THREE.Vector3(0, 0, 0);
+const cameraRadius = Math.sqrt(6 * 6 + 6 * 6 + 6 * 6);
+let orbitYaw = Math.PI / 4;
+let orbitPitch = Math.atan2(6, Math.sqrt(6 * 6 + 6 * 6));
+
+function updateCameraTransform(): void {
+  const horizontalRadius = cameraRadius * Math.cos(orbitPitch);
+  camera.position.set(
+    cameraTarget.x + horizontalRadius * Math.cos(orbitYaw),
+    cameraTarget.y + cameraRadius * Math.sin(orbitPitch),
+    cameraTarget.z + horizontalRadius * Math.sin(orbitYaw),
+  );
+  camera.lookAt(cameraTarget);
+}
+
+updateCameraTransform();
 
 scene.add(new THREE.HemisphereLight(0xcff5ff, 0x57734b, 2.4));
 const sun = new THREE.DirectionalLight(0xfff4cf, 4.2);
@@ -89,8 +103,14 @@ const viewBack = new THREE.Vector3(-1, -1, -1).normalize();
 
 function createCloud(screenX: number, screenY: number): THREE.Group {
   const cloud = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({ color: 0xf7fbf4, roughness: 1 });
-  [[0, 0, 0], [1, 0, 0], [0, -0.8, 0]]
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xf7fbf4,
+    roughness: 1,
+    transparent: true,
+    opacity: 0.1,
+    depthWrite: false,
+  });
+  [[-1, 0, 0], [0, 0, 0], [1, 0, 0]]
     .forEach(([cx, cy, cz]) => {
       const piece = new THREE.Mesh(
         new THREE.BoxGeometry(CLOUD_BLOCK_SIZE, CLOUD_BLOCK_HEIGHT, CLOUD_BLOCK_SIZE),
@@ -111,9 +131,18 @@ const clouds = [createCloud(-5.5, 4.5), createCloud(5.5, 4.5), createCloud(-4, 7
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const VIEW_ZOOM_LEVELS = [0.5, 0.65, 0.8, 1, 1.2, 1.4];
-let viewZoomIndex = 0;
-let rotationStep = 0;
+// Continuous zoom replaces the old six-step preset list. The very small floor
+// keeps the orthographic camera numerically stable while remaining effectively
+// unlimited for the world sizes this prototype can reach.
+const MIN_ZOOM = 0.005;
+const MAX_ZOOM = 2.4;
+const ZOOM_STEP = 1.15;
+let viewZoom = 0.5;
+const heldCameraKeys = new Set<string>();
+const PAN_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+let isOrbiting = false;
+let lastOrbitX = 0;
+let lastOrbitY = 0;
 let pulse = 0;
 let lastAutoHit = performance.now();
 let state = loadState(localStorage);
@@ -134,7 +163,6 @@ const floatLayer = document.querySelector('#float-layer')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
 const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
-const rotateViewButton = document.querySelector<HTMLButtonElement>('#rotate-view')!;
 const zoomLevelEl = document.querySelector('#zoom-level')!;
 
 if (offlineXp > 0) {
@@ -187,6 +215,7 @@ function mine(manual = false): void {
 }
 
 function handleCanvasPointer(event: PointerEvent): void {
+  if (event.button !== 0) return;
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -194,14 +223,58 @@ function handleCanvasPointer(event: PointerEvent): void {
   if (raycaster.intersectObjects(miningTargets).length > 0) mine(true);
 }
 
-canvas.addEventListener('pointerdown', handleCanvasPointer);
+canvas.addEventListener('pointerdown', (event) => {
+  if (event.button === 1) {
+    event.preventDefault();
+    isOrbiting = true;
+    lastOrbitX = event.clientX;
+    lastOrbitY = event.clientY;
+    canvas.classList.add('is-orbiting');
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer events used by some browsers do not have a capture target.
+    }
+    return;
+  }
+  handleCanvasPointer(event);
+});
+canvas.addEventListener('pointermove', (event) => {
+  if (!isOrbiting) return;
+  const deltaX = event.clientX - lastOrbitX;
+  const deltaY = event.clientY - lastOrbitY;
+  lastOrbitX = event.clientX;
+  lastOrbitY = event.clientY;
+  orbitYaw -= deltaX * 0.008;
+  orbitPitch = THREE.MathUtils.clamp(orbitPitch - deltaY * 0.006, 0.18, 1.35);
+  updateCameraTransform();
+});
+function endOrbit(event: PointerEvent): void {
+  if (!isOrbiting) return;
+  isOrbiting = false;
+  try {
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  } catch {
+    // See the pointerdown note above.
+  }
+  canvas.classList.remove('is-orbiting');
+}
+canvas.addEventListener('pointerup', endOrbit);
+canvas.addEventListener('pointercancel', endOrbit);
+canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 document.querySelector('#mine-button')!.addEventListener('click', () => mine(true));
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
     event.preventDefault();
     mine(true);
   }
+  if (PAN_KEYS.has(event.code)) {
+    event.preventDefault();
+    heldCameraKeys.add(event.code);
+  }
 });
+document.addEventListener('keyup', (event) => heldCameraKeys.delete(event.code));
+window.addEventListener('blur', () => heldCameraKeys.clear());
 
 speedButton.addEventListener('click', () => {
   if (buySpeedUpgrade(state)) {
@@ -224,27 +297,21 @@ document.querySelector('#reset-button')!.addEventListener('click', () => {
 });
 
 function updateViewControls(): void {
-  const zoom = VIEW_ZOOM_LEVELS[viewZoomIndex];
-  camera.zoom = zoom;
+  camera.zoom = viewZoom;
   camera.updateProjectionMatrix();
-  zoomLevelEl.textContent = `${Math.round(zoom * 100)}%`;
-  zoomOutButton.disabled = viewZoomIndex === 0;
-  zoomInButton.disabled = viewZoomIndex === VIEW_ZOOM_LEVELS.length - 1;
+  zoomLevelEl.textContent = `${Math.round(viewZoom * 100)}%`;
+  zoomOutButton.disabled = viewZoom <= MIN_ZOOM;
+  zoomInButton.disabled = viewZoom >= MAX_ZOOM;
 }
 
 function changeZoom(direction: number): void {
-  const nextIndex = Math.max(0, Math.min(VIEW_ZOOM_LEVELS.length - 1, viewZoomIndex + direction));
-  if (nextIndex === viewZoomIndex) return;
-  viewZoomIndex = nextIndex;
+  const nextZoom = direction > 0 ? viewZoom * ZOOM_STEP : viewZoom / ZOOM_STEP;
+  viewZoom = THREE.MathUtils.clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
   updateViewControls();
 }
 
 zoomOutButton.addEventListener('click', () => changeZoom(-1));
 zoomInButton.addEventListener('click', () => changeZoom(1));
-rotateViewButton.addEventListener('click', () => {
-  rotationStep = (rotationStep + 1) % 4;
-  block.rotation.y = rotationStep * Math.PI / 2;
-});
 canvas.addEventListener('wheel', (event) => {
   event.preventDefault();
   changeZoom(event.deltaY < 0 ? 1 : -1);
@@ -272,8 +339,24 @@ resize();
 updateUi();
 
 const clock = new THREE.Clock();
+function updateCameraPan(delta: number): void {
+  let x = 0;
+  let z = 0;
+  if (heldCameraKeys.has('KeyA') || heldCameraKeys.has('ArrowLeft')) x -= 1;
+  if (heldCameraKeys.has('KeyD') || heldCameraKeys.has('ArrowRight')) x += 1;
+  if (heldCameraKeys.has('KeyW') || heldCameraKeys.has('ArrowUp')) z -= 1;
+  if (heldCameraKeys.has('KeyS') || heldCameraKeys.has('ArrowDown')) z += 1;
+  if (x === 0 && z === 0) return;
+  const length = Math.hypot(x, z);
+  const panSpeed = 3.5 / Math.max(viewZoom, 0.12);
+  cameraTarget.x += x / length * panSpeed * delta;
+  cameraTarget.z += z / length * panSpeed * delta;
+  updateCameraTransform();
+}
+
 function render(now: number): void {
   const delta = Math.min(clock.getDelta(), 0.05);
+  updateCameraPan(delta);
   const interval = 1000 / getAutoRate(state);
   if (now - lastAutoHit >= interval) {
     const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));

@@ -134,6 +134,7 @@ button { font: inherit; }
 .upgrade-panel p { margin: 11px 0; color: #725f44; font-size: 13px; line-height: 1.35; }
 .upgrade-panel button, .modal-card button { width: 100%; padding: 10px; color: white; cursor: pointer; border: 2px solid #83431e; border-radius: 10px; background: #e78b2f; font-weight: 900; }
 .upgrade-panel button:disabled { cursor: not-allowed; border-color: #a6977e; background: #b8ab93; }
+.upgrade-divider { height: 1px; margin: 16px 0; background: rgba(124, 94, 52, .24); }
 
 .modal { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(23,57,74,.48); backdrop-filter: blur(8px); }
 .modal[hidden] { display: none; }

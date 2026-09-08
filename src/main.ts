@@ -5,10 +5,14 @@ import {
   SPEED_RATES,
   addXp,
   buySpeedUpgrade,
+  buyToolUpgrade,
   calculateOfflineXp,
   getAutoRate,
+  getHarvestPower,
+  getTool,
   loadState,
   saveState,
+  TOOL_TIERS,
   xpRequired,
 } from './game';
 
@@ -156,6 +160,10 @@ const totalXpEl = document.querySelector('#total-xp')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
 const pointsEl = document.querySelector('#upgrade-points')!;
 const speedButton = document.querySelector<HTMLButtonElement>('#speed-upgrade')!;
+const toolNameEl = document.querySelector('#tool-name')!;
+const toolRankEl = document.querySelector('#tool-rank')!;
+const toolDescriptionEl = document.querySelector('#tool-description')!;
+const toolButton = document.querySelector<HTMLButtonElement>('#tool-upgrade')!;
 const currentRateEl = document.querySelector('#current-rate')!;
 const nextRateEl = document.querySelector('#next-rate')!;
 const upgradePanel = document.querySelector('#upgrade-panel')!;
@@ -191,22 +199,37 @@ function updateUi(): void {
       : state.craftingPoints < 1
         ? 'Requires 1 Crafting Point'
         : 'Upgrade Auto Rate · Costs 1 CP';
+  const tool = getTool(state);
+  const nextTool = TOOL_TIERS[state.toolRank + 1];
+  const toolMaxed = !nextTool;
+  toolNameEl.textContent = tool.name;
+  toolRankEl.textContent = `TIER ${state.toolRank}`;
+  toolDescriptionEl.textContent = tool.description;
+  toolButton.disabled = toolMaxed || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost;
+  toolButton.textContent = toolMaxed
+    ? 'All prototype tools unlocked'
+    : state.level < nextTool.requiredLevel
+      ? `Unlock at Level ${nextTool.requiredLevel} · Costs ${nextTool.cost} CP`
+      : state.craftingPoints < nextTool.cost
+        ? `Requires ${nextTool.cost} Crafting Point${nextTool.cost === 1 ? '' : 's'}`
+        : `Unlock ${nextTool.name} · Costs ${nextTool.cost} CP`;
   upgradePanel.classList.toggle('is-unlocked', state.level >= 2);
 }
 
-function floatingXp(manual: boolean): void {
+function floatingXp(manual: boolean, amount: number): void {
   const label = document.createElement('span');
   label.className = `floating-xp${manual ? ' manual' : ''}`;
-  label.textContent = '+1 XP';
+  label.textContent = `+${amount} XP`;
   label.style.setProperty('--drift', `${(Math.random() - 0.5) * 70}px`);
   floatLayer.append(label);
   label.addEventListener('animationend', () => label.remove());
 }
 
 function mine(manual = false): void {
-  const levelUps = addXp(state, 1);
+  const harvestPower = getHarvestPower(state);
+  const levelUps = addXp(state, harvestPower);
   pulse = 1;
-  floatingXp(manual);
+  floatingXp(manual, harvestPower);
   if (levelUps > 0) {
     document.body.classList.add('level-up');
     window.setTimeout(() => document.body.classList.remove('level-up'), 900);
@@ -279,6 +302,13 @@ window.addEventListener('blur', () => heldCameraKeys.clear());
 speedButton.addEventListener('click', () => {
   if (buySpeedUpgrade(state)) {
     lastAutoHit = performance.now();
+    updateUi();
+    saveState(localStorage, state);
+  }
+});
+
+toolButton.addEventListener('click', () => {
+  if (buyToolUpgrade(state)) {
     updateUi();
     saveState(localStorage, state);
   }

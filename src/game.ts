@@ -4,11 +4,18 @@ export interface GameState {
   totalXp: number;
   craftingPoints: number;
   speedRank: number;
+  toolRank: number;
   lastSavedAt: number;
 }
 
 export const SAVE_KEY = 'idlecraft-save-v1';
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
+export const TOOL_TIERS = [
+  { name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
+  { name: 'Wooden Pickaxe', requiredLevel: 2, cost: 1, harvestPower: 2, description: 'Harvests 2 XP per strike and unlocks tougher blocks.' },
+  { name: 'Stone Pickaxe', requiredLevel: 4, cost: 2, harvestPower: 3, description: 'Harvests 3 XP per strike and reaches deeper materials.' },
+  { name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
+] as const;
 
 export function freshState(now = Date.now()): GameState {
   return {
@@ -17,6 +24,7 @@ export function freshState(now = Date.now()): GameState {
     totalXp: 0,
     craftingPoints: 0,
     speedRank: 0,
+    toolRank: 0,
     lastSavedAt: now,
   };
 }
@@ -54,6 +62,25 @@ export function buySpeedUpgrade(state: GameState): boolean {
   return true;
 }
 
+export function getTool(state: GameState) {
+  return TOOL_TIERS[Math.min(state.toolRank, TOOL_TIERS.length - 1)];
+}
+
+export function getHarvestPower(state: GameState): number {
+  return getTool(state).harvestPower;
+}
+
+export function buyToolUpgrade(state: GameState): boolean {
+  const nextTool = TOOL_TIERS[state.toolRank + 1];
+  if (!nextTool || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost) {
+    return false;
+  }
+
+  state.craftingPoints -= nextTool.cost;
+  state.toolRank += 1;
+  return true;
+}
+
 export function loadState(storage: Storage, now = Date.now()): GameState {
   const raw = storage.getItem(SAVE_KEY);
   if (!raw) return freshState(now);
@@ -67,6 +94,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       totalXp: Math.max(0, Number(parsed.totalXp) || 0),
       craftingPoints: Math.max(0, Number(parsed.craftingPoints) || 0),
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
+      toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
   } catch {
@@ -82,5 +110,5 @@ export function saveState(storage: Storage, state: GameState, now = Date.now()):
 export function calculateOfflineXp(state: GameState, now = Date.now()): number {
   const elapsedSeconds = Math.max(0, Math.min(8 * 60 * 60, (now - state.lastSavedAt) / 1000));
   if (elapsedSeconds < 10) return 0;
-  return Math.floor(elapsedSeconds * getAutoRate(state) * 0.5);
+  return Math.floor(elapsedSeconds * getAutoRate(state) * getHarvestPower(state) * 0.5);
 }

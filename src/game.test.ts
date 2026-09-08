@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, buySpeedUpgrade, calculateOfflineXp, freshState, getAutoRate, xpRequired } from './game';
+import { addXp, buySpeedUpgrade, buyToolUpgrade, calculateOfflineXp, freshState, getAutoRate, getHarvestPower, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -17,6 +17,14 @@ describe('IdleCraft progression', () => {
     addXp(state, 100);
     expect(buySpeedUpgrade(state)).toBe(true);
     expect(getAutoRate(state)).toBe(1.5);
+  });
+
+  it('unlocks a wooden pickaxe and increases harvest power', () => {
+    const state = freshState();
+    addXp(state, 100);
+    expect(buyToolUpgrade(state)).toBe(true);
+    expect(state.toolRank).toBe(1);
+    expect(getHarvestPower(state)).toBe(2);
   });
 
   it('calculates offline gains at half efficiency', () => {

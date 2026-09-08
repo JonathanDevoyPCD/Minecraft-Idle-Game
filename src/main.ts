@@ -4,15 +4,18 @@ import {
   SAVE_KEY,
   SPEED_RATES,
   addXp,
+  buyWorldExpansion,
   buySpeedUpgrade,
   buyToolUpgrade,
   calculateOfflineXp,
   getAutoRate,
   getHarvestPower,
   getTool,
+  getWorldTier,
   loadState,
   saveState,
   TOOL_TIERS,
+  WORLD_TIERS,
   xpRequired,
 } from './game';
 
@@ -71,8 +74,10 @@ shadowBase.rotation.x = -Math.PI / 2;
 shadowBase.position.y = -BLOCK_SIZE * 0.58;
 scene.add(shadowBase);
 
+const world = new THREE.Group();
+scene.add(world);
 const block = new THREE.Group();
-scene.add(block);
+world.add(block);
 
 function loadBlockTexture(fileName: string): THREE.Texture {
   const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/blocks/${fileName}`);
@@ -97,7 +102,23 @@ cube.castShadow = true;
 cube.receiveShadow = true;
 block.add(cube);
 
-const miningTargets = [cube];
+const neighborBlock = new THREE.Mesh(
+  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
+  [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial],
+);
+neighborBlock.position.x = BLOCK_SIZE;
+neighborBlock.castShadow = true;
+neighborBlock.receiveShadow = true;
+neighborBlock.visible = false;
+world.add(neighborBlock);
+
+const miningTargets: THREE.Mesh[] = [cube];
+
+function updateWorldScene(): void {
+  const isExpanded = state.worldRank >= 1;
+  neighborBlock.visible = isExpanded;
+  if (isExpanded && !miningTargets.includes(neighborBlock)) miningTargets.push(neighborBlock);
+}
 
 const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
 const CLOUD_BLOCK_HEIGHT = BLOCK_SIZE;
@@ -152,6 +173,7 @@ let lastAutoHit = performance.now();
 let state = loadState(localStorage);
 let isResetting = false;
 const offlineXp = calculateOfflineXp(state);
+updateWorldScene();
 
 const levelEl = document.querySelector('#level')!;
 const xpLabelEl = document.querySelector('#xp-label')!;
@@ -164,6 +186,10 @@ const toolNameEl = document.querySelector('#tool-name')!;
 const toolRankEl = document.querySelector('#tool-rank')!;
 const toolDescriptionEl = document.querySelector('#tool-description')!;
 const toolButton = document.querySelector<HTMLButtonElement>('#tool-upgrade')!;
+const worldNameEl = document.querySelector('#world-name')!;
+const worldRankEl = document.querySelector('#world-rank')!;
+const worldDescriptionEl = document.querySelector('#world-description')!;
+const worldButton = document.querySelector<HTMLButtonElement>('#world-upgrade')!;
 const currentRateEl = document.querySelector('#current-rate')!;
 const nextRateEl = document.querySelector('#next-rate')!;
 const upgradePanel = document.querySelector('#upgrade-panel')!;
@@ -213,6 +239,20 @@ function updateUi(): void {
       : state.craftingPoints < nextTool.cost
         ? `Requires ${nextTool.cost} Crafting Point${nextTool.cost === 1 ? '' : 's'}`
         : `Unlock ${nextTool.name} · Costs ${nextTool.cost} CP`;
+  const worldTier = getWorldTier(state);
+  const nextWorld = WORLD_TIERS[state.worldRank + 1];
+  const worldMaxed = !nextWorld;
+  worldNameEl.textContent = worldTier.name;
+  worldRankEl.textContent = `TIER ${state.worldRank}`;
+  worldDescriptionEl.textContent = worldTier.description;
+  worldButton.disabled = worldMaxed || state.level < nextWorld.requiredLevel || state.craftingPoints < nextWorld.cost;
+  worldButton.textContent = worldMaxed
+    ? 'All prototype expansions unlocked'
+    : state.level < nextWorld.requiredLevel
+      ? `Unlock at Level ${nextWorld.requiredLevel} · Costs ${nextWorld.cost} CP`
+      : state.craftingPoints < nextWorld.cost
+        ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
+        : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
   upgradePanel.classList.toggle('is-unlocked', state.level >= 2);
 }
 
@@ -309,6 +349,14 @@ speedButton.addEventListener('click', () => {
 
 toolButton.addEventListener('click', () => {
   if (buyToolUpgrade(state)) {
+    updateUi();
+    saveState(localStorage, state);
+  }
+});
+
+worldButton.addEventListener('click', () => {
+  if (buyWorldExpansion(state)) {
+    updateWorldScene();
     updateUi();
     saveState(localStorage, state);
   }

@@ -10,6 +10,7 @@ An isometric idle-clicker prototype about growing one grass block into a living 
 - Crafting Points and the first auto-rate upgrade
 - Tool progression from Bare Hands to Wooden, Stone, and Iron Pickaxes
 - Tool power increases XP per strike and offline harvesting efficiency
+- First world expansion milestone with a neighboring dirt voxel
 - Isometric Three.js scene with flat-colour materials, lighting, shadows, and block clouds
 - Local autosave and timestamp-based offline gains
 - Responsive desktop and mobile HUD

@@ -5,6 +5,7 @@ export interface GameState {
   craftingPoints: number;
   speedRank: number;
   toolRank: number;
+  worldRank: number;
   lastSavedAt: number;
 }
 
@@ -16,6 +17,10 @@ export const TOOL_TIERS = [
   { name: 'Stone Pickaxe', requiredLevel: 4, cost: 2, harvestPower: 3, description: 'Harvests 3 XP per strike and reaches deeper materials.' },
   { name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
 ] as const;
+export const WORLD_TIERS = [
+  { name: 'One Block', requiredLevel: 1, cost: 0, blockCount: 1, description: 'A humble starting point for your world.' },
+  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 2, description: 'Add a neighboring dirt block and begin growing outward.' },
+] as const;
 
 export function freshState(now = Date.now()): GameState {
   return {
@@ -25,6 +30,7 @@ export function freshState(now = Date.now()): GameState {
     craftingPoints: 0,
     speedRank: 0,
     toolRank: 0,
+    worldRank: 0,
     lastSavedAt: now,
   };
 }
@@ -81,6 +87,21 @@ export function buyToolUpgrade(state: GameState): boolean {
   return true;
 }
 
+export function getWorldTier(state: GameState) {
+  return WORLD_TIERS[Math.min(state.worldRank, WORLD_TIERS.length - 1)];
+}
+
+export function buyWorldExpansion(state: GameState): boolean {
+  const nextWorld = WORLD_TIERS[state.worldRank + 1];
+  if (!nextWorld || state.level < nextWorld.requiredLevel || state.craftingPoints < nextWorld.cost) {
+    return false;
+  }
+
+  state.craftingPoints -= nextWorld.cost;
+  state.worldRank += 1;
+  return true;
+}
+
 export function loadState(storage: Storage, now = Date.now()): GameState {
   const raw = storage.getItem(SAVE_KEY);
   if (!raw) return freshState(now);
@@ -95,6 +116,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       craftingPoints: Math.max(0, Number(parsed.craftingPoints) || 0),
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
       toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
+      worldRank: Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0)),
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
   } catch {

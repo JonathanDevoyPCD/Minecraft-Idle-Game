@@ -12,6 +12,7 @@ export interface GameState {
   worldSeed: number;
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
+  blockProgress: Record<string, BlockMiningProgress>;
   skillRanks: Record<string, number>;
   lastSavedAt: number;
 }
@@ -21,6 +22,12 @@ export type BlockType = 'grass' | 'dirt' | 'stone';
 export type WorldDirection = 'north' | 'east' | 'south' | 'west';
 export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
 
+export interface BlockMiningProgress {
+  type: BlockType;
+  damage: number;
+  replacementAt: number | null;
+}
+
 export const TOOL_KIND_PROFILES = {
   hand: { kind: 'hand', name: 'Hand', harvestPower: 1, description: 'Gather simple blocks by hand.' },
   pickaxe: { kind: 'pickaxe', name: 'Pickaxe', harvestPower: 2, description: 'Breaks stone and reveals deeper resources.' },
@@ -29,10 +36,12 @@ export const TOOL_KIND_PROFILES = {
 } as const;
 
 export const BLOCK_DEFINITIONS = {
-  grass: { name: 'Grass Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', description: 'Soft ground ready for planting and expansion.' },
-  dirt: { name: 'Dirt Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', description: 'Loose earth gathered from the first meadow.' },
-  stone: { name: 'Stone Block', requiredTool: 'pickaxe', resource: 'cobblestone', resourceName: 'Cobblestone', description: 'A sturdy block that rewards a pickaxe.' },
+  grass: { name: 'Grass Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', hardness: 0.6, description: 'Soft ground ready for planting and expansion.' },
+  dirt: { name: 'Dirt Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', hardness: 0.5, description: 'Loose earth gathered from the first meadow.' },
+  stone: { name: 'Cobblestone Block', requiredTool: 'pickaxe', resource: 'cobblestone', resourceName: 'Cobblestone', hardness: 1.5, description: 'A sturdy block that rewards a pickaxe.' },
 } as const;
+
+export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
 
 export const SAVE_KEY = 'idlecraft-save-v1';
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
@@ -86,6 +95,7 @@ export function freshState(now = Date.now()): GameState {
     worldSeed: 184731,
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
+    blockProgress: {},
     skillRanks: {},
     lastSavedAt: now,
   };
@@ -242,6 +252,33 @@ export function getContextTool(state: GameState, blockType: BlockType) {
   return { ...profile, name: `${unlocked.material} ${profile.name}`, harvestPower: unlocked.harvestPower };
 }
 
+export interface MiningStats {
+  hardness: number;
+  breakTimeSeconds: number;
+  maxDamage: number;
+  strikeDamage: number;
+}
+
+export function getNextBlockType(blockType: BlockType): BlockType {
+  const index = BLOCK_PROGRESSION.indexOf(blockType);
+  return BLOCK_PROGRESSION[Math.min(index + 1, BLOCK_PROGRESSION.length - 1)];
+}
+
+export function getMiningStats(state: GameState, blockType: BlockType): MiningStats {
+  const definition = BLOCK_DEFINITIONS[blockType];
+  const tool = getContextTool(state, blockType);
+  const correctTool = tool.kind === definition.requiredTool;
+  // Minecraft's hardness model is represented here as hardness × 1.5 ÷ tool
+  // speed. A usable but non-specialist tool keeps working at a slower rate.
+  const breakTimeSeconds = definition.hardness * 1.5 / tool.harvestPower * (correctTool ? 1 : 2);
+  return {
+    hardness: definition.hardness,
+    breakTimeSeconds,
+    maxDamage: Math.max(1, Math.ceil(definition.hardness * 10)),
+    strikeDamage: Math.max(1, tool.harvestPower),
+  };
+}
+
 export function harvestResource(state: GameState, blockType: BlockType, amount = 1): void {
   const resource = BLOCK_DEFINITIONS[blockType].resource;
   state.resources[resource] = (state.resources[resource] ?? 0) + amount;
@@ -324,12 +361,31 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
         : base.expansionDirections,
       resources: { ...base.resources, ...resources },
+      blockProgress: parseBlockProgress(parsed.blockProgress),
       skillRanks,
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
   } catch {
     return freshState(now);
   }
+}
+
+function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress> {
+  if (!value || typeof value !== 'object') return {};
+  const progress: Record<string, BlockMiningProgress> = {};
+  Object.entries(value).forEach(([id, candidate]) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const entry = candidate as Partial<BlockMiningProgress>;
+    if (!entry.type || !BLOCK_PROGRESSION.includes(entry.type)) return;
+    const damage = Number(entry.damage);
+    const replacementAt = entry.replacementAt === null ? null : Number(entry.replacementAt);
+    progress[id] = {
+      type: entry.type,
+      damage: Number.isFinite(damage) ? Math.max(0, damage) : 0,
+      replacementAt: replacementAt !== null && Number.isFinite(replacementAt) ? replacementAt : null,
+    };
+  });
+  return progress;
 }
 
 export function saveState(storage: Storage, state: GameState, now = Date.now()): void {

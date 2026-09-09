@@ -80,6 +80,15 @@
         </article>
       </section>
 
+      <section class="audio-controls panel" aria-label="Audio controls">
+        <label class="volume-control" for="volume-slider" title="Master volume">
+          <span aria-hidden="true">🔊</span>
+          <input id="volume-slider" type="range" min="0" max="100" value="45" aria-label="Master volume">
+        </label>
+        <button id="music-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute music" title="Mute music">♫</button>
+        <button id="sfx-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute sound effects" title="Mute sound effects">✦</button>
+      </section>
+
       <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>
         <div class="skill-tree-modal panel" role="dialog" aria-modal="true" aria-labelledby="skill-tree-title">
           <header class="skill-tree-header">

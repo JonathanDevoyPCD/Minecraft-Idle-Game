@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import './style.css';
 import { CloudCell, createCloudGeometry } from './cloud-geometry';
+import { AudioManager } from './audio';
 import {
   SAVE_KEY,
   SPEED_RATES,
   BLOCK_DEFINITIONS,
+  type BlockMiningProgress,
   addXp,
   buySkillNode,
   buyWorldExpansion,
@@ -18,6 +20,8 @@ import {
   getTool,
   getSkillNodeRank,
   getWorldTier,
+  getMiningStats,
+  getNextBlockType,
   harvestResource,
   loadState,
   saveState,
@@ -95,6 +99,7 @@ scene.add(shadowBase);
 const world = new THREE.Group();
 scene.add(world);
 let state = loadState(localStorage);
+const audioManager = new AudioManager();
 let isResetting = false;
 
 function loadBlockTexture(fileName: string): THREE.Texture {
@@ -128,20 +133,55 @@ interface BlockNode {
   requiredDirection?: WorldDirection;
   mesh: THREE.Mesh;
   hoverOutline: THREE.LineSegments;
+  destroyOverlay: THREE.Mesh;
   pulse: number;
+  damage: number;
+  lastStrikeAt: number;
+  replacementAt: number | null;
 }
 
+const REPLACEMENT_DELAY_MS = 10_000;
+const DESTROY_STAGE_COUNT = 10;
+const destroyTextures = Array.from({ length: DESTROY_STAGE_COUNT }, (_, stage) => loadBlockTexture(`destroy_stage_${stage}.png`));
+const destroyMaterials = destroyTextures.map((texture) => Array.from({ length: 6 }, () => new THREE.MeshBasicMaterial({
+  map: texture,
+  transparent: true,
+  opacity: 0.95,
+  depthWrite: false,
+  side: THREE.FrontSide,
+})));
+
 function createBlockMesh(type: BlockType): THREE.Mesh {
-  const materials = type === 'grass'
-    ? [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial]
-    : type === 'dirt'
-      ? [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial]
-      : [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial];
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), materials);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), getBlockMaterials(type));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   world.add(mesh);
   return mesh;
+}
+
+function getBlockMaterials(type: BlockType): THREE.Material[] {
+  return type === 'grass'
+    ? [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial]
+    : type === 'dirt'
+      ? [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial]
+      : [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial];
+}
+
+function updateDestroyOverlay(node: BlockNode): void {
+  const stats = getMiningStats(state, node.type);
+  const progress = stats.maxDamage > 0 ? node.damage / stats.maxDamage : 0;
+  const stage = Math.min(DESTROY_STAGE_COUNT - 1, Math.floor(progress * DESTROY_STAGE_COUNT));
+  node.destroyOverlay.material = destroyMaterials[stage];
+  node.destroyOverlay.visible = node.mesh.visible && node.damage > 0 && node.replacementAt === null;
+}
+
+function persistBlockProgress(node: BlockNode): void {
+  const progress: BlockMiningProgress = {
+    type: node.type,
+    damage: node.damage,
+    replacementAt: node.replacementAt,
+  };
+  state.blockProgress[node.id] = progress;
 }
 
 function createBlockNode(
@@ -151,10 +191,16 @@ function createBlockNode(
   requiredWorldRank: number,
   requiredDirection?: WorldDirection,
 ): BlockNode {
-  const mesh = createBlockMesh(type);
+  const savedProgress = state.blockProgress[id];
+  const initialType = savedProgress?.type ?? type;
+  const mesh = createBlockMesh(initialType);
+  const destroyOverlay = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004), destroyMaterials[0]);
+  destroyOverlay.visible = false;
+  destroyOverlay.renderOrder = 11;
+  mesh.add(destroyOverlay);
   const node = {
     id,
-    type,
+    type: initialType,
     coordinate,
     requiredWorldRank,
     requiredDirection,
@@ -169,7 +215,11 @@ function createBlockNode(
         depthWrite: false,
       }),
     ),
+    destroyOverlay,
     pulse: 0,
+    damage: Math.max(0, savedProgress?.damage ?? 0),
+    lastStrikeAt: savedProgress?.damage ? Date.now() : 0,
+    replacementAt: savedProgress?.replacementAt ?? null,
   } satisfies BlockNode;
   node.hoverOutline.visible = false;
   node.hoverOutline.scale.setScalar(1.02);
@@ -238,10 +288,71 @@ function generateWorldLayout(currentState: typeof state): GeneratedBlock[] {
 
 const blockNodes: BlockNode[] = generateWorldLayout(state).map(({ type, coordinate, requiredWorldRank, requiredDirection }) => {
   const { x, y, z } = coordinate;
-  return createBlockNode(`${type}-${x}-${y}-${z}-${requiredDirection ?? 'core'}`, type, coordinate, requiredWorldRank, requiredDirection);
+  return createBlockNode(`block-${x}-${y}-${z}-${requiredDirection ?? 'core'}`, type, coordinate, requiredWorldRank, requiredDirection);
 });
 const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
 const miningTargets: THREE.Mesh[] = [];
+
+interface BreakParticle {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  life: number;
+  maxLife: number;
+}
+
+const breakParticles: BreakParticle[] = [];
+const particleGeometry = new THREE.BoxGeometry(0.07, 0.07, 0.07);
+const particleColours: Record<BlockType, readonly number[]> = {
+  grass: [0x73502e, 0x8f6735, 0x5a8c39],
+  dirt: [0x73502e, 0x8f6735, 0x5a8c39],
+  stone: [0x8f999a, 0x697476, 0xabb4b4],
+};
+
+function spawnBreakParticles(node: BlockNode): void {
+  const origin = node.mesh.getWorldPosition(new THREE.Vector3());
+  const colours = particleColours[node.type];
+  for (let index = 0; index < 8; index += 1) {
+    const material = new THREE.MeshBasicMaterial({
+      color: colours[index % colours.length],
+      transparent: true,
+      depthWrite: false,
+    });
+    const particle = new THREE.Mesh(particleGeometry, material);
+    particle.position.copy(origin).add(new THREE.Vector3(
+      (Math.random() - 0.5) * BLOCK_SIZE * 0.7,
+      (Math.random() - 0.25) * BLOCK_SIZE * 0.45,
+      (Math.random() - 0.5) * BLOCK_SIZE * 0.7,
+    ));
+    scene.add(particle);
+    breakParticles.push({
+      mesh: particle,
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.9,
+        1.1 + Math.random() * 0.9,
+        (Math.random() - 0.5) * 0.9,
+      ),
+      life: 0.8 + Math.random() * 0.35,
+      maxLife: 1.15,
+    });
+  }
+}
+
+function updateBreakParticles(delta: number): void {
+  for (let index = breakParticles.length - 1; index >= 0; index -= 1) {
+    const particle = breakParticles[index];
+    particle.life -= delta;
+    if (particle.life <= 0) {
+      scene.remove(particle.mesh);
+      (particle.mesh.material as THREE.Material).dispose();
+      breakParticles.splice(index, 1);
+      continue;
+    }
+    particle.velocity.y -= 3.2 * delta;
+    particle.mesh.position.addScaledVector(particle.velocity, delta);
+    particle.mesh.scale.setScalar(Math.max(0.01, particle.life / particle.maxLife));
+    (particle.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, particle.life * 2.5);
+  }
+}
 
 function updateWorldFloor(): void {
   const visibleNodes = blockNodes.filter((node) => node.mesh.visible);
@@ -267,7 +378,8 @@ function updateWorldScene(): void {
     const directionIndex = node.requiredWorldRank - 2;
     const directionUnlocked = !node.requiredDirection
       || state.expansionDirections[directionIndex] === node.requiredDirection;
-    node.mesh.visible = state.worldRank >= node.requiredWorldRank && directionUnlocked;
+    node.mesh.visible = state.worldRank >= node.requiredWorldRank && directionUnlocked && node.replacementAt === null;
+    updateDestroyOverlay(node);
   });
   miningTargets.length = 0;
   blockNodes.forEach((node) => {
@@ -354,6 +466,9 @@ const zoomLevelEl = document.querySelector('#zoom-level')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
+const volumeSlider = document.querySelector<HTMLInputElement>('#volume-slider')!;
+const musicToggle = document.querySelector<HTMLButtonElement>('#music-toggle')!;
+const sfxToggle = document.querySelector<HTMLButtonElement>('#sfx-toggle')!;
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
 const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
 const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
@@ -402,11 +517,24 @@ function updateCurrentTool(): void {
   const profile = hoveredNode ? getContextTool(state, hoveredNode.type) : TOOL_KIND_PROFILES.hand;
   currentToolEl.textContent = profile.name;
   currentToolHintEl.textContent = hoveredNode
-    ? `${BLOCK_DEFINITIONS[hoveredNode.type].resourceName} · ${profile.harvestPower} XP/strike`
+    ? `${BLOCK_DEFINITIONS[hoveredNode.type].resourceName} · ${Math.round(hoveredNode.damage / getMiningStats(state, hoveredNode.type).maxDamage * 100)}%`
     : 'Point at a block';
   toolIconGroups.forEach((group) => {
     group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
   });
+}
+
+function updateAudioUi(): void {
+  const settings = audioManager.getSettings();
+  volumeSlider.value = String(Math.round(settings.volume * 100));
+  musicToggle.setAttribute('aria-pressed', String(settings.musicMuted));
+  musicToggle.setAttribute('aria-label', settings.musicMuted ? 'Unmute music' : 'Mute music');
+  musicToggle.title = settings.musicMuted ? 'Unmute music' : 'Mute music';
+  musicToggle.textContent = settings.musicMuted ? '♫̸' : '♫';
+  sfxToggle.setAttribute('aria-pressed', String(settings.sfxMuted));
+  sfxToggle.setAttribute('aria-label', settings.sfxMuted ? 'Unmute sound effects' : 'Mute sound effects');
+  sfxToggle.title = settings.sfxMuted ? 'Unmute sound effects' : 'Mute sound effects';
+  sfxToggle.textContent = settings.sfxMuted ? '✦̸' : '✦';
 }
 
 function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' | 'maxed' {
@@ -739,17 +867,81 @@ function flashXpCard(): void {
   xpFlashTimeout = window.setTimeout(() => totalXpCard.classList.remove('is-gaining'), 480);
 }
 
-function mine(node: BlockNode): void {
-  const harvestPower = getContextTool(state, node.type).harvestPower;
-  const levelUps = addXp(state, harvestPower);
+function getActiveMiningNode(): BlockNode | null {
+  if (hoveredNode?.mesh.visible && hoveredNode.replacementAt === null) return hoveredNode;
+  return blockNodes.find((node) => node.mesh.visible && node.replacementAt === null) ?? null;
+}
+
+function breakBlock(node: BlockNode, now: number): void {
+  const brokenType = node.type;
+  harvestResource(state, brokenType);
+  spawnBreakParticles(node);
+  audioManager.playMiningSound('break');
+  node.type = getNextBlockType(brokenType);
+  node.damage = 0;
+  node.lastStrikeAt = 0;
+  node.replacementAt = now + REPLACEMENT_DELAY_MS;
+  node.mesh.visible = false;
+  node.destroyOverlay.visible = false;
+  persistBlockProgress(node);
+  if (hoveredNode === node) setHoveredNode(null);
+  updateWorldScene();
+}
+
+function mine(node: BlockNode | null): void {
+  if (!node || !node.mesh.visible || node.replacementAt !== null) return;
+  const now = Date.now();
+  if (node.lastStrikeAt > 0 && now - node.lastStrikeAt > 1000) node.damage = 0;
+  node.lastStrikeAt = now;
+  const stats = getMiningStats(state, node.type);
+  const levelUps = addXp(state, stats.strikeDamage);
+  node.damage = Math.min(stats.maxDamage, node.damage + stats.strikeDamage);
   node.pulse = 1;
-  harvestResource(state, node.type);
+  if (node.damage < stats.maxDamage) audioManager.playMiningSound(node.type === 'stone' ? 'stone' : 'grass');
+  updateDestroyOverlay(node);
+  persistBlockProgress(node);
   flashXpCard();
+  if (node.damage >= stats.maxDamage) breakBlock(node, now);
   if (levelUps > 0) {
     document.body.classList.add('level-up');
     window.setTimeout(() => document.body.classList.remove('level-up'), 900);
   }
   updateUi();
+  saveState(localStorage, state);
+}
+
+function updateBlockReplacements(now: number): void {
+  let didReplace = false;
+  blockNodes.forEach((node) => {
+    if (node.replacementAt === null || now < node.replacementAt) return;
+    node.replacementAt = null;
+    node.damage = 0;
+    node.lastStrikeAt = 0;
+    node.mesh.material = getBlockMaterials(node.type);
+    persistBlockProgress(node);
+    didReplace = true;
+  });
+  if (didReplace) {
+    updateWorldScene();
+    updateUi();
+    saveState(localStorage, state);
+  }
+}
+
+function resetStaleBlockDamage(now: number): void {
+  let didReset = false;
+  blockNodes.forEach((node) => {
+    if (node.damage <= 0 || node.lastStrikeAt <= 0 || now - node.lastStrikeAt <= 1000) return;
+    node.damage = 0;
+    node.lastStrikeAt = 0;
+    updateDestroyOverlay(node);
+    persistBlockProgress(node);
+    didReset = true;
+  });
+  if (didReset) {
+    updateUi();
+    saveState(localStorage, state);
+  }
 }
 
 function getBlockAtPointer(event: PointerEvent): BlockNode | null {
@@ -901,11 +1093,20 @@ directionButtons.forEach((button) => {
   });
 });
 
-document.querySelector('#mine-button')!.addEventListener('click', () => mine(blockNodes[0]));
+document.querySelector('#mine-button')!.addEventListener('click', () => mine(getActiveMiningNode()));
+volumeSlider.addEventListener('input', () => audioManager.setVolume(Number(volumeSlider.value) / 100));
+musicToggle.addEventListener('click', () => {
+  audioManager.toggleMusic();
+  updateAudioUi();
+});
+sfxToggle.addEventListener('click', () => {
+  audioManager.toggleSfx();
+  updateAudioUi();
+});
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
     event.preventDefault();
-    mine(blockNodes[0]);
+    mine(getActiveMiningNode());
   }
   if (PAN_KEYS.has(event.code)) {
     event.preventDefault();
@@ -991,6 +1192,7 @@ window.addEventListener('beforeunload', () => {
 window.setInterval(() => saveState(localStorage, state), 5000);
 resize();
 updateUi();
+updateAudioUi();
 
 const clock = new THREE.Clock();
 function updateCameraPan(delta: number): void {
@@ -1011,10 +1213,13 @@ function updateCameraPan(delta: number): void {
 function render(now: number): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   updateCameraPan(delta);
+  const wallClockNow = Date.now();
+  resetStaleBlockDamage(wallClockNow);
+  updateBlockReplacements(wallClockNow);
   const interval = 1000 / getAutoRate(state);
   if (now - lastAutoHit >= interval) {
     const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));
-    for (let i = 0; i < hits; i += 1) mine(blockNodes[0]);
+    for (let i = 0; i < hits; i += 1) mine(getActiveMiningNode());
     lastAutoHit += hits * interval;
   }
 
@@ -1029,6 +1234,7 @@ function render(now: number): void {
     cloud.position.x += delta * (0.045 + index * 0.012);
     if (cloud.position.x > 6) cloud.position.x = -6;
   });
+  updateBreakParticles(delta);
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);

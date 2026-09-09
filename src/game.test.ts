@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, freshState, getAutoRate, getContextTool, getHarvestPower, harvestResource, loadState, xpRequired } from './game';
+import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, harvestResource, loadState, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -61,6 +61,31 @@ describe('IdleCraft progression', () => {
     harvestResource(state, 'dirt');
     harvestResource(state, 'stone', 2);
     expect(state.resources).toEqual({ dirt: 1, cobblestone: 2 });
+  });
+
+  it('advances each broken block through the dirt, grass, and cobblestone sequence', () => {
+    expect(BLOCK_PROGRESSION).toEqual(['dirt', 'grass', 'stone']);
+    expect(getNextBlockType('dirt')).toBe('grass');
+    expect(getNextBlockType('grass')).toBe('stone');
+    expect(getNextBlockType('stone')).toBe('stone');
+  });
+
+  it('uses harder mining times for cobblestone and improves with a pickaxe', () => {
+    const state = freshState();
+    const handStone = getMiningStats(state, 'stone');
+    addXp(state, 100);
+    buyToolUpgrade(state);
+    const woodenStone = getMiningStats(state, 'stone');
+    expect(handStone.breakTimeSeconds).toBeGreaterThan(woodenStone.breakTimeSeconds);
+    expect(handStone.maxDamage).toBeGreaterThan(getMiningStats(state, 'dirt').maxDamage);
+  });
+
+  it('preserves independent block progress and replacement timers in saves', () => {
+    const saved = { ...freshState(1000), blockProgress: {
+      'block-0-0-0-core': { type: 'stone' as const, damage: 7, replacementAt: 12000 },
+    } };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    expect(loadState(storage, 2000).blockProgress['block-0-0-0-core']).toEqual(saved.blockProgress['block-0-0-0-core']);
   });
 
   it('expands the world after the first growth milestone', () => {

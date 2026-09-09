@@ -65,20 +65,18 @@ scene.add(sun);
 
 const BLOCK_SIZE = 0.9;
 const shadowPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(BLOCK_SIZE * 4.2, BLOCK_SIZE * 4.2),
+  new THREE.PlaneGeometry(1, 1),
   new THREE.ShadowMaterial({ color: 0x1d7288, opacity: 0.17 }),
 );
 shadowPlane.rotation.x = -Math.PI / 2;
-shadowPlane.position.y = -BLOCK_SIZE * 0.56;
 shadowPlane.receiveShadow = true;
 scene.add(shadowPlane);
 
 const shadowBase = new THREE.Mesh(
-  new THREE.PlaneGeometry(BLOCK_SIZE * 4.8, BLOCK_SIZE * 4.8),
+  new THREE.PlaneGeometry(1, 1),
   new THREE.MeshBasicMaterial({ color: 0x2b879c, transparent: true, opacity: 0.07, depthWrite: false }),
 );
 shadowBase.rotation.x = -Math.PI / 2;
-shadowBase.position.y = -BLOCK_SIZE * 0.58;
 scene.add(shadowBase);
 
 const world = new THREE.Group();
@@ -116,6 +114,7 @@ interface BlockNode {
   requiredWorldRank: number;
   requiredDirection?: WorldDirection;
   mesh: THREE.Mesh;
+  hoverOutline: THREE.LineSegments;
   pulse: number;
 }
 
@@ -146,8 +145,16 @@ function createBlockNode(
     requiredWorldRank,
     requiredDirection,
     mesh: createBlockMesh(type),
+    hoverOutline: new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false }),
+    ),
     pulse: 0,
   } satisfies BlockNode;
+  node.hoverOutline.visible = false;
+  node.hoverOutline.scale.setScalar(1.012);
+  node.hoverOutline.renderOrder = 2;
+  node.mesh.add(node.hoverOutline);
   node.mesh.position.set(
     coordinate.x * BLOCK_SIZE,
     coordinate.y * BLOCK_SIZE,
@@ -216,6 +223,25 @@ const blockNodes: BlockNode[] = generateWorldLayout(state).map(({ type, coordina
 const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
 const miningTargets: THREE.Mesh[] = [];
 
+function updateWorldFloor(): void {
+  const visibleNodes = blockNodes.filter((node) => node.mesh.visible);
+  if (visibleNodes.length === 0) return;
+  const minX = Math.min(...visibleNodes.map((node) => node.coordinate.x));
+  const maxX = Math.max(...visibleNodes.map((node) => node.coordinate.x));
+  const minZ = Math.min(...visibleNodes.map((node) => node.coordinate.z));
+  const maxZ = Math.max(...visibleNodes.map((node) => node.coordinate.z));
+  const minY = Math.min(...visibleNodes.map((node) => node.coordinate.y));
+  const floorY = (minY - 0.5) * BLOCK_SIZE - 0.06;
+  const centerX = (minX + maxX) / 2 * BLOCK_SIZE;
+  const centerZ = (minZ + maxZ) / 2 * BLOCK_SIZE;
+  const floorWidth = (maxX - minX + 2.4) * BLOCK_SIZE;
+  const floorDepth = (maxZ - minZ + 2.4) * BLOCK_SIZE;
+  shadowPlane.position.set(centerX, floorY, centerZ);
+  shadowPlane.scale.set(floorWidth, floorDepth, 1);
+  shadowBase.position.set(centerX, floorY - 0.015, centerZ);
+  shadowBase.scale.set(floorWidth + BLOCK_SIZE, floorDepth + BLOCK_SIZE, 1);
+}
+
 function updateWorldScene(): void {
   blockNodes.forEach((node) => {
     const directionIndex = node.requiredWorldRank - 2;
@@ -227,6 +253,7 @@ function updateWorldScene(): void {
   blockNodes.forEach((node) => {
     if (node.mesh.visible) miningTargets.push(node.mesh);
   });
+  updateWorldFloor();
 }
 
 const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
@@ -416,50 +443,52 @@ function mine(node: BlockNode): void {
   updateUi();
 }
 
-function handleCanvasPointer(event: PointerEvent): void {
-  if (event.button !== 0) return;
+function getBlockAtPointer(event: PointerEvent): BlockNode | null {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const hit = raycaster.intersectObjects(miningTargets)[0];
-  if (hit) {
-    const node = blockByMesh.get(hit.object);
-    if (node) {
-      hoveredNode = node;
-      updateCurrentTool();
-      mine(node);
-    }
+  return hit ? blockByMesh.get(hit.object) ?? null : null;
+}
+
+function setHoveredNode(nextNode: BlockNode | null): void {
+  if (nextNode === hoveredNode) return;
+  if (hoveredNode) hoveredNode.hoverOutline.visible = false;
+  hoveredNode = nextNode;
+  if (hoveredNode) hoveredNode.hoverOutline.visible = true;
+  updateCurrentTool();
+}
+
+function beginOrbit(event: PointerEvent): void {
+  event.preventDefault();
+  isOrbiting = true;
+  lastOrbitX = event.clientX;
+  lastOrbitY = event.clientY;
+  canvas.classList.add('is-orbiting');
+  try {
+    canvas.setPointerCapture(event.pointerId);
+  } catch {
+    // Synthetic pointer events used by some browsers do not have a capture target.
   }
 }
 
 function updateHoverTarget(event: PointerEvent): void {
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(miningTargets)[0];
-  const nextNode = hit ? blockByMesh.get(hit.object) ?? null : null;
-  if (nextNode === hoveredNode) return;
-  hoveredNode = nextNode;
-  updateCurrentTool();
+  setHoveredNode(getBlockAtPointer(event));
 }
 
 canvas.addEventListener('pointerdown', (event) => {
-  if (event.button === 1) {
-    event.preventDefault();
-    isOrbiting = true;
-    lastOrbitX = event.clientX;
-    lastOrbitY = event.clientY;
-    canvas.classList.add('is-orbiting');
-    try {
-      canvas.setPointerCapture(event.pointerId);
-    } catch {
-      // Synthetic pointer events used by some browsers do not have a capture target.
+  if (event.button === 0) {
+    const node = getBlockAtPointer(event);
+    if (node) {
+      setHoveredNode(node);
+      mine(node);
+    } else {
+      beginOrbit(event);
     }
     return;
   }
-  handleCanvasPointer(event);
+  if (event.button === 1) beginOrbit(event);
 });
 canvas.addEventListener('pointermove', (event) => {
   if (!isOrbiting) {
@@ -470,13 +499,12 @@ canvas.addEventListener('pointermove', (event) => {
   const deltaY = event.clientY - lastOrbitY;
   lastOrbitX = event.clientX;
   lastOrbitY = event.clientY;
-  orbitYaw -= deltaX * 0.008;
-  orbitPitch = THREE.MathUtils.clamp(orbitPitch - deltaY * 0.006, 0.18, 1.35);
+  orbitYaw += deltaX * 0.008;
+  orbitPitch = THREE.MathUtils.clamp(orbitPitch + deltaY * 0.006, 0.18, 1.35);
   updateCameraTransform();
 });
 canvas.addEventListener('pointerleave', () => {
-  hoveredNode = null;
-  updateCurrentTool();
+  setHoveredNode(null);
 });
 function endOrbit(event: PointerEvent): void {
   if (!isOrbiting) return;

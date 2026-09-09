@@ -222,8 +222,10 @@ const worldDescriptionEl = document.querySelector('#world-description')!;
 const worldButton = document.querySelector<HTMLButtonElement>('#world-upgrade')!;
 const currentRateEl = document.querySelector('#current-rate')!;
 const nextRateEl = document.querySelector('#next-rate')!;
-const upgradePanel = document.querySelector('#upgrade-panel')!;
-const floatLayer = document.querySelector('#float-layer')!;
+const worldEyebrowEl = document.querySelector('#world-eyebrow')!;
+const worldTitleEl = document.querySelector('#world-title')!;
+const hintEl = document.querySelector('#hint')!;
+const totalXpCard = totalXpEl.closest<HTMLElement>('.stat-card')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
 const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
@@ -231,7 +233,11 @@ const zoomLevelEl = document.querySelector('#zoom-level')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
+const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
+const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
+const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
 let hoveredNode: BlockNode | null = null;
+let xpFlashTimeout = 0;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -248,6 +254,18 @@ function updateCurrentTool(): void {
   toolIconGroups.forEach((group) => {
     group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
   });
+}
+
+function updateWorldCopy(): void {
+  const worldTier = getWorldTier(state);
+  const targetDefinition = hoveredNode ? BLOCK_DEFINITIONS[hoveredNode.type] : null;
+  worldEyebrowEl.textContent = targetDefinition
+    ? `BLOCK TARGET · ${targetDefinition.name.toUpperCase()}`
+    : `WORLD ${state.worldRank === 0 ? 'SEED' : 'GROWTH'} · ${worldTier.name.toUpperCase()}`;
+  worldTitleEl.textContent = targetDefinition ? targetDefinition.name : state.worldRank === 0 ? 'Grass Block' : worldTier.name;
+  hintEl.textContent = targetDefinition
+    ? `Harvest ${targetDefinition.resourceName.toLowerCase()} with ${getContextTool(state, hoveredNode!.type).name}`
+    : `${worldTier.blockCount} block${worldTier.blockCount === 1 ? '' : 's'} ready · Click a block to harvest`;
 }
 
 function updateUi(): void {
@@ -298,28 +316,24 @@ function updateUi(): void {
       : state.craftingPoints < nextWorld.cost
         ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
         : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
+  updateWorldCopy();
   updateCurrentTool();
-  upgradePanel.classList.toggle('is-unlocked', state.level >= 2);
 }
 
-function floatingXp(manual: boolean, amount: number, worldPoint: THREE.Vector3): void {
-  const label = document.createElement('span');
-  label.className = `floating-xp${manual ? ' manual' : ''}`;
-  label.textContent = `+${amount} XP`;
-  label.style.setProperty('--drift', `${(Math.random() - 0.5) * 70}px`);
-  const screenPoint = worldPoint.clone().project(camera);
-  label.style.left = `${(screenPoint.x + 1) * window.innerWidth / 2}px`;
-  label.style.top = `${(1 - screenPoint.y) * window.innerHeight / 2}px`;
-  floatLayer.append(label);
-  label.addEventListener('animationend', () => label.remove());
+function flashXpCard(): void {
+  totalXpCard.classList.remove('is-gaining');
+  void totalXpCard.offsetWidth;
+  totalXpCard.classList.add('is-gaining');
+  window.clearTimeout(xpFlashTimeout);
+  xpFlashTimeout = window.setTimeout(() => totalXpCard.classList.remove('is-gaining'), 480);
 }
 
-function mine(node: BlockNode, manual = false): void {
+function mine(node: BlockNode): void {
   const harvestPower = getContextTool(state, node.type).harvestPower;
   const levelUps = addXp(state, harvestPower);
   node.pulse = 1;
   harvestResource(state, node.type);
-  floatingXp(manual, harvestPower, node.mesh.position);
+  flashXpCard();
   if (levelUps > 0) {
     document.body.classList.add('level-up');
     window.setTimeout(() => document.body.classList.remove('level-up'), 900);
@@ -339,7 +353,7 @@ function handleCanvasPointer(event: PointerEvent): void {
     if (node) {
       hoveredNode = node;
       updateCurrentTool();
-      mine(node, true);
+      mine(node);
     }
   }
 }
@@ -353,6 +367,7 @@ function updateHoverTarget(event: PointerEvent): void {
   const nextNode = hit ? blockByMesh.get(hit.object) ?? null : null;
   if (nextNode === hoveredNode) return;
   hoveredNode = nextNode;
+  updateWorldCopy();
   updateCurrentTool();
 }
 
@@ -387,6 +402,7 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerleave', () => {
   hoveredNode = null;
+  updateWorldCopy();
   updateCurrentTool();
 });
 function endOrbit(event: PointerEvent): void {
@@ -402,11 +418,28 @@ function endOrbit(event: PointerEvent): void {
 canvas.addEventListener('pointerup', endOrbit);
 canvas.addEventListener('pointercancel', endOrbit);
 canvas.addEventListener('contextmenu', (event) => event.preventDefault());
-document.querySelector('#mine-button')!.addEventListener('click', () => mine(blockNodes[0], true));
+
+function setSkillTreeOpen(open: boolean): void {
+  skillTreeOverlay.hidden = !open;
+  skillTreeButton.setAttribute('aria-expanded', String(open));
+  if (open) skillTreeClose.focus();
+  else skillTreeButton.focus();
+}
+
+skillTreeButton.addEventListener('click', () => setSkillTreeOpen(true));
+skillTreeClose.addEventListener('click', () => setSkillTreeOpen(false));
+skillTreeOverlay.addEventListener('click', (event) => {
+  if (event.target === skillTreeOverlay) setSkillTreeOpen(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
+});
+
+document.querySelector('#mine-button')!.addEventListener('click', () => mine(blockNodes[0]));
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
     event.preventDefault();
-    mine(blockNodes[0], true);
+    mine(blockNodes[0]);
   }
   if (PAN_KEYS.has(event.code)) {
     event.preventDefault();
@@ -515,7 +548,7 @@ function render(now: number): void {
   const interval = 1000 / getAutoRate(state);
   if (now - lastAutoHit >= interval) {
     const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));
-    for (let i = 0; i < hits; i += 1) mine(blockNodes[0], false);
+    for (let i = 0; i < hits; i += 1) mine(blockNodes[0]);
     lastAutoHit += hits * interval;
   }
 

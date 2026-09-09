@@ -25,7 +25,10 @@
           <div><strong>IDLECRAFT</strong><small>ONE BLOCK. ENDLESS WORLD.</small></div>
         </div>
 
-        <button id="reset-button" class="icon-button panel" type="button" title="Reset saved game" aria-label="Reset saved game">↻</button>
+        <div class="topbar-actions">
+          <button id="skill-tree-button" class="skill-tree-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay">SKILL TREE</button>
+          <button id="reset-button" class="icon-button panel" type="button" title="Reset saved game" aria-label="Reset saved game">↻</button>
+        </div>
       </header>
 
       <div class="view-controls panel" aria-label="World view controls">
@@ -35,12 +38,10 @@
       </div>
 
       <section class="world-copy" aria-live="polite">
-        <p class="eyebrow">YOUR FIRST BLOCK</p>
-        <h1>Grass Block</h1>
-        <p id="hint">Click the block to help it grow</p>
+        <p id="world-eyebrow" class="eyebrow">WORLD SEED · ONE BLOCK</p>
+        <h1 id="world-title">Grass Block</h1>
+        <p id="hint">Click a block to help it grow</p>
       </section>
-
-      <div id="float-layer" class="float-layer" aria-hidden="true"></div>
 
       <section class="bottom-hud">
         <article class="stat-card panel">
@@ -85,28 +86,50 @@
         </article>
       </section>
 
-      <aside id="upgrade-panel" class="upgrade-panel panel" aria-live="polite">
-        <div class="upgrade-heading">
-          <div><small>WORLD GROWTH</small><strong id="world-name">One Block</strong></div>
-          <span id="world-rank" class="point-pill">TIER 0</span>
+      <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>
+        <div class="skill-tree-modal panel" role="dialog" aria-modal="true" aria-labelledby="skill-tree-title">
+          <header class="skill-tree-header">
+            <div>
+              <p class="eyebrow">CRAFTING TREE</p>
+              <h2 id="skill-tree-title">Shape your world</h2>
+              <p>Spend Crafting Points to unlock tools, automation, and new ground.</p>
+            </div>
+            <button id="skill-tree-close" class="skill-tree-close" type="button" aria-label="Close skill tree">×</button>
+          </header>
+
+          <div class="skill-tree-branches">
+            <section class="skill-branch">
+              <div class="branch-heading"><span class="branch-index">01</span><div><small>WORLD GROWTH</small><strong>Expand the map</strong></div></div>
+              <div class="skill-node">
+                <div class="node-topline"><span class="node-icon">W</span><span id="world-rank" class="point-pill">TIER 0</span></div>
+                <strong id="world-name">One Block</strong>
+                <p id="world-description">A humble starting point for your world.</p>
+                <button id="world-upgrade" type="button" disabled>Unlock at Level 3 · Costs 1 CP</button>
+              </div>
+            </section>
+
+            <section class="skill-branch">
+              <div class="branch-heading"><span class="branch-index">02</span><div><small>TOOLS</small><strong>Harvest harder blocks</strong></div></div>
+              <div class="skill-node">
+                <div class="node-topline"><span class="node-icon">T</span><span id="tool-rank" class="point-pill">TIER 0</span></div>
+                <strong id="tool-name">Bare Hands</strong>
+                <p id="tool-description">Harvest basic blocks by hand.</p>
+                <button id="tool-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
+              </div>
+            </section>
+
+            <section class="skill-branch">
+              <div class="branch-heading"><span class="branch-index">03</span><div><small>AUTOMATION</small><strong>Keep the rhythm</strong></div></div>
+              <div class="skill-node">
+                <div class="node-topline"><span class="node-icon">A</span><span id="upgrade-points" class="point-pill">0 CP</span></div>
+                <strong>Quicker Rhythm</strong>
+                <p>Increase automatic mining from <span id="current-rate">1.0</span> to <span id="next-rate">1.5</span> strikes per second.</p>
+                <button id="speed-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
+              </div>
+            </section>
+          </div>
         </div>
-        <p id="world-description">A humble starting point for your world.</p>
-        <button id="world-upgrade" type="button" disabled>Unlock at Level 3 · Costs 1 CP</button>
-        <div class="upgrade-divider" aria-hidden="true"></div>
-        <div class="upgrade-heading">
-          <div><small>NEXT TOOL</small><strong id="tool-name">Bare Hands</strong></div>
-          <span id="tool-rank" class="point-pill">TIER 0</span>
-        </div>
-        <p id="tool-description">Harvest basic blocks by hand.</p>
-        <button id="tool-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
-        <div class="upgrade-divider" aria-hidden="true"></div>
-        <div class="upgrade-heading">
-          <div><small>AUTO UPGRADE</small><strong>Quicker Rhythm</strong></div>
-          <span id="upgrade-points" class="point-pill">0 CP</span>
-        </div>
-        <p>Increase automatic mining from <span id="current-rate">1.0</span> to <span id="next-rate">1.5</span> strikes per second.</p>
-        <button id="speed-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
-      </aside>
+      </section>
 
       <div id="offline-modal" class="modal" hidden>
         <div class="modal-card panel">

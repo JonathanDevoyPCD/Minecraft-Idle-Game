@@ -25,6 +25,12 @@ import {
   type WorldDirection,
   xpRequired,
 } from './game';
+import {
+  getSkillTreeBranch,
+  SKILL_TREE_BRANCHES,
+  SKILL_TREE_NODES,
+  type SkillNodeDefinition,
+} from './skill-tree';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -345,6 +351,7 @@ const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]'
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
 const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
 const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
+const skillTreeGraph = document.querySelector<HTMLElement>('#skill-tree-graph')!;
 let hoveredNode: BlockNode | null = null;
 let xpFlashTimeout = 0;
 let selectedExpansionDirection: WorldDirection = 'north';
@@ -364,6 +371,97 @@ function updateCurrentTool(): void {
   toolIconGroups.forEach((group) => {
     group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
   });
+}
+
+function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' {
+  if (node.prerequisites.length > 0) return 'locked';
+  return state.craftingPoints >= node.cost.craftingPoints ? 'ready' : 'available';
+}
+
+function getSkillNodeTitle(id: string): string {
+  return SKILL_TREE_NODES.find((node) => node.id === id)?.title ?? id;
+}
+
+function renderSkillTree(): void {
+  skillTreeGraph.replaceChildren();
+  const summary = document.createElement('p');
+  summary.className = 'skill-tree-summary';
+  summary.textContent = `${SKILL_TREE_NODES.length} planned nodes · ${SKILL_TREE_BRANCHES.length} branches · Crafting Points unlock the tree`;
+  skillTreeGraph.append(summary);
+
+  const branches = document.createElement('div');
+  branches.className = 'skill-tree-branch-grid';
+  SKILL_TREE_BRANCHES.forEach((branch, index) => {
+    const branchSection = document.createElement('section');
+    branchSection.className = 'skill-tree-branch';
+    branchSection.style.setProperty('--branch-colour', branch.colour);
+
+    const heading = document.createElement('header');
+    heading.className = 'skill-tree-branch-heading';
+    const branchIndex = document.createElement('span');
+    branchIndex.className = 'skill-tree-branch-index';
+    branchIndex.textContent = String(index + 1).padStart(2, '0');
+    const headingCopy = document.createElement('div');
+    const headingTitle = document.createElement('strong');
+    headingTitle.textContent = branch.title;
+    const headingSubtitle = document.createElement('small');
+    headingSubtitle.textContent = branch.subtitle;
+    headingCopy.append(headingTitle, headingSubtitle);
+    heading.append(branchIndex, headingCopy);
+    branchSection.append(heading);
+
+    const nodeList = document.createElement('div');
+    nodeList.className = 'skill-tree-node-list';
+    getSkillTreeBranch(branch.id).forEach((node) => {
+      const stateName = getSkillNodeState(node);
+      const nodeCard = document.createElement('article');
+      nodeCard.className = `skill-tree-node skill-tree-node--${node.kind}`;
+      nodeCard.dataset.state = stateName;
+      nodeCard.dataset.skillNodeId = node.id;
+      nodeCard.setAttribute('aria-label', `${node.title}, ${stateName}`);
+
+      const nodeTopline = document.createElement('div');
+      nodeTopline.className = 'skill-tree-node-topline';
+      const kind = document.createElement('span');
+      kind.className = 'skill-tree-node-kind';
+      kind.textContent = node.kind;
+      const state = document.createElement('span');
+      state.className = 'skill-tree-node-state';
+      state.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
+      nodeTopline.append(kind, state);
+
+      const title = document.createElement('strong');
+      title.textContent = node.title;
+      const description = document.createElement('p');
+      description.textContent = node.description;
+      const effect = document.createElement('span');
+      effect.className = 'skill-tree-node-effect';
+      effect.textContent = node.effect;
+      const consequence = document.createElement('small');
+      consequence.className = 'skill-tree-node-consequence';
+      consequence.textContent = `World: ${node.worldConsequence}`;
+
+      const footer = document.createElement('div');
+      footer.className = 'skill-tree-node-footer';
+      const cost = document.createElement('span');
+      cost.textContent = `${node.cost.craftingPoints} CP`;
+      const rank = document.createElement('span');
+      rank.textContent = node.maxRank > 1 ? `${node.maxRank} ranks` : '1 rank';
+      footer.append(cost, rank);
+
+      const prerequisites = document.createElement('small');
+      prerequisites.className = 'skill-tree-node-prerequisites';
+      prerequisites.textContent = node.prerequisites.length > 0
+        ? `Requires: ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
+        : 'Branch starting point';
+
+      nodeCard.append(nodeTopline, title, description, effect, consequence, footer, prerequisites);
+      nodeList.append(nodeCard);
+    });
+    branchSection.append(nodeList);
+    branches.append(branchSection);
+  });
+  skillTreeGraph.append(branches);
 }
 
 function updateUi(): void {
@@ -534,7 +632,10 @@ canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 function setSkillTreeOpen(open: boolean): void {
   skillTreeOverlay.hidden = !open;
   skillTreeButton.setAttribute('aria-expanded', String(open));
-  if (open) skillTreeClose.focus();
+  if (open) {
+    renderSkillTree();
+    skillTreeClose.focus();
+  }
   else skillTreeButton.focus();
 }
 

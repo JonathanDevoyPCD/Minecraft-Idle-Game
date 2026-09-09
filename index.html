@@ -91,45 +91,27 @@
             <button id="skill-tree-close" class="skill-tree-close" type="button" aria-label="Close skill tree">×</button>
           </header>
 
-          <div class="skill-tree-branches">
-            <section class="skill-branch">
-              <div class="branch-heading"><span class="branch-index">01</span><div><small>WORLD GROWTH</small><strong>Expand the map</strong></div></div>
-              <div class="skill-node">
-                <div class="node-topline"><span class="node-icon">W</span><span id="world-rank" class="point-pill">TIER 0</span></div>
-                <strong id="world-name">One Block</strong>
-                <p id="world-description">A humble starting point for your world.</p>
-                <div id="expansion-directions" class="expansion-directions" hidden>
-                  <small>CHOOSE EXPANSION DIRECTION</small>
-                  <div class="direction-buttons" role="group" aria-label="Choose expansion direction">
-                    <button type="button" data-expansion-direction="north" aria-label="Expand north">↑</button>
-                    <button type="button" data-expansion-direction="east" aria-label="Expand east">→</button>
-                    <button type="button" data-expansion-direction="south" aria-label="Expand south">↓</button>
-                    <button type="button" data-expansion-direction="west" aria-label="Expand west">←</button>
-                  </div>
-                </div>
-                <button id="world-upgrade" type="button" disabled>Unlock at Level 3 · Costs 1 CP</button>
-              </div>
-            </section>
+          <div id="skill-tree-graph" class="skill-tree-graph" aria-live="polite"></div>
 
-            <section class="skill-branch">
-              <div class="branch-heading"><span class="branch-index">02</span><div><small>TOOLS</small><strong>Harvest harder blocks</strong></div></div>
-              <div class="skill-node">
-                <div class="node-topline"><span class="node-icon">T</span><span id="tool-rank" class="point-pill">TIER 0</span></div>
-                <strong id="tool-name">Bare Hands</strong>
-                <p id="tool-description">Harvest basic blocks by hand.</p>
-                <button id="tool-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
-              </div>
-            </section>
-
-            <section class="skill-branch">
-              <div class="branch-heading"><span class="branch-index">03</span><div><small>AUTOMATION</small><strong>Keep the rhythm</strong></div></div>
-              <div class="skill-node">
-                <div class="node-topline"><span class="node-icon">A</span><span id="upgrade-points" class="point-pill">0 CP</span></div>
-                <strong>Quicker Rhythm</strong>
-                <p>Increase automatic mining from <span id="current-rate">1.0</span> to <span id="next-rate">1.5</span> strikes per second.</p>
-                <button id="speed-upgrade" type="button" disabled>Unlock at Level 2 · Costs 1 CP</button>
-              </div>
-            </section>
+          <div class="legacy-upgrade-state" hidden aria-hidden="true">
+            <span id="world-rank">TIER 0</span>
+            <span id="world-name">One Block</span>
+            <span id="world-description">A humble starting point for your world.</span>
+            <div id="expansion-directions">
+              <button type="button" data-expansion-direction="north">↑</button>
+              <button type="button" data-expansion-direction="east">→</button>
+              <button type="button" data-expansion-direction="south">↓</button>
+              <button type="button" data-expansion-direction="west">←</button>
+            </div>
+            <button id="world-upgrade" type="button" disabled>Unlock expansion</button>
+            <span id="tool-rank">TIER 0</span>
+            <span id="tool-name">Bare Hands</span>
+            <span id="tool-description">Harvest basic blocks by hand.</span>
+            <button id="tool-upgrade" type="button" disabled>Unlock tool</button>
+            <span id="upgrade-points">0 CP</span>
+            <span id="current-rate">1.0</span>
+            <span id="next-rate">1.5</span>
+            <button id="speed-upgrade" type="button" disabled>Upgrade speed</button>
           </div>
         </div>
       </section>

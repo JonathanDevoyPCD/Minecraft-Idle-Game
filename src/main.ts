@@ -31,6 +31,7 @@ import {
 import {
   getSkillTreeBranch,
   SKILL_TREE_BRANCHES,
+  SKILL_TREE_BY_ID,
   SKILL_TREE_NODES,
   type SkillNodeDefinition,
 } from './skill-tree';
@@ -464,14 +465,35 @@ function renderSkillTree(): void {
   SKILL_TREE_BRANCHES.forEach((branch, branchIndex) => {
     const angle = branchAngles[branchIndex];
     const nodes = getSkillTreeBranch(branch.id);
-    nodes.forEach((node, nodeIndex) => {
-      const depth = Math.floor(nodeIndex / 3);
-      const arm = nodeIndex % 3 - 1;
-      const nodeAngle = angle + arm * 0.14;
-      const radius = 235 + depth * 82;
-      positions.set(node.id, {
-        x: SKILL_TREE_CENTER + Math.cos(nodeAngle) * radius,
-        y: SKILL_TREE_CENTER + Math.sin(nodeAngle) * radius,
+    const depthById = new Map<string, number>();
+    const getBranchDepth = (node: SkillNodeDefinition): number => {
+      const cachedDepth = depthById.get(node.id);
+      if (cachedDepth !== undefined) return cachedDepth;
+      const sameBranchPrerequisites = node.prerequisites
+        .map((prerequisiteId) => SKILL_TREE_BY_ID.get(prerequisiteId))
+        .filter((prerequisite): prerequisite is SkillNodeDefinition => prerequisite?.branch === branch.id);
+      const depth = sameBranchPrerequisites.length > 0
+        ? Math.max(...sameBranchPrerequisites.map(getBranchDepth)) + 1
+        : 0;
+      depthById.set(node.id, depth);
+      return depth;
+    };
+    const nodesByDepth = new Map<number, SkillNodeDefinition[]>();
+    nodes.forEach((node) => {
+      const depth = getBranchDepth(node);
+      const depthNodes = nodesByDepth.get(depth) ?? [];
+      depthNodes.push(node);
+      nodesByDepth.set(depth, depthNodes);
+    });
+    nodesByDepth.forEach((depthNodes, depth) => {
+      const radius = 220 + depth * 96;
+      depthNodes.forEach((node, depthIndex) => {
+        const spread = depthNodes.length === 1 ? 0 : (depthIndex - (depthNodes.length - 1) / 2) * 0.17;
+        const nodeAngle = angle + spread;
+        positions.set(node.id, {
+          x: SKILL_TREE_CENTER + Math.cos(nodeAngle) * radius,
+          y: SKILL_TREE_CENTER + Math.sin(nodeAngle) * radius,
+        });
       });
     });
   });
@@ -527,6 +549,11 @@ function renderSkillTree(): void {
     if (!position || !branch) return;
     const stateName = getSkillNodeState(node);
     node.prerequisites.forEach((prerequisiteId) => {
+      const prerequisite = SKILL_TREE_BY_ID.get(prerequisiteId);
+      // Cross-branch prerequisites remain enforced in the progression model
+      // and are listed in the inspector, but do not draw disruptive lines
+      // through unrelated branch lanes in the overview graph.
+      if (!prerequisite || prerequisite.branch !== node.branch) return;
       const prerequisitePosition = positions.get(prerequisiteId);
       if (prerequisitePosition) drawEdge(prerequisitePosition, position, branch.colour, stateName);
     });

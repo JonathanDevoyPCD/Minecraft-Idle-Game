@@ -486,7 +486,9 @@ function updateHoverTarget(event: PointerEvent): void {
 
 canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
-    const node = getBlockAtPointer(event);
+    // The hover raycast is the source of truth for left-click handoff. This
+    // keeps a visible block hover from falling back to camera orbit on press.
+    const node = hoveredNode ?? getBlockAtPointer(event);
     if (node) {
       setHoveredNode(node);
       mine(node);
@@ -510,6 +512,7 @@ canvas.addEventListener('pointermove', (event) => {
   orbitPitch = THREE.MathUtils.clamp(orbitPitch + deltaY * 0.006, 0.18, 1.35);
   updateCameraTransform();
 });
+canvas.addEventListener('pointerenter', updateHoverTarget);
 canvas.addEventListener('pointerleave', () => {
   setHoveredNode(null);
 });
@@ -522,6 +525,7 @@ function endOrbit(event: PointerEvent): void {
     // See the pointerdown note above.
   }
   canvas.classList.remove('is-orbiting');
+  updateHoverTarget(event);
 }
 canvas.addEventListener('pointerup', endOrbit);
 canvas.addEventListener('pointercancel', endOrbit);

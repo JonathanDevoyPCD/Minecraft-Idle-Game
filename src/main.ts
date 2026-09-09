@@ -148,11 +148,27 @@ function createBlockNode(
   return node;
 }
 
-const blockNodes: BlockNode[] = [
-  createBlockNode('grass-0-0-0', 'grass', { x: 0, y: 0, z: 0 }, 0),
-  createBlockNode('dirt-1-0-0', 'dirt', { x: 1, y: 0, z: 0 }, 1),
-  createBlockNode('stone-0-0-1', 'stone', { x: 0, y: 0, z: 1 }, 1),
-];
+interface GeneratedBlock {
+  type: BlockType;
+  coordinate: BlockCoordinate;
+}
+
+function generateFirstMeadow(): GeneratedBlock[] {
+  const cells: GeneratedBlock[] = [];
+  for (let x = -1; x <= 1; x += 1) {
+    for (let z = -1; z <= 1; z += 1) {
+      const type = x === 1 && z === 0 ? 'dirt' : x === 0 && z === 1 ? 'stone' : 'grass';
+      cells.push({ type, coordinate: { x, y: 0, z } });
+    }
+  }
+  return cells;
+}
+
+const blockNodes: BlockNode[] = generateFirstMeadow().map(({ type, coordinate }) => {
+  const { x, y, z } = coordinate;
+  const requiredWorldRank = x === 0 && y === 0 && z === 0 ? 0 : 1;
+  return createBlockNode(`${type}-${x}-${y}-${z}`, type, coordinate, requiredWorldRank);
+});
 const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
 const miningTargets: THREE.Mesh[] = [];
 

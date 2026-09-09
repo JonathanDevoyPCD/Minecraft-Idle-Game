@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SKILL_TREE_BRANCHES, SKILL_TREE_BY_ID, SKILL_TREE_NODES } from './skill-tree';
+import { SKILL_TREE_BRANCHES, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES } from './skill-tree';
 
 describe('IdleCraft skill tree model', () => {
   it('contains all seven planned branches', () => {
@@ -15,6 +15,24 @@ describe('IdleCraft skill tree model', () => {
       node.prerequisites.forEach((prerequisite) => {
         expect(SKILL_TREE_BY_ID.has(prerequisite), `${node.id} -> ${prerequisite}`).toBe(true);
       });
+    });
+  });
+
+  it('starts each branch with a discoverable entry node', () => {
+    const entryIds = Object.values(SKILL_TREE_BRANCH_ENTRY_IDS);
+    expect(entryIds).toHaveLength(7);
+    expect(new Set(entryIds).size).toBe(7);
+
+    SKILL_TREE_BRANCHES.forEach((branch) => {
+      const entryId = SKILL_TREE_BRANCH_ENTRY_IDS[branch.id];
+      const entry = SKILL_TREE_BY_ID.get(entryId);
+      expect(entry?.branch).toBe(branch.id);
+      expect(entry?.prerequisites).toEqual([]);
+
+      const firstRealNode = SKILL_TREE_NODES.find(
+        (node) => node.branch === branch.id && node.id !== entryId,
+      );
+      expect(firstRealNode?.prerequisites).toContain(entryId);
     });
   });
 

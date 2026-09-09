@@ -1,4 +1,4 @@
-import { SKILL_TREE_BY_ID, type SkillNodeDefinition } from './skill-tree';
+import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillNodeDefinition } from './skill-tree';
 
 export interface GameState {
   level: number;
@@ -191,6 +191,14 @@ function migrateSkillRanks(parsed: Partial<GameState>): Record<string, number> {
   const worldRank = Math.max(0, Math.floor(Number(parsed.worldRank) || 0));
   if (worldRank > 0) ranks[ADJACENT_BLOCK_NODE_ID] = 1;
   if (worldRank > 1) ranks[SURFACE_3X3_NODE_ID] = 1;
+
+  // Branch entries were introduced after the prototype tree. Reveal the entry
+  // for any branch that already had progress so existing players keep seeing
+  // the path they had already opened without paying again.
+  Object.entries(SKILL_TREE_BRANCH_ENTRY_IDS).forEach(([branch, entryId]) => {
+    const hasBranchProgress = SKILL_TREE_NODES.some((node) => node.branch === branch && node.id !== entryId && ranks[node.id] > 0);
+    if (hasBranchProgress) ranks[entryId] = 1;
+  });
   return ranks;
 }
 

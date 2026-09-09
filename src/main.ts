@@ -30,6 +30,7 @@ import {
 } from './game';
 import {
   getSkillTreeBranch,
+  SKILL_TREE_BRANCH_ENTRY_IDS,
   SKILL_TREE_BRANCHES,
   SKILL_TREE_BY_ID,
   SKILL_TREE_NODES,
@@ -413,6 +414,13 @@ function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 
   return canAffordSkillNode(state, node) ? 'ready' : 'available';
 }
 
+function isSkillNodeVisible(node: SkillNodeDefinition): boolean {
+  if (getSkillNodeRank(state, node.id) > 0) return true;
+  if (SKILL_TREE_BRANCH_ENTRY_IDS[node.branch] === node.id) return true;
+  return node.prerequisites.length > 0
+    && node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0);
+}
+
 function getSkillNodeTitle(id: string): string {
   return SKILL_TREE_NODES.find((node) => node.id === id)?.title ?? id;
 }
@@ -445,12 +453,11 @@ function renderSkillTree(): void {
   skillTreeInspector.hidden = true;
   skillTreeViewport.classList.remove('has-inspector');
   const purchasedRanks = SKILL_TREE_NODES.reduce((total, node) => total + getSkillNodeRank(state, node.id), 0);
-  skillTreeSummary.textContent = `${purchasedRanks}/${SKILL_TREE_NODES.length} ranks · ${state.craftingPoints} CP · ${state.worldPower} World Power`;
+  const discoveredNodes = SKILL_TREE_NODES.filter(isSkillNodeVisible).length;
+  skillTreeSummary.textContent = `${discoveredNodes} discovered · ${purchasedRanks} ranks · ${state.craftingPoints} CP · ${state.worldPower} World Power`;
 
   skillTreeGraph.style.width = `${SKILL_TREE_STAGE_SIZE}px`;
   skillTreeGraph.style.height = `${SKILL_TREE_STAGE_SIZE}px`;
-  skillTreePanX = 0;
-  skillTreePanY = 0;
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('skill-tree-connections');
@@ -518,8 +525,11 @@ function renderSkillTree(): void {
     const angle = branchAngles[branchIndex];
     const branchLabel = document.createElement('div');
     branchLabel.className = 'skill-tree-branch-label';
-    branchLabel.style.left = `${SKILL_TREE_CENTER + Math.cos(angle) * 695}px`;
-    branchLabel.style.top = `${SKILL_TREE_CENTER + Math.sin(angle) * 695}px`;
+    const tangentOffset = branchIndex % 2 === 0 ? 58 : -58;
+    const tangentX = -Math.sin(angle) * tangentOffset;
+    const tangentY = Math.cos(angle) * tangentOffset;
+    branchLabel.style.left = `${SKILL_TREE_CENTER + Math.cos(angle) * 600 + tangentX}px`;
+    branchLabel.style.top = `${SKILL_TREE_CENTER + Math.sin(angle) * 600 + tangentY}px`;
     branchLabel.style.setProperty('--branch-colour', branch.colour);
     const title = document.createElement('strong');
     title.textContent = branch.title;
@@ -544,6 +554,7 @@ function renderSkillTree(): void {
   });
 
   SKILL_TREE_NODES.forEach((node) => {
+    if (!isSkillNodeVisible(node)) return;
     const position = positions.get(node.id);
     const branch = branchById.get(node.branch);
     if (!position || !branch) return;

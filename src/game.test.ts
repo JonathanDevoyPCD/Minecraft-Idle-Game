@@ -21,7 +21,8 @@ describe('IdleCraft progression', () => {
 
   it('routes tree purchases into the existing speed system', () => {
     const state = freshState();
-    addXp(state, 100);
+    addXp(state, 350);
+    expect(buySkillNode(state, 'branch-entry-automation')).toBe(true);
     expect(buySkillNode(state, 'automation-auto-strike')).toBe(true);
     expect(state.skillRanks['automation-auto-strike']).toBe(1);
     expect(state.speedRank).toBe(1);
@@ -47,7 +48,8 @@ describe('IdleCraft progression', () => {
 
   it('keeps tool-family unlocks independent in the skill tree', () => {
     const state = freshState();
-    addXp(state, 350);
+    addXp(state, 750);
+    expect(buySkillNode(state, 'branch-entry-tools-crafting')).toBe(true);
     expect(buySkillNode(state, 'tools-tool-bench')).toBe(true);
     expect(buySkillNode(state, 'tools-wooden-pickaxe')).toBe(true);
     expect(getContextTool(state, 'stone').name).toBe('Wooden Pickaxe');
@@ -72,7 +74,8 @@ describe('IdleCraft progression', () => {
 
   it('uses World Power for the major surface expansion', () => {
     const state = freshState();
-    addXp(state, 350);
+    addXp(state, 750);
+    expect(buySkillNode(state, 'branch-entry-world-growth-biomes')).toBe(true);
     expect(buySkillNode(state, 'world-adjacent-block')).toBe(true);
     expect(state).toMatchObject({ worldRank: 1, worldPower: 1, craftingPoints: 1 });
     expect(buySkillNode(state, 'world-surface-3x3')).toBe(true);

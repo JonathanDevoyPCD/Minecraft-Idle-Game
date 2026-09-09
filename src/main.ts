@@ -138,22 +138,29 @@ function createBlockNode(
   requiredWorldRank: number,
   requiredDirection?: WorldDirection,
 ): BlockNode {
+  const mesh = createBlockMesh(type);
   const node = {
     id,
     type,
     coordinate,
     requiredWorldRank,
     requiredDirection,
-    mesh: createBlockMesh(type),
+    mesh,
     hoverOutline: new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false }),
+      new THREE.EdgesGeometry(mesh.geometry),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.1,
+        depthTest: false,
+        depthWrite: false,
+      }),
     ),
     pulse: 0,
   } satisfies BlockNode;
   node.hoverOutline.visible = false;
-  node.hoverOutline.scale.setScalar(1.012);
-  node.hoverOutline.renderOrder = 2;
+  node.hoverOutline.scale.setScalar(1.02);
+  node.hoverOutline.renderOrder = 10;
   node.mesh.add(node.hoverOutline);
   node.mesh.position.set(
     coordinate.x * BLOCK_SIZE,
@@ -663,9 +670,11 @@ function render(now: number): void {
   }
 
   blockNodes.forEach((node) => {
-    node.pulse = Math.max(0, node.pulse - delta * 5.8);
-    const squash = Math.sin((1 - node.pulse) * Math.PI) * 0.065;
+    node.pulse = Math.max(0, node.pulse - delta * 3.8);
+    const pulse = Math.sin(node.pulse * Math.PI);
+    const squash = pulse * 0.095;
     node.mesh.scale.set(1 + squash, 1 - squash * 0.7, 1 + squash);
+    node.mesh.position.y = node.coordinate.y * BLOCK_SIZE - pulse * 0.035;
   });
   clouds.forEach((cloud, index) => {
     cloud.position.x += delta * (0.045 + index * 0.012);

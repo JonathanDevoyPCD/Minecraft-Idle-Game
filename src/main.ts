@@ -222,9 +222,6 @@ const worldDescriptionEl = document.querySelector('#world-description')!;
 const worldButton = document.querySelector<HTMLButtonElement>('#world-upgrade')!;
 const currentRateEl = document.querySelector('#current-rate')!;
 const nextRateEl = document.querySelector('#next-rate')!;
-const worldEyebrowEl = document.querySelector('#world-eyebrow')!;
-const worldTitleEl = document.querySelector('#world-title')!;
-const hintEl = document.querySelector('#hint')!;
 const totalXpCard = totalXpEl.closest<HTMLElement>('.stat-card')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
@@ -254,18 +251,6 @@ function updateCurrentTool(): void {
   toolIconGroups.forEach((group) => {
     group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
   });
-}
-
-function updateWorldCopy(): void {
-  const worldTier = getWorldTier(state);
-  const targetDefinition = hoveredNode ? BLOCK_DEFINITIONS[hoveredNode.type] : null;
-  worldEyebrowEl.textContent = targetDefinition
-    ? `BLOCK TARGET · ${targetDefinition.name.toUpperCase()}`
-    : `WORLD ${state.worldRank === 0 ? 'SEED' : 'GROWTH'} · ${worldTier.name.toUpperCase()}`;
-  worldTitleEl.textContent = targetDefinition ? targetDefinition.name : state.worldRank === 0 ? 'Grass Block' : worldTier.name;
-  hintEl.textContent = targetDefinition
-    ? `Harvest ${targetDefinition.resourceName.toLowerCase()} with ${getContextTool(state, hoveredNode!.type).name}`
-    : `${worldTier.blockCount} block${worldTier.blockCount === 1 ? '' : 's'} ready · Click a block to harvest`;
 }
 
 function updateUi(): void {
@@ -316,7 +301,6 @@ function updateUi(): void {
       : state.craftingPoints < nextWorld.cost
         ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
         : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
-  updateWorldCopy();
   updateCurrentTool();
 }
 
@@ -367,7 +351,6 @@ function updateHoverTarget(event: PointerEvent): void {
   const nextNode = hit ? blockByMesh.get(hit.object) ?? null : null;
   if (nextNode === hoveredNode) return;
   hoveredNode = nextNode;
-  updateWorldCopy();
   updateCurrentTool();
 }
 
@@ -402,7 +385,6 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerleave', () => {
   hoveredNode = null;
-  updateWorldCopy();
   updateCurrentTool();
 });
 function endOrbit(event: PointerEvent): void {

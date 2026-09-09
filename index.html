@@ -98,6 +98,27 @@
 
           <div id="skill-tree-viewport" class="skill-tree-viewport">
             <div id="skill-tree-graph" class="skill-tree-graph" aria-live="polite"></div>
+            <aside id="skill-tree-inspector" class="skill-tree-inspector panel" aria-live="polite" hidden>
+              <div class="skill-tree-inspector-heading">
+                <div class="skill-tree-inspector-icon"><img id="skill-tree-inspector-image" alt=""></div>
+                <div>
+                  <small id="skill-tree-inspector-branch">SELECTED NODE</small>
+                  <h3 id="skill-tree-inspector-title">Select an unlock</h3>
+                </div>
+                <button id="skill-tree-inspector-close" type="button" aria-label="Close node details">×</button>
+              </div>
+              <p id="skill-tree-inspector-description"></p>
+              <div class="skill-tree-inspector-effect">
+                <span>EFFECT</span>
+                <strong id="skill-tree-inspector-effect"></strong>
+              </div>
+              <p id="skill-tree-inspector-consequence" class="skill-tree-inspector-consequence"></p>
+              <small id="skill-tree-inspector-prerequisites" class="skill-tree-inspector-prerequisites"></small>
+              <div class="skill-tree-inspector-footer">
+                <span id="skill-tree-inspector-state"></span>
+                <span id="skill-tree-inspector-cost"></span>
+              </div>
+            </aside>
             <div class="skill-tree-zoom-controls panel" aria-label="Skill tree zoom controls">
               <button id="skill-tree-zoom-out" type="button" aria-label="Zoom out">−</button>
               <span id="skill-tree-zoom-level">34%</span>

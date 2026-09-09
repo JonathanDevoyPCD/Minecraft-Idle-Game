@@ -31,6 +31,7 @@ import {
   SKILL_TREE_NODES,
   type SkillNodeDefinition,
 } from './skill-tree';
+import { getSkillNodeIconName } from './skill-tree-icons';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -354,6 +355,17 @@ const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-cl
 const skillTreeViewport = document.querySelector<HTMLElement>('#skill-tree-viewport')!;
 const skillTreeGraph = document.querySelector<HTMLElement>('#skill-tree-graph')!;
 const skillTreeSummary = document.querySelector<HTMLElement>('#skill-tree-summary')!;
+const skillTreeInspector = document.querySelector<HTMLElement>('#skill-tree-inspector')!;
+const skillTreeInspectorImage = document.querySelector<HTMLImageElement>('#skill-tree-inspector-image')!;
+const skillTreeInspectorBranch = document.querySelector<HTMLElement>('#skill-tree-inspector-branch')!;
+const skillTreeInspectorTitle = document.querySelector<HTMLElement>('#skill-tree-inspector-title')!;
+const skillTreeInspectorDescription = document.querySelector<HTMLElement>('#skill-tree-inspector-description')!;
+const skillTreeInspectorEffect = document.querySelector<HTMLElement>('#skill-tree-inspector-effect')!;
+const skillTreeInspectorConsequence = document.querySelector<HTMLElement>('#skill-tree-inspector-consequence')!;
+const skillTreeInspectorPrerequisites = document.querySelector<HTMLElement>('#skill-tree-inspector-prerequisites')!;
+const skillTreeInspectorState = document.querySelector<HTMLElement>('#skill-tree-inspector-state')!;
+const skillTreeInspectorCost = document.querySelector<HTMLElement>('#skill-tree-inspector-cost')!;
+const skillTreeInspectorClose = document.querySelector<HTMLButtonElement>('#skill-tree-inspector-close')!;
 const skillTreeZoomOutButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-out')!;
 const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-in')!;
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
@@ -398,14 +410,6 @@ function getSkillNodeTitle(id: string): string {
   return SKILL_TREE_NODES.find((node) => node.id === id)?.title ?? id;
 }
 
-function getSkillNodeGlyph(node: SkillNodeDefinition): string {
-  if (node.kind === 'capstone') return '✦';
-  if (node.kind === 'milestone') return '◆';
-  if (node.kind === 'choice') return '◇';
-  if (node.kind === 'unlock') return '◈';
-  return '•';
-}
-
 function updateSkillTreeView(): void {
   skillTreeGraph.style.transform = `translate(calc(-50% + ${skillTreePanX}px), calc(-50% + ${skillTreePanY}px)) scale(${skillTreeZoom})`;
   skillTreeZoomLevel.textContent = `${Math.round(skillTreeZoom * 100)}%`;
@@ -431,6 +435,8 @@ function changeSkillTreeZoom(direction: number): void {
 
 function renderSkillTree(): void {
   skillTreeGraph.replaceChildren();
+  skillTreeInspector.hidden = true;
+  skillTreeViewport.classList.remove('has-inspector');
   skillTreeSummary.textContent = `${SKILL_TREE_NODES.length} unlocks · ${SKILL_TREE_BRANCHES.length} paths · Crafting Points reveal the next step`;
 
   skillTreeGraph.style.width = `${SKILL_TREE_STAGE_SIZE}px`;
@@ -529,17 +535,38 @@ function renderSkillTree(): void {
     nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. ${stateName}. Cost ${node.cost.craftingPoints} Crafting Points.`);
     nodeOrb.title = `${node.title} · ${node.effect}${node.prerequisites.length > 0 ? ` · Requires ${node.prerequisites.map(getSkillNodeTitle).join(', ')}` : ''}`;
 
-    const glyph = document.createElement('span');
-    glyph.className = 'skill-tree-orb-glyph';
-    glyph.textContent = getSkillNodeGlyph(node);
+    const icon = document.createElement('img');
+    icon.className = 'skill-tree-orb-icon';
+    icon.src = `${import.meta.env.BASE_URL}assets/skill-tree/${getSkillNodeIconName(node)}`;
+    icon.alt = '';
+    icon.draggable = false;
     const label = document.createElement('span');
     label.className = 'skill-tree-orb-label';
     label.textContent = node.title;
-    nodeOrb.append(glyph, label);
+    nodeOrb.append(icon, label);
+    nodeOrb.addEventListener('click', () => showSkillNodeDetails(node, branch));
     skillTreeGraph.append(nodeOrb);
   });
 
   updateSkillTreeView();
+}
+
+function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TREE_BRANCHES[number]): void {
+  const stateName = getSkillNodeState(node);
+  skillTreeInspectorImage.src = `${import.meta.env.BASE_URL}assets/skill-tree/${getSkillNodeIconName(node)}`;
+  skillTreeInspectorBranch.textContent = branch.title;
+  skillTreeInspectorTitle.textContent = node.title;
+  skillTreeInspectorDescription.textContent = node.description;
+  skillTreeInspectorEffect.textContent = node.effect;
+  skillTreeInspectorConsequence.textContent = `World impact: ${node.worldConsequence}`;
+  skillTreeInspectorPrerequisites.textContent = node.prerequisites.length > 0
+    ? `Requires ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
+    : 'Starting point for this branch';
+  skillTreeInspectorState.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
+  skillTreeInspectorCost.textContent = `${node.cost.craftingPoints} CP`;
+  skillTreeInspector.dataset.state = stateName;
+  skillTreeViewport.classList.add('has-inspector');
+  skillTreeInspector.hidden = false;
 }
 
 function updateUi(): void {
@@ -726,13 +753,17 @@ skillTreeOverlay.addEventListener('click', (event) => {
 
 skillTreeZoomOutButton.addEventListener('click', () => changeSkillTreeZoom(-1));
 skillTreeZoomInButton.addEventListener('click', () => changeSkillTreeZoom(1));
+skillTreeInspectorClose.addEventListener('click', () => {
+  skillTreeInspector.hidden = true;
+  skillTreeViewport.classList.remove('has-inspector');
+});
 skillTreeViewport.addEventListener('wheel', (event) => {
   event.preventDefault();
   changeSkillTreeZoom(event.deltaY < 0 ? 1 : -1);
 }, { passive: false });
 skillTreeViewport.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 && event.button !== 1) return;
-  if ((event.target as Element).closest('.skill-tree-orb')) return;
+  if ((event.target as Element).closest('.skill-tree-orb, .skill-tree-inspector')) return;
   event.preventDefault();
   isPanningSkillTree = true;
   lastSkillTreePanX = event.clientX;

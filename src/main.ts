@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
+import { CloudCell, createCloudGeometry } from './cloud-geometry';
 import {
   SAVE_KEY,
   SPEED_RATES,
@@ -281,6 +282,12 @@ const viewRight = new THREE.Vector3(1, 0, -1).normalize();
 const viewUp = new THREE.Vector3(-1, 2, -1).normalize();
 const viewBack = new THREE.Vector3(-1, -1, -1).normalize();
 
+const CLOUD_CELLS: readonly CloudCell[] = [
+  [-1, 0, 0],
+  [0, 0, 0],
+  [1, 0, 0],
+];
+
 function createCloud(screenX: number, screenY: number): THREE.Group {
   const cloud = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({
@@ -289,16 +296,9 @@ function createCloud(screenX: number, screenY: number): THREE.Group {
     transparent: true,
     opacity: 0.1,
     depthWrite: false,
+    side: THREE.FrontSide,
   });
-  [[-1, 0, 0], [0, 0, 0], [1, 0, 0]]
-    .forEach(([cx, cy, cz]) => {
-      const piece = new THREE.Mesh(
-        new THREE.BoxGeometry(CLOUD_BLOCK_SIZE, CLOUD_BLOCK_HEIGHT, CLOUD_BLOCK_SIZE),
-        material,
-      );
-      piece.position.set(cx * CLOUD_BLOCK_SIZE, cy * CLOUD_BLOCK_HEIGHT, cz * CLOUD_BLOCK_SIZE);
-      cloud.add(piece);
-    });
+  cloud.add(new THREE.Mesh(createCloudGeometry(CLOUD_CELLS, CLOUD_BLOCK_SIZE, CLOUD_BLOCK_HEIGHT), material));
   cloud.position
     .addScaledVector(viewRight, screenX)
     .addScaledVector(viewUp, screenY)

@@ -3,19 +3,23 @@ import './style.css';
 import {
   SAVE_KEY,
   SPEED_RATES,
+  BLOCK_DEFINITIONS,
   addXp,
   buyWorldExpansion,
   buySpeedUpgrade,
   buyToolUpgrade,
   calculateOfflineXp,
   getAutoRate,
-  getHarvestPower,
+  getContextTool,
   getTool,
   getWorldTier,
+  harvestResource,
   loadState,
   saveState,
   TOOL_TIERS,
+  TOOL_KIND_PROFILES,
   WORLD_TIERS,
+  type BlockType,
   xpRequired,
 } from './game';
 
@@ -58,7 +62,7 @@ scene.add(sun);
 
 const BLOCK_SIZE = 0.9;
 const shadowPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(BLOCK_SIZE * 2.7, BLOCK_SIZE * 2.7),
+  new THREE.PlaneGeometry(BLOCK_SIZE * 4.2, BLOCK_SIZE * 4.2),
   new THREE.ShadowMaterial({ color: 0x1d7288, opacity: 0.17 }),
 );
 shadowPlane.rotation.x = -Math.PI / 2;
@@ -67,7 +71,7 @@ shadowPlane.receiveShadow = true;
 scene.add(shadowPlane);
 
 const shadowBase = new THREE.Mesh(
-  new THREE.PlaneGeometry(BLOCK_SIZE * 3.2, BLOCK_SIZE * 3.2),
+  new THREE.PlaneGeometry(BLOCK_SIZE * 4.8, BLOCK_SIZE * 4.8),
   new THREE.MeshBasicMaterial({ color: 0x2b879c, transparent: true, opacity: 0.07, depthWrite: false }),
 );
 shadowBase.rotation.x = -Math.PI / 2;
@@ -76,8 +80,6 @@ scene.add(shadowBase);
 
 const world = new THREE.Group();
 scene.add(world);
-const block = new THREE.Group();
-world.add(block);
 
 function loadBlockTexture(fileName: string): THREE.Texture {
   const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/blocks/${fileName}`);
@@ -94,13 +96,14 @@ const dirtTexture = loadBlockTexture('dirt.png');
 const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color: 0x82bd4a, roughness: 1 });
 const grassSideMaterial = new THREE.MeshStandardMaterial({ map: grassSideTexture, roughness: 1 });
 const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
+const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x858d8f, roughness: 1 });
 const cube = new THREE.Mesh(
   new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
   [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial],
 );
 cube.castShadow = true;
 cube.receiveShadow = true;
-block.add(cube);
+world.add(cube);
 
 const neighborBlock = new THREE.Mesh(
   new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
@@ -112,12 +115,40 @@ neighborBlock.receiveShadow = true;
 neighborBlock.visible = false;
 world.add(neighborBlock);
 
-const miningTargets: THREE.Mesh[] = [cube];
+const stoneBlock = new THREE.Mesh(
+  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
+  [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial],
+);
+stoneBlock.position.z = BLOCK_SIZE;
+stoneBlock.castShadow = true;
+stoneBlock.receiveShadow = true;
+stoneBlock.visible = false;
+world.add(stoneBlock);
+
+interface BlockNode {
+  id: string;
+  type: BlockType;
+  mesh: THREE.Mesh;
+  pulse: number;
+}
+
+const blockNodes: BlockNode[] = [
+  { id: 'grass-0', type: 'grass', mesh: cube, pulse: 0 },
+  { id: 'dirt-1', type: 'dirt', mesh: neighborBlock, pulse: 0 },
+  { id: 'stone-2', type: 'stone', mesh: stoneBlock, pulse: 0 },
+];
+const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
+const miningTargets: THREE.Mesh[] = [];
 
 function updateWorldScene(): void {
   const isExpanded = state.worldRank >= 1;
-  neighborBlock.visible = isExpanded;
-  if (isExpanded && !miningTargets.includes(neighborBlock)) miningTargets.push(neighborBlock);
+  blockNodes.forEach((node, index) => {
+    node.mesh.visible = index === 0 || isExpanded;
+  });
+  miningTargets.length = 0;
+  blockNodes.forEach((node) => {
+    if (node.mesh.visible) miningTargets.push(node.mesh);
+  });
 }
 
 const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
@@ -158,7 +189,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 // Continuous zoom replaces the old six-step preset list. The very small floor
 // keeps the orthographic camera numerically stable while remaining effectively
-// unlimited for the world sizes this prototype can reach.
+// unlimited for the world sizes this first game build can reach.
 const MIN_ZOOM = 0.005;
 const MAX_ZOOM = 2.4;
 const ZOOM_STEP = 1.15;
@@ -168,7 +199,6 @@ const PAN_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown'
 let isOrbiting = false;
 let lastOrbitX = 0;
 let lastOrbitY = 0;
-let pulse = 0;
 let lastAutoHit = performance.now();
 let state = loadState(localStorage);
 let isResetting = false;
@@ -198,11 +228,26 @@ const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
 const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
 const zoomLevelEl = document.querySelector('#zoom-level')!;
+const currentToolEl = document.querySelector('#current-tool')!;
+const currentToolHintEl = document.querySelector('#current-tool-hint')!;
+const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
+let hoveredNode: BlockNode | null = null;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
   document.querySelector('#offline-xp')!.textContent = `${offlineXp.toLocaleString()} XP`;
   offlineModal.hidden = false;
+}
+
+function updateCurrentTool(): void {
+  const profile = hoveredNode ? getContextTool(state, hoveredNode.type) : TOOL_KIND_PROFILES.hand;
+  currentToolEl.textContent = profile.name;
+  currentToolHintEl.textContent = hoveredNode
+    ? `${BLOCK_DEFINITIONS[hoveredNode.type].resourceName} · ${profile.harvestPower} XP/strike`
+    : 'Point at a block';
+  toolIconGroups.forEach((group) => {
+    group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
+  });
 }
 
 function updateUi(): void {
@@ -219,7 +264,7 @@ function updateUi(): void {
   nextRateEl.textContent = maxed ? 'MAX' : SPEED_RATES[state.speedRank + 1].toFixed(1);
   speedButton.disabled = state.level < 2 || state.craftingPoints < 1 || maxed;
   speedButton.textContent = maxed
-    ? 'Maximum prototype speed reached'
+    ? 'Maximum speed reached'
     : state.level < 2
       ? 'Unlock at Level 2 · Costs 1 CP'
       : state.craftingPoints < 1
@@ -233,7 +278,7 @@ function updateUi(): void {
   toolDescriptionEl.textContent = tool.description;
   toolButton.disabled = toolMaxed || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost;
   toolButton.textContent = toolMaxed
-    ? 'All prototype tools unlocked'
+    ? 'All available tools unlocked'
     : state.level < nextTool.requiredLevel
       ? `Unlock at Level ${nextTool.requiredLevel} · Costs ${nextTool.cost} CP`
       : state.craftingPoints < nextTool.cost
@@ -247,29 +292,34 @@ function updateUi(): void {
   worldDescriptionEl.textContent = worldTier.description;
   worldButton.disabled = worldMaxed || state.level < nextWorld.requiredLevel || state.craftingPoints < nextWorld.cost;
   worldButton.textContent = worldMaxed
-    ? 'All prototype expansions unlocked'
+    ? 'All available expansions unlocked'
     : state.level < nextWorld.requiredLevel
       ? `Unlock at Level ${nextWorld.requiredLevel} · Costs ${nextWorld.cost} CP`
       : state.craftingPoints < nextWorld.cost
         ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
         : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
+  updateCurrentTool();
   upgradePanel.classList.toggle('is-unlocked', state.level >= 2);
 }
 
-function floatingXp(manual: boolean, amount: number): void {
+function floatingXp(manual: boolean, amount: number, worldPoint: THREE.Vector3): void {
   const label = document.createElement('span');
   label.className = `floating-xp${manual ? ' manual' : ''}`;
   label.textContent = `+${amount} XP`;
   label.style.setProperty('--drift', `${(Math.random() - 0.5) * 70}px`);
+  const screenPoint = worldPoint.clone().project(camera);
+  label.style.left = `${(screenPoint.x + 1) * window.innerWidth / 2}px`;
+  label.style.top = `${(1 - screenPoint.y) * window.innerHeight / 2}px`;
   floatLayer.append(label);
   label.addEventListener('animationend', () => label.remove());
 }
 
-function mine(manual = false): void {
-  const harvestPower = getHarvestPower(state);
+function mine(node: BlockNode, manual = false): void {
+  const harvestPower = getContextTool(state, node.type).harvestPower;
   const levelUps = addXp(state, harvestPower);
-  pulse = 1;
-  floatingXp(manual, harvestPower);
+  node.pulse = 1;
+  harvestResource(state, node.type);
+  floatingXp(manual, harvestPower, node.mesh.position);
   if (levelUps > 0) {
     document.body.classList.add('level-up');
     window.setTimeout(() => document.body.classList.remove('level-up'), 900);
@@ -283,7 +333,27 @@ function handleCanvasPointer(event: PointerEvent): void {
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  if (raycaster.intersectObjects(miningTargets).length > 0) mine(true);
+  const hit = raycaster.intersectObjects(miningTargets)[0];
+  if (hit) {
+    const node = blockByMesh.get(hit.object);
+    if (node) {
+      hoveredNode = node;
+      updateCurrentTool();
+      mine(node, true);
+    }
+  }
+}
+
+function updateHoverTarget(event: PointerEvent): void {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(miningTargets)[0];
+  const nextNode = hit ? blockByMesh.get(hit.object) ?? null : null;
+  if (nextNode === hoveredNode) return;
+  hoveredNode = nextNode;
+  updateCurrentTool();
 }
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -303,7 +373,10 @@ canvas.addEventListener('pointerdown', (event) => {
   handleCanvasPointer(event);
 });
 canvas.addEventListener('pointermove', (event) => {
-  if (!isOrbiting) return;
+  if (!isOrbiting) {
+    updateHoverTarget(event);
+    return;
+  }
   const deltaX = event.clientX - lastOrbitX;
   const deltaY = event.clientY - lastOrbitY;
   lastOrbitX = event.clientX;
@@ -311,6 +384,10 @@ canvas.addEventListener('pointermove', (event) => {
   orbitYaw -= deltaX * 0.008;
   orbitPitch = THREE.MathUtils.clamp(orbitPitch - deltaY * 0.006, 0.18, 1.35);
   updateCameraTransform();
+});
+canvas.addEventListener('pointerleave', () => {
+  hoveredNode = null;
+  updateCurrentTool();
 });
 function endOrbit(event: PointerEvent): void {
   if (!isOrbiting) return;
@@ -325,11 +402,11 @@ function endOrbit(event: PointerEvent): void {
 canvas.addEventListener('pointerup', endOrbit);
 canvas.addEventListener('pointercancel', endOrbit);
 canvas.addEventListener('contextmenu', (event) => event.preventDefault());
-document.querySelector('#mine-button')!.addEventListener('click', () => mine(true));
+document.querySelector('#mine-button')!.addEventListener('click', () => mine(blockNodes[0], true));
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
     event.preventDefault();
-    mine(true);
+    mine(blockNodes[0], true);
   }
   if (PAN_KEYS.has(event.code)) {
     event.preventDefault();
@@ -367,7 +444,7 @@ document.querySelector('#offline-close')!.addEventListener('click', () => {
 });
 
 document.querySelector('#reset-button')!.addEventListener('click', () => {
-  if (window.confirm('Reset all IdleCraft prototype progress?')) {
+  if (window.confirm('Reset all IdleCraft progress?')) {
     isResetting = true;
     localStorage.removeItem(SAVE_KEY);
     window.location.reload();
@@ -438,14 +515,15 @@ function render(now: number): void {
   const interval = 1000 / getAutoRate(state);
   if (now - lastAutoHit >= interval) {
     const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));
-    for (let i = 0; i < hits; i += 1) mine(false);
+    for (let i = 0; i < hits; i += 1) mine(blockNodes[0], false);
     lastAutoHit += hits * interval;
   }
 
-  pulse = Math.max(0, pulse - delta * 5.8);
-  const squash = Math.sin((1 - pulse) * Math.PI) * 0.065;
-  block.scale.set(1 + squash, 1 - squash * 0.7, 1 + squash);
-  block.position.y = Math.sin(now * 0.0008) * 0.05;
+  blockNodes.forEach((node) => {
+    node.pulse = Math.max(0, node.pulse - delta * 5.8);
+    const squash = Math.sin((1 - node.pulse) * Math.PI) * 0.065;
+    node.mesh.scale.set(1 + squash, 1 - squash * 0.7, 1 + squash);
+  });
   clouds.forEach((cloud, index) => {
     cloud.position.x += delta * (0.045 + index * 0.012);
     if (cloud.position.x > 6) cloud.position.x = -6;

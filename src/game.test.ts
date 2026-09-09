@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, freshState, getAutoRate, getHarvestPower, xpRequired } from './game';
+import { addXp, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, freshState, getAutoRate, getContextTool, getHarvestPower, harvestResource, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -25,6 +25,22 @@ describe('IdleCraft progression', () => {
     expect(buyToolUpgrade(state)).toBe(true);
     expect(state.toolRank).toBe(1);
     expect(getHarvestPower(state)).toBe(2);
+  });
+
+  it('selects the right tool form for each block family', () => {
+    const state = freshState();
+    expect(getContextTool(state, 'grass').name).toBe('Hand');
+    addXp(state, 100);
+    buyToolUpgrade(state);
+    expect(getContextTool(state, 'grass').name).toBe('Wooden Shovel');
+    expect(getContextTool(state, 'stone').name).toBe('Wooden Pickaxe');
+  });
+
+  it('keeps harvested resources independent by block type', () => {
+    const state = freshState();
+    harvestResource(state, 'dirt');
+    harvestResource(state, 'stone', 2);
+    expect(state.resources).toEqual({ dirt: 1, cobblestone: 2 });
   });
 
   it('expands the world after the first growth milestone', () => {

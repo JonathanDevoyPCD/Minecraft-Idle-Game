@@ -6,20 +6,37 @@ export interface GameState {
   speedRank: number;
   toolRank: number;
   worldRank: number;
+  resources: Record<string, number>;
   lastSavedAt: number;
 }
+
+export type ToolKind = 'hand' | 'pickaxe' | 'shovel' | 'axe';
+export type BlockType = 'grass' | 'dirt' | 'stone';
+
+export const TOOL_KIND_PROFILES = {
+  hand: { kind: 'hand', name: 'Hand', harvestPower: 1, description: 'Gather simple blocks by hand.' },
+  pickaxe: { kind: 'pickaxe', name: 'Pickaxe', harvestPower: 2, description: 'Breaks stone and reveals deeper resources.' },
+  shovel: { kind: 'shovel', name: 'Shovel', harvestPower: 2, description: 'Moves dirt and harvests soft ground quickly.' },
+  axe: { kind: 'axe', name: 'Axe', harvestPower: 2, description: 'Chops wood and gathers forest materials.' },
+} as const;
+
+export const BLOCK_DEFINITIONS = {
+  grass: { name: 'Grass Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', description: 'Soft ground ready for planting and expansion.' },
+  dirt: { name: 'Dirt Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', description: 'Loose earth gathered from the first meadow.' },
+  stone: { name: 'Stone Block', requiredTool: 'pickaxe', resource: 'cobblestone', resourceName: 'Cobblestone', description: 'A sturdy block that rewards a pickaxe.' },
+} as const;
 
 export const SAVE_KEY = 'idlecraft-save-v1';
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
 export const TOOL_TIERS = [
-  { name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
-  { name: 'Wooden Pickaxe', requiredLevel: 2, cost: 1, harvestPower: 2, description: 'Harvests 2 XP per strike and unlocks tougher blocks.' },
-  { name: 'Stone Pickaxe', requiredLevel: 4, cost: 2, harvestPower: 3, description: 'Harvests 3 XP per strike and reaches deeper materials.' },
-  { name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
+  { kind: 'hand', material: 'Bare', name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
+  { kind: 'pickaxe', material: 'Wooden', name: 'Wooden Pickaxe', requiredLevel: 2, cost: 1, harvestPower: 2, description: 'Harvests 2 XP per strike and unlocks wooden tool forms.' },
+  { kind: 'pickaxe', material: 'Stone', name: 'Stone Pickaxe', requiredLevel: 4, cost: 2, harvestPower: 3, description: 'Harvests 3 XP per strike and reaches deeper materials.' },
+  { kind: 'pickaxe', material: 'Iron', name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
 ] as const;
 export const WORLD_TIERS = [
   { name: 'One Block', requiredLevel: 1, cost: 0, blockCount: 1, description: 'A humble starting point for your world.' },
-  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 2, description: 'Add a neighboring dirt block and begin growing outward.' },
+  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 3, description: 'Add dirt and stone neighbors, then begin growing outward.' },
 ] as const;
 
 export function freshState(now = Date.now()): GameState {
@@ -31,6 +48,7 @@ export function freshState(now = Date.now()): GameState {
     speedRank: 0,
     toolRank: 0,
     worldRank: 0,
+    resources: { dirt: 0, cobblestone: 0 },
     lastSavedAt: now,
   };
 }
@@ -76,6 +94,19 @@ export function getHarvestPower(state: GameState): number {
   return getTool(state).harvestPower;
 }
 
+export function getContextTool(state: GameState, blockType: BlockType) {
+  const requiredTool = BLOCK_DEFINITIONS[blockType].requiredTool;
+  if (state.toolRank === 0) return TOOL_KIND_PROFILES.hand;
+  const tier = getTool(state);
+  const profile = TOOL_KIND_PROFILES[requiredTool];
+  return { ...profile, name: `${tier.material} ${profile.name}`, harvestPower: tier.harvestPower };
+}
+
+export function harvestResource(state: GameState, blockType: BlockType, amount = 1): void {
+  const resource = BLOCK_DEFINITIONS[blockType].resource;
+  state.resources[resource] = (state.resources[resource] ?? 0) + amount;
+}
+
 export function buyToolUpgrade(state: GameState): boolean {
   const nextTool = TOOL_TIERS[state.toolRank + 1];
   if (!nextTool || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost) {
@@ -117,6 +148,10 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
       toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
       worldRank: Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0)),
+      resources: {
+        dirt: Math.max(0, Number(parsed.resources?.dirt) || 0),
+        cobblestone: Math.max(0, Number(parsed.resources?.cobblestone) || 0),
+      },
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
   } catch {

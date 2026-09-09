@@ -48,6 +48,32 @@
           <div><small>TOTAL XP</small><strong id="total-xp">0</strong></div>
         </article>
 
+        <article class="tool-card panel" aria-live="polite" aria-label="Current tool">
+          <span id="tool-icon" class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="presentation">
+              <g data-tool-icon="hand">
+                <path d="M11 24V13h5v-6h5v11h3V4h5v14h3V8h5v14h3v10l-9 10H19l-8-8Z" fill="#e6a36c" stroke="#8a4d2d" stroke-width="3" stroke-linejoin="round" />
+                <path d="M16 29h17" fill="none" stroke="#fff1c5" stroke-width="2" opacity=".75" />
+              </g>
+              <g data-tool-icon="pickaxe">
+                <path d="M21 12h6v31h-6z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M7 8h34v6H7z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
+                <path d="M10 14h8l4-6h5l4 6h7" fill="none" stroke="#46545a" stroke-width="3" />
+              </g>
+              <g data-tool-icon="shovel">
+                <path d="M22 10h5v30h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M18 7h13v6H18z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
+                <path d="M13 34h23l-4 9H17Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
+              </g>
+              <g data-tool-icon="axe">
+                <path d="M22 9h5v34h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M25 8h13v6H31v11h-6Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
+              </g>
+            </svg>
+          </span>
+          <div><small>CURRENT TOOL</small><strong id="current-tool">Hand</strong><span id="current-tool-hint">Point at a block</span></div>
+        </article>
+
         <button id="mine-button" class="mine-button" type="button">
           <span class="mine-icon">✊</span>
           <span><strong>MINE BLOCK</strong><small>Click or press SPACE</small></span>

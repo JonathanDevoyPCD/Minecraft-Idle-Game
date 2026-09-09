@@ -157,8 +157,9 @@ function generateFirstMeadow(): GeneratedBlock[] {
   const cells: GeneratedBlock[] = [];
   for (let x = -1; x <= 1; x += 1) {
     for (let z = -1; z <= 1; z += 1) {
-      const type = x === 1 && z === 0 ? 'dirt' : x === 0 && z === 1 ? 'stone' : 'grass';
-      cells.push({ type, coordinate: { x, y: 0, z } });
+      cells.push({ type: 'grass', coordinate: { x, y: 0, z } });
+      cells.push({ type: 'dirt', coordinate: { x, y: -1, z } });
+      cells.push({ type: 'stone', coordinate: { x, y: -2, z } });
     }
   }
   return cells;

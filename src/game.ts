@@ -36,7 +36,7 @@ export const TOOL_TIERS = [
 ] as const;
 export const WORLD_TIERS = [
   { name: 'One Block', requiredLevel: 1, cost: 0, blockCount: 1, description: 'A humble starting point for your world.' },
-  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 9, description: 'Grow a connected 3×3 meadow and begin building outward.' },
+  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 27, description: 'Grow a connected 3×3 meadow with dirt and stone beneath.' },
 ] as const;
 
 export function freshState(now = Date.now()): GameState {

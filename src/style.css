@@ -145,7 +145,7 @@ button { font: inherit; }
 .skill-tree-viewport.is-panning { cursor: grabbing; }
 .skill-tree-graph { position: absolute; top: 50%; left: 50%; transform-origin: center; }
 .skill-tree-connections { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.skill-tree-edge { fill: none; stroke: var(--branch-colour); stroke-width: 3; stroke-linecap: round; opacity: .48; }
+.skill-tree-edge { fill: none; stroke: var(--branch-colour); stroke-width: 3; stroke-linecap: round; opacity: .48; transition: opacity .3s ease-in-out, filter .3s ease-in-out, stroke-width .3s ease-in-out; }
 .skill-tree-edge[data-state='locked'] { stroke: #8d9588; stroke-dasharray: 5 8; opacity: .35; }
 .skill-tree-core { position: absolute; z-index: 2; display: flex; width: 112px; height: 112px; flex-direction: column; justify-content: center; align-items: center; gap: 4px; transform: translate(-50%, -50%); color: var(--ink); border: 4px solid #f4c45c; border-radius: 50%; background: #fff4c9; box-shadow: 0 0 0 8px rgba(255,244,201,.46), inset 0 2px 0 rgba(255,255,255,.9), 0 5px 0 rgba(89,51,26,.16); font-size: 10px; font-weight: 900; letter-spacing: .08em; }
 .skill-tree-core-glyph { color: #df8c2f; font-size: 29px; line-height: 1; }
@@ -156,7 +156,7 @@ button { font: inherit; }
 .skill-tree-viewport.has-branch-focus .skill-tree-orb:not(.is-branch-focused), .skill-tree-viewport.has-branch-focus .skill-tree-edge:not(.is-branch-focused) { filter: grayscale(.8); opacity: .16; }
 .skill-tree-viewport.has-branch-focus .skill-tree-orb.is-branch-focused { filter: none; opacity: 1; }
 .skill-tree-viewport.has-branch-focus .skill-tree-edge.is-branch-focused { stroke-width: 4; opacity: .9; }
-.skill-tree-orb { position: absolute; z-index: 3; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; transform: translate(-50%, -50%); color: #fff8dd; cursor: pointer; border: 3px solid var(--branch-colour); border-radius: 50%; background: var(--branch-colour); box-shadow: 0 2px 0 rgba(89,51,26,.24), inset 0 1px 0 rgba(255,255,255,.45); transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; }
+.skill-tree-orb { position: absolute; z-index: 3; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; transform: translate(-50%, -50%); color: #fff8dd; cursor: pointer; border: 3px solid var(--branch-colour); border-radius: 50%; background: var(--branch-colour); box-shadow: 0 2px 0 rgba(89,51,26,.24), inset 0 1px 0 rgba(255,255,255,.45); transition: transform .12s ease, opacity .3s ease-in-out, filter .3s ease-in-out, box-shadow .12s ease; }
 .skill-tree-orb:hover, .skill-tree-orb:focus-visible { z-index: 5; transform: translate(-50%, -50%) scale(1.28); filter: brightness(1.08); outline: none; box-shadow: 0 0 0 5px rgba(255,255,255,.7), 0 3px 0 rgba(89,51,26,.25); }
 .skill-tree-orb-icon { width: 18px; height: 18px; image-rendering: pixelated; object-fit: contain; }
 .skill-tree-orb-label { position: absolute; top: 34px; left: 50%; min-width: max-content; max-width: 150px; padding: 4px 6px; transform: translateX(-50%); color: var(--ink); border: 1px solid rgba(89,51,26,.22); border-radius: 6px; background: #fff8dd; box-shadow: 0 2px 0 rgba(89,51,26,.12); font-size: 10px; font-weight: 900; opacity: 0; pointer-events: none; white-space: nowrap; }

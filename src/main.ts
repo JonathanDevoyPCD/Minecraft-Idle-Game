@@ -97,53 +97,68 @@ const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color:
 const grassSideMaterial = new THREE.MeshStandardMaterial({ map: grassSideTexture, roughness: 1 });
 const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
 const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x858d8f, roughness: 1 });
-const cube = new THREE.Mesh(
-  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
-  [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial],
-);
-cube.castShadow = true;
-cube.receiveShadow = true;
-world.add(cube);
 
-const neighborBlock = new THREE.Mesh(
-  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
-  [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial],
-);
-neighborBlock.position.x = BLOCK_SIZE;
-neighborBlock.castShadow = true;
-neighborBlock.receiveShadow = true;
-neighborBlock.visible = false;
-world.add(neighborBlock);
-
-const stoneBlock = new THREE.Mesh(
-  new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE),
-  [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial],
-);
-stoneBlock.position.z = BLOCK_SIZE;
-stoneBlock.castShadow = true;
-stoneBlock.receiveShadow = true;
-stoneBlock.visible = false;
-world.add(stoneBlock);
+interface BlockCoordinate {
+  x: number;
+  y: number;
+  z: number;
+}
 
 interface BlockNode {
   id: string;
   type: BlockType;
+  coordinate: BlockCoordinate;
+  requiredWorldRank: number;
   mesh: THREE.Mesh;
   pulse: number;
 }
 
+function createBlockMesh(type: BlockType): THREE.Mesh {
+  const materials = type === 'grass'
+    ? [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial]
+    : type === 'dirt'
+      ? [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial]
+      : [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial];
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), materials);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  world.add(mesh);
+  return mesh;
+}
+
+function createBlockNode(
+  id: string,
+  type: BlockType,
+  coordinate: BlockCoordinate,
+  requiredWorldRank: number,
+): BlockNode {
+  const node = {
+    id,
+    type,
+    coordinate,
+    requiredWorldRank,
+    mesh: createBlockMesh(type),
+    pulse: 0,
+  } satisfies BlockNode;
+  node.mesh.position.set(
+    coordinate.x * BLOCK_SIZE,
+    coordinate.y * BLOCK_SIZE,
+    coordinate.z * BLOCK_SIZE,
+  );
+  return node;
+}
+
 const blockNodes: BlockNode[] = [
-  { id: 'grass-0', type: 'grass', mesh: cube, pulse: 0 },
-  { id: 'dirt-1', type: 'dirt', mesh: neighborBlock, pulse: 0 },
-  { id: 'stone-2', type: 'stone', mesh: stoneBlock, pulse: 0 },
+  createBlockNode('grass-0-0-0', 'grass', { x: 0, y: 0, z: 0 }, 0),
+  createBlockNode('dirt-1-0-0', 'dirt', { x: 1, y: 0, z: 0 }, 1),
+  createBlockNode('stone-0-0-1', 'stone', { x: 0, y: 0, z: 1 }, 1),
 ];
 const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
 const miningTargets: THREE.Mesh[] = [];
 
 function updateWorldScene(): void {
-  const isExpanded = state.worldRank >= 1;
-  blockNodes.forEach((node, index) => {
-    node.mesh.visible = index === 0 || isExpanded;
+  blockNodes.forEach((node) => {
+    node.mesh.visible = state.worldRank >= node.requiredWorldRank;
   });
   miningTargets.length = 0;
   blockNodes.forEach((node) => {

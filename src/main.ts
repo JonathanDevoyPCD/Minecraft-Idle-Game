@@ -375,6 +375,7 @@ const skillTreePurchaseButton = document.querySelector<HTMLButtonElement>('#skil
 const skillTreeZoomOutButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-out')!;
 const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-in')!;
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
+const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredNode: BlockNode | null = null;
 let xpFlashTimeout = 0;
 let selectedExpansionDirection: WorldDirection = 'north';
@@ -425,6 +426,51 @@ function getSkillNodeTitle(id: string): string {
   return SKILL_TREE_NODES.find((node) => node.id === id)?.title ?? id;
 }
 
+function setSkillTreeBranchFocus(branchId: string | null): void {
+  if (!branchId) {
+    skillTreeViewport.classList.remove('has-branch-focus');
+    delete skillTreeViewport.dataset.focusedBranch;
+    skillTreeGraph.querySelectorAll<HTMLElement>('.is-branch-focused').forEach((element) => {
+      element.classList.remove('is-branch-focused');
+    });
+    return;
+  }
+
+  skillTreeViewport.classList.add('has-branch-focus');
+  skillTreeViewport.dataset.focusedBranch = branchId;
+  skillTreeGraph.querySelectorAll<HTMLElement>('.skill-tree-orb, .skill-tree-edge').forEach((element) => {
+    element.classList.toggle('is-branch-focused', element.dataset.branch === branchId);
+  });
+}
+
+function renderSkillTreeBranchLegend(): void {
+  skillTreeBranchLegend.replaceChildren();
+  const compactBranchTitles: Record<string, string> = {
+    harvesting: 'Harvesting',
+    'tools-crafting': 'Tools & Crafting',
+    'materials-deep-mining': 'Materials',
+    automation: 'Automation',
+    'world-growth-biomes': 'World Growth',
+    'life-settlement': 'Life & Settlement',
+    'mastery-long-term': 'Mastery',
+  };
+  SKILL_TREE_BRANCHES.forEach((branch) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'skill-tree-branch-tab';
+    button.dataset.branch = branch.id;
+    button.style.setProperty('--branch-colour', branch.colour);
+    button.textContent = compactBranchTitles[branch.id] ?? branch.title;
+    button.setAttribute('aria-label', `${branch.title} branch`);
+    button.title = branch.title;
+    button.addEventListener('pointerenter', () => setSkillTreeBranchFocus(branch.id));
+    button.addEventListener('pointerleave', () => setSkillTreeBranchFocus(null));
+    button.addEventListener('focus', () => setSkillTreeBranchFocus(branch.id));
+    button.addEventListener('blur', () => setSkillTreeBranchFocus(null));
+    skillTreeBranchLegend.append(button);
+  });
+}
+
 function updateSkillTreeView(): void {
   skillTreeGraph.style.transform = `translate(calc(-50% + ${skillTreePanX}px), calc(-50% + ${skillTreePanY}px)) scale(${skillTreeZoom})`;
   skillTreeZoomLevel.textContent = `${Math.round(skillTreeZoom * 100)}%`;
@@ -449,6 +495,7 @@ function changeSkillTreeZoom(direction: number): void {
 }
 
 function renderSkillTree(): void {
+  setSkillTreeBranchFocus(null);
   skillTreeGraph.replaceChildren();
   skillTreeInspector.hidden = true;
   skillTreeViewport.classList.remove('has-inspector');
@@ -505,10 +552,11 @@ function renderSkillTree(): void {
     });
   });
 
-  const drawEdge = (from: { x: number; y: number }, to: { x: number; y: number }, colour: string, stateName: string) => {
+  const drawEdge = (from: { x: number; y: number }, to: { x: number; y: number }, colour: string, stateName: string, branchId: string) => {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.classList.add('skill-tree-edge');
     path.dataset.state = stateName;
+    path.dataset.branch = branchId;
     path.setAttribute('d', `M ${from.x} ${from.y} L ${to.x} ${to.y}`);
     path.style.setProperty('--branch-colour', colour);
     svg.append(path);
@@ -521,24 +569,6 @@ function renderSkillTree(): void {
   core.innerHTML = '<span class="skill-tree-core-glyph">✦</span><span>WORLD CORE</span>';
   skillTreeGraph.append(core);
 
-  SKILL_TREE_BRANCHES.forEach((branch, branchIndex) => {
-    const angle = branchAngles[branchIndex];
-    const branchLabel = document.createElement('div');
-    branchLabel.className = 'skill-tree-branch-label';
-    const tangentOffset = branchIndex % 2 === 0 ? 58 : -58;
-    const tangentX = -Math.sin(angle) * tangentOffset;
-    const tangentY = Math.cos(angle) * tangentOffset;
-    branchLabel.style.left = `${SKILL_TREE_CENTER + Math.cos(angle) * 600 + tangentX}px`;
-    branchLabel.style.top = `${SKILL_TREE_CENTER + Math.sin(angle) * 600 + tangentY}px`;
-    branchLabel.style.setProperty('--branch-colour', branch.colour);
-    const title = document.createElement('strong');
-    title.textContent = branch.title;
-    const subtitle = document.createElement('small');
-    subtitle.textContent = branch.subtitle;
-    branchLabel.append(title, subtitle);
-    skillTreeGraph.append(branchLabel);
-  });
-
   SKILL_TREE_BRANCHES.forEach((branch) => {
     const branchNodes = getSkillTreeBranch(branch.id);
     const firstNode = positions.get(branchNodes[0]?.id ?? '');
@@ -549,6 +579,7 @@ function renderSkillTree(): void {
         firstNode,
         branch.colour,
         getSkillNodeState(branchNodes[0]),
+        branch.id,
       );
     }
   });
@@ -566,7 +597,7 @@ function renderSkillTree(): void {
       // through unrelated branch lanes in the overview graph.
       if (!prerequisite || prerequisite.branch !== node.branch) return;
       const prerequisitePosition = positions.get(prerequisiteId);
-      if (prerequisitePosition) drawEdge(prerequisitePosition, position, branch.colour, stateName);
+      if (prerequisitePosition) drawEdge(prerequisitePosition, position, branch.colour, stateName, branch.id);
     });
 
     const nodeOrb = document.createElement('button');
@@ -574,6 +605,7 @@ function renderSkillTree(): void {
     nodeOrb.className = `skill-tree-orb skill-tree-orb--${node.kind}`;
     nodeOrb.dataset.state = stateName;
     nodeOrb.dataset.skillNodeId = node.id;
+    nodeOrb.dataset.branch = branch.id;
     nodeOrb.style.left = `${position.x}px`;
     nodeOrb.style.top = `${position.y}px`;
     nodeOrb.style.setProperty('--branch-colour', branch.colour);
@@ -594,6 +626,7 @@ function renderSkillTree(): void {
     skillTreeGraph.append(nodeOrb);
   });
 
+  renderSkillTreeBranchLegend();
   updateSkillTreeView();
 }
 

@@ -149,9 +149,13 @@ button { font: inherit; }
 .skill-tree-edge[data-state='locked'] { stroke: #8d9588; stroke-dasharray: 5 8; opacity: .35; }
 .skill-tree-core { position: absolute; z-index: 2; display: flex; width: 112px; height: 112px; flex-direction: column; justify-content: center; align-items: center; gap: 4px; transform: translate(-50%, -50%); color: var(--ink); border: 4px solid #f4c45c; border-radius: 50%; background: #fff4c9; box-shadow: 0 0 0 8px rgba(255,244,201,.46), inset 0 2px 0 rgba(255,255,255,.9), 0 5px 0 rgba(89,51,26,.16); font-size: 10px; font-weight: 900; letter-spacing: .08em; }
 .skill-tree-core-glyph { color: #df8c2f; font-size: 29px; line-height: 1; }
-.skill-tree-branch-label { position: absolute; z-index: 4; display: flex; width: 170px; flex-direction: column; align-items: center; padding: 6px 9px; transform: translate(-50%, -50%); text-align: center; border: 1px solid rgba(89,51,26,.16); border-radius: 8px; background: rgba(244,248,232,.94); box-shadow: 0 2px 0 rgba(89,51,26,.1); pointer-events: none; }
-.skill-tree-branch-label strong { color: var(--ink); font-size: 13px; letter-spacing: .08em; text-shadow: 0 1px 0 rgba(255,255,255,.7); }
-.skill-tree-branch-label small { margin-top: 4px; color: #806f54; font-size: 9px; font-weight: 800; letter-spacing: .02em; text-transform: none; }
+.skill-tree-branch-legend { position: absolute; right: 16px; bottom: 16px; left: 160px; z-index: 6; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 5px; pointer-events: auto; }
+.skill-tree-branch-tab { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 9px; color: var(--ink); cursor: pointer; border: 2px solid rgba(89,51,26,.25); border-radius: 9px; background: rgba(255,248,221,.94); box-shadow: 0 2px 0 rgba(89,51,26,.14); font-size: 10px; font-weight: 900; letter-spacing: .03em; line-height: 1.05; transition: filter .12s ease, opacity .12s ease, transform .12s ease, background .12s ease; }
+.skill-tree-branch-tab::before { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--branch-colour); content: ''; }
+.skill-tree-branch-tab:hover, .skill-tree-branch-tab:focus-visible { transform: translateY(-1px); background: #fff4c9; outline: 3px solid rgba(255,255,255,.72); outline-offset: 1px; }
+.skill-tree-viewport.has-branch-focus .skill-tree-orb:not(.is-branch-focused), .skill-tree-viewport.has-branch-focus .skill-tree-edge:not(.is-branch-focused) { filter: grayscale(.8); opacity: .16; }
+.skill-tree-viewport.has-branch-focus .skill-tree-orb.is-branch-focused { filter: none; opacity: 1; }
+.skill-tree-viewport.has-branch-focus .skill-tree-edge.is-branch-focused { stroke-width: 4; opacity: .9; }
 .skill-tree-orb { position: absolute; z-index: 3; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; transform: translate(-50%, -50%); color: #fff8dd; cursor: pointer; border: 3px solid var(--branch-colour); border-radius: 50%; background: var(--branch-colour); box-shadow: 0 2px 0 rgba(89,51,26,.24), inset 0 1px 0 rgba(255,255,255,.45); transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; }
 .skill-tree-orb:hover, .skill-tree-orb:focus-visible { z-index: 5; transform: translate(-50%, -50%) scale(1.28); filter: brightness(1.08); outline: none; box-shadow: 0 0 0 5px rgba(255,255,255,.7), 0 3px 0 rgba(89,51,26,.25); }
 .skill-tree-orb-icon { width: 18px; height: 18px; image-rendering: pixelated; object-fit: contain; }
@@ -253,9 +257,8 @@ button { font: inherit; }
   .skill-tree-overlay { padding: 14px; }
   .skill-tree-modal { width: calc(100vw - 28px); height: calc(100vh - 28px); padding: 18px; }
   .skill-tree-meta { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .skill-tree-branch-label { width: 130px; }
-  .skill-tree-branch-label strong { font-size: 11px; }
-  .skill-tree-branch-label small { display: none; }
+  .skill-tree-branch-legend { right: 16px; bottom: 62px; left: 16px; justify-content: flex-start; }
+  .skill-tree-branch-tab { flex: 1 1 auto; min-height: 32px; font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

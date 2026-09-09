@@ -11,6 +11,7 @@ import {
   calculateOfflineXp,
   getAutoRate,
   getContextTool,
+  getExpansionChunkOrigin,
   getTool,
   getWorldTier,
   harvestResource,
@@ -18,8 +19,10 @@ import {
   saveState,
   TOOL_TIERS,
   TOOL_KIND_PROFILES,
+  WORLD_DIRECTIONS,
   WORLD_TIERS,
   type BlockType,
+  type WorldDirection,
   xpRequired,
 } from './game';
 
@@ -80,6 +83,8 @@ scene.add(shadowBase);
 
 const world = new THREE.Group();
 scene.add(world);
+let state = loadState(localStorage);
+let isResetting = false;
 
 function loadBlockTexture(fileName: string): THREE.Texture {
   const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/blocks/${fileName}`);
@@ -109,6 +114,7 @@ interface BlockNode {
   type: BlockType;
   coordinate: BlockCoordinate;
   requiredWorldRank: number;
+  requiredDirection?: WorldDirection;
   mesh: THREE.Mesh;
   pulse: number;
 }
@@ -131,12 +137,14 @@ function createBlockNode(
   type: BlockType,
   coordinate: BlockCoordinate,
   requiredWorldRank: number,
+  requiredDirection?: WorldDirection,
 ): BlockNode {
   const node = {
     id,
     type,
     coordinate,
     requiredWorldRank,
+    requiredDirection,
     mesh: createBlockMesh(type),
     pulse: 0,
   } satisfies BlockNode;
@@ -151,31 +159,69 @@ function createBlockNode(
 interface GeneratedBlock {
   type: BlockType;
   coordinate: BlockCoordinate;
+  requiredWorldRank: number;
+  requiredDirection?: WorldDirection;
 }
 
-function generateFirstMeadow(): GeneratedBlock[] {
+function generateMeadowChunk(
+  origin: { x: number; z: number },
+  requiredWorldRank: number,
+  requiredDirection?: WorldDirection,
+  seed = 0,
+  skipOriginColumn = false,
+): GeneratedBlock[] {
   const cells: GeneratedBlock[] = [];
-  for (let x = -1; x <= 1; x += 1) {
-    for (let z = -1; z <= 1; z += 1) {
-      cells.push({ type: 'grass', coordinate: { x, y: 0, z } });
-      cells.push({ type: 'dirt', coordinate: { x, y: -1, z } });
-      cells.push({ type: 'stone', coordinate: { x, y: -2, z } });
+  for (let localX = 0; localX < 3; localX += 1) {
+    for (let localZ = 0; localZ < 3; localZ += 1) {
+      const x = origin.x + localX;
+      const z = origin.z + localZ;
+      if (skipOriginColumn && x === 0 && z === 0) continue;
+      for (const [y, type] of [[0, 'grass'], [-1, 'dirt'], [-2, 'stone']] as const) {
+        const surfaceNoise = Math.abs(Math.sin(seed * 0.001 + x * 12.9898 + z * 78.233));
+        const surfaceType = y === 0 && requiredWorldRank > 1 && surfaceNoise > 0.93 ? 'dirt' : type;
+        cells.push({ type: surfaceType, coordinate: { x, y, z }, requiredWorldRank, requiredDirection });
+      }
     }
   }
   return cells;
 }
 
-const blockNodes: BlockNode[] = generateFirstMeadow().map(({ type, coordinate }) => {
+function generateWorldLayout(currentState: typeof state): GeneratedBlock[] {
+  const cells: GeneratedBlock[] = [{
+    type: 'grass',
+    coordinate: { x: 0, y: 0, z: 0 },
+    requiredWorldRank: 0,
+  }];
+  cells.push(
+    ...generateMeadowChunk({ x: -1, z: -1 }, 1, undefined, currentState.worldSeed, true),
+    { type: 'dirt', coordinate: { x: 0, y: -1, z: 0 }, requiredWorldRank: 1 },
+    { type: 'stone', coordinate: { x: 0, y: -2, z: 0 }, requiredWorldRank: 1 },
+  );
+  WORLD_DIRECTIONS.forEach((direction) => {
+    const expansionNumber = 1;
+    cells.push(...generateMeadowChunk(
+      getExpansionChunkOrigin(expansionNumber, direction),
+      expansionNumber + 1,
+      direction,
+      currentState.worldSeed,
+    ));
+  });
+  return cells;
+}
+
+const blockNodes: BlockNode[] = generateWorldLayout(state).map(({ type, coordinate, requiredWorldRank, requiredDirection }) => {
   const { x, y, z } = coordinate;
-  const requiredWorldRank = x === 0 && y === 0 && z === 0 ? 0 : 1;
-  return createBlockNode(`${type}-${x}-${y}-${z}`, type, coordinate, requiredWorldRank);
+  return createBlockNode(`${type}-${x}-${y}-${z}-${requiredDirection ?? 'core'}`, type, coordinate, requiredWorldRank, requiredDirection);
 });
 const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
 const miningTargets: THREE.Mesh[] = [];
 
 function updateWorldScene(): void {
   blockNodes.forEach((node) => {
-    node.mesh.visible = state.worldRank >= node.requiredWorldRank;
+    const directionIndex = node.requiredWorldRank - 2;
+    const directionUnlocked = !node.requiredDirection
+      || state.expansionDirections[directionIndex] === node.requiredDirection;
+    node.mesh.visible = state.worldRank >= node.requiredWorldRank && directionUnlocked;
   });
   miningTargets.length = 0;
   blockNodes.forEach((node) => {
@@ -232,8 +278,6 @@ let isOrbiting = false;
 let lastOrbitX = 0;
 let lastOrbitY = 0;
 let lastAutoHit = performance.now();
-let state = loadState(localStorage);
-let isResetting = false;
 const offlineXp = calculateOfflineXp(state);
 updateWorldScene();
 
@@ -251,6 +295,8 @@ const toolButton = document.querySelector<HTMLButtonElement>('#tool-upgrade')!;
 const worldNameEl = document.querySelector('#world-name')!;
 const worldRankEl = document.querySelector('#world-rank')!;
 const worldDescriptionEl = document.querySelector('#world-description')!;
+const expansionDirectionsEl = document.querySelector<HTMLElement>('#expansion-directions')!;
+const directionButtons = document.querySelectorAll<HTMLButtonElement>('[data-expansion-direction]');
 const worldButton = document.querySelector<HTMLButtonElement>('#world-upgrade')!;
 const currentRateEl = document.querySelector('#current-rate')!;
 const nextRateEl = document.querySelector('#next-rate')!;
@@ -267,6 +313,7 @@ const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overla
 const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
 let hoveredNode: BlockNode | null = null;
 let xpFlashTimeout = 0;
+let selectedExpansionDirection: WorldDirection = 'north';
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -333,6 +380,18 @@ function updateUi(): void {
       : state.craftingPoints < nextWorld.cost
         ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
         : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
+  const canChooseDirection = state.worldRank >= 1 && !worldMaxed;
+  const availableDirections = WORLD_DIRECTIONS.filter((direction) => !state.expansionDirections.includes(direction));
+  if (!availableDirections.includes(selectedExpansionDirection)) {
+    selectedExpansionDirection = availableDirections[0] ?? 'north';
+  }
+  expansionDirectionsEl.hidden = !canChooseDirection;
+  directionButtons.forEach((button) => {
+    const direction = button.dataset.expansionDirection as WorldDirection;
+    const used = state.expansionDirections.includes(direction);
+    button.disabled = !canChooseDirection || used;
+    button.setAttribute('aria-pressed', String(canChooseDirection && !used && direction === selectedExpansionDirection));
+  });
   updateCurrentTool();
 }
 
@@ -449,6 +508,15 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
 });
 
+directionButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const direction = button.dataset.expansionDirection as WorldDirection;
+    if (!WORLD_DIRECTIONS.includes(direction)) return;
+    selectedExpansionDirection = direction;
+    updateUi();
+  });
+});
+
 document.querySelector('#mine-button')!.addEventListener('click', () => mine(blockNodes[0]));
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
@@ -479,7 +547,7 @@ toolButton.addEventListener('click', () => {
 });
 
 worldButton.addEventListener('click', () => {
-  if (buyWorldExpansion(state)) {
+  if (buyWorldExpansion(state, selectedExpansionDirection)) {
     updateWorldScene();
     updateUi();
     saveState(localStorage, state);

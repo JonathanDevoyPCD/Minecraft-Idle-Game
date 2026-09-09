@@ -152,6 +152,13 @@ button { font: inherit; }
 .skill-node p { flex: 1; margin: 9px 0 14px; color: #725f44; font-size: 13px; line-height: 1.35; }
 .skill-node button { width: 100%; padding: 10px; color: white; cursor: pointer; border: 2px solid #83431e; border-radius: 10px; background: #e78b2f; font-weight: 900; }
 .skill-node button:disabled { cursor: not-allowed; border-color: #a6977e; background: #b8ab93; }
+.expansion-directions { margin: 0 0 14px; }
+.expansion-directions[hidden] { display: none; }
+.expansion-directions > small { display: block; margin-bottom: 7px; color: #937a55; }
+.direction-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.direction-buttons button { padding: 6px; color: #17394a; border: 2px solid rgba(89, 51, 26, .3); background: #fff4c9; }
+.direction-buttons button[aria-pressed="true"] { color: white; border-color: #4d8138; background: #659d43; }
+.direction-buttons button:disabled { color: #9c927d; cursor: not-allowed; background: #d6d0b9; }
 .point-pill { align-self: center; padding: 5px 9px; color: white; border-radius: 999px; background: #659d43; font-size: 12px; font-weight: 900; }
 .modal-card button { width: 100%; padding: 10px; color: white; cursor: pointer; border: 2px solid #83431e; border-radius: 10px; background: #e78b2f; font-weight: 900; }
 

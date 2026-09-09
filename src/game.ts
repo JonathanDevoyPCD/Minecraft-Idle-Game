@@ -6,12 +6,16 @@ export interface GameState {
   speedRank: number;
   toolRank: number;
   worldRank: number;
+  worldSeed: number;
+  expansionDirections: WorldDirection[];
   resources: Record<string, number>;
   lastSavedAt: number;
 }
 
 export type ToolKind = 'hand' | 'pickaxe' | 'shovel' | 'axe';
 export type BlockType = 'grass' | 'dirt' | 'stone';
+export type WorldDirection = 'north' | 'east' | 'south' | 'west';
+export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
 
 export const TOOL_KIND_PROFILES = {
   hand: { kind: 'hand', name: 'Hand', harvestPower: 1, description: 'Gather simple blocks by hand.' },
@@ -37,7 +41,16 @@ export const TOOL_TIERS = [
 export const WORLD_TIERS = [
   { name: 'One Block', requiredLevel: 1, cost: 0, blockCount: 1, description: 'A humble starting point for your world.' },
   { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 27, description: 'Grow a connected 3×3 meadow with dirt and stone beneath.' },
+  { name: 'Second Meadow', requiredLevel: 6, cost: 2, blockCount: 54, description: 'Choose a direction and grow another connected meadow chunk.' },
 ] as const;
+
+export function getExpansionChunkOrigin(expansionNumber: number, direction: WorldDirection): { x: number; z: number } {
+  const distance = Math.max(1, Math.floor(expansionNumber));
+  if (direction === 'north') return { x: -1, z: -1 - distance * 3 };
+  if (direction === 'east') return { x: -1 + distance * 3, z: -1 };
+  if (direction === 'south') return { x: -1, z: -1 + distance * 3 };
+  return { x: -1 - distance * 3, z: -1 };
+}
 
 export function freshState(now = Date.now()): GameState {
   return {
@@ -48,6 +61,8 @@ export function freshState(now = Date.now()): GameState {
     speedRank: 0,
     toolRank: 0,
     worldRank: 0,
+    worldSeed: 184731,
+    expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
     lastSavedAt: now,
   };
@@ -122,14 +137,20 @@ export function getWorldTier(state: GameState) {
   return WORLD_TIERS[Math.min(state.worldRank, WORLD_TIERS.length - 1)];
 }
 
-export function buyWorldExpansion(state: GameState): boolean {
+export function buyWorldExpansion(state: GameState, direction: WorldDirection = 'north'): boolean {
   const nextWorld = WORLD_TIERS[state.worldRank + 1];
-  if (!nextWorld || state.level < nextWorld.requiredLevel || state.craftingPoints < nextWorld.cost) {
+  if (
+    !nextWorld
+    || state.level < nextWorld.requiredLevel
+    || state.craftingPoints < nextWorld.cost
+    || (state.worldRank >= 1 && state.expansionDirections.includes(direction))
+  ) {
     return false;
   }
 
   state.craftingPoints -= nextWorld.cost;
   state.worldRank += 1;
+  if (state.worldRank >= 2) state.expansionDirections.push(direction);
   return true;
 }
 
@@ -148,6 +169,10 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
       toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
       worldRank: Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0)),
+      worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
+      expansionDirections: Array.isArray(parsed.expansionDirections)
+        ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
+        : base.expansionDirections,
       resources: {
         dirt: Math.max(0, Number(parsed.resources?.dirt) || 0),
         cobblestone: Math.max(0, Number(parsed.resources?.cobblestone) || 0),

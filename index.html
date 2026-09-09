@@ -91,7 +91,19 @@
             <button id="skill-tree-close" class="skill-tree-close" type="button" aria-label="Close skill tree">×</button>
           </header>
 
-          <div id="skill-tree-graph" class="skill-tree-graph" aria-live="polite"></div>
+          <div class="skill-tree-meta">
+            <p id="skill-tree-summary" class="skill-tree-summary" aria-live="polite"></p>
+            <span>Drag to explore · Scroll or use − / + to zoom</span>
+          </div>
+
+          <div id="skill-tree-viewport" class="skill-tree-viewport">
+            <div id="skill-tree-graph" class="skill-tree-graph" aria-live="polite"></div>
+            <div class="skill-tree-zoom-controls panel" aria-label="Skill tree zoom controls">
+              <button id="skill-tree-zoom-out" type="button" aria-label="Zoom out">−</button>
+              <span id="skill-tree-zoom-level">34%</span>
+              <button id="skill-tree-zoom-in" type="button" aria-label="Zoom in">+</button>
+            </div>
+          </div>
 
           <div class="legacy-upgrade-state" hidden aria-hidden="true">
             <span id="world-rank">TIER 0</span>

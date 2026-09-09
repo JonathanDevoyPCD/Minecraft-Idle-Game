@@ -351,10 +351,26 @@ const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]'
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
 const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
 const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
+const skillTreeViewport = document.querySelector<HTMLElement>('#skill-tree-viewport')!;
 const skillTreeGraph = document.querySelector<HTMLElement>('#skill-tree-graph')!;
+const skillTreeSummary = document.querySelector<HTMLElement>('#skill-tree-summary')!;
+const skillTreeZoomOutButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-out')!;
+const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-in')!;
+const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
 let hoveredNode: BlockNode | null = null;
 let xpFlashTimeout = 0;
 let selectedExpansionDirection: WorldDirection = 'north';
+const SKILL_TREE_STAGE_SIZE = 1600;
+const SKILL_TREE_CENTER = SKILL_TREE_STAGE_SIZE / 2;
+const SKILL_TREE_MIN_ZOOM = 0.18;
+const SKILL_TREE_MAX_ZOOM = 4;
+const SKILL_TREE_ZOOM_STEP = 1.15;
+let skillTreeZoom = 0.34;
+let skillTreePanX = 0;
+let skillTreePanY = 0;
+let isPanningSkillTree = false;
+let lastSkillTreePanX = 0;
+let lastSkillTreePanY = 0;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -382,86 +398,148 @@ function getSkillNodeTitle(id: string): string {
   return SKILL_TREE_NODES.find((node) => node.id === id)?.title ?? id;
 }
 
+function getSkillNodeGlyph(node: SkillNodeDefinition): string {
+  if (node.kind === 'capstone') return '✦';
+  if (node.kind === 'milestone') return '◆';
+  if (node.kind === 'choice') return '◇';
+  if (node.kind === 'unlock') return '◈';
+  return '•';
+}
+
+function updateSkillTreeView(): void {
+  skillTreeGraph.style.transform = `translate(calc(-50% + ${skillTreePanX}px), calc(-50% + ${skillTreePanY}px)) scale(${skillTreeZoom})`;
+  skillTreeZoomLevel.textContent = `${Math.round(skillTreeZoom * 100)}%`;
+  skillTreeZoomOutButton.disabled = skillTreeZoom <= SKILL_TREE_MIN_ZOOM;
+  skillTreeZoomInButton.disabled = skillTreeZoom >= SKILL_TREE_MAX_ZOOM;
+}
+
+function fitSkillTreeView(): void {
+  const viewportSize = Math.min(skillTreeViewport.clientWidth, skillTreeViewport.clientHeight);
+  skillTreeZoom = THREE.MathUtils.clamp((viewportSize - 24) / 1414, SKILL_TREE_MIN_ZOOM, 0.8);
+  skillTreePanX = 0;
+  skillTreePanY = 0;
+  updateSkillTreeView();
+}
+
+function changeSkillTreeZoom(direction: number): void {
+  const nextZoom = direction > 0
+    ? skillTreeZoom * SKILL_TREE_ZOOM_STEP
+    : skillTreeZoom / SKILL_TREE_ZOOM_STEP;
+  skillTreeZoom = THREE.MathUtils.clamp(nextZoom, SKILL_TREE_MIN_ZOOM, SKILL_TREE_MAX_ZOOM);
+  updateSkillTreeView();
+}
+
 function renderSkillTree(): void {
   skillTreeGraph.replaceChildren();
-  const summary = document.createElement('p');
-  summary.className = 'skill-tree-summary';
-  summary.textContent = `${SKILL_TREE_NODES.length} planned nodes · ${SKILL_TREE_BRANCHES.length} branches · Crafting Points unlock the tree`;
-  skillTreeGraph.append(summary);
+  skillTreeSummary.textContent = `${SKILL_TREE_NODES.length} unlocks · ${SKILL_TREE_BRANCHES.length} paths · Crafting Points reveal the next step`;
 
-  const branches = document.createElement('div');
-  branches.className = 'skill-tree-branch-grid';
-  SKILL_TREE_BRANCHES.forEach((branch, index) => {
-    const branchSection = document.createElement('section');
-    branchSection.className = 'skill-tree-branch';
-    branchSection.style.setProperty('--branch-colour', branch.colour);
+  skillTreeGraph.style.width = `${SKILL_TREE_STAGE_SIZE}px`;
+  skillTreeGraph.style.height = `${SKILL_TREE_STAGE_SIZE}px`;
+  skillTreePanX = 0;
+  skillTreePanY = 0;
 
-    const heading = document.createElement('header');
-    heading.className = 'skill-tree-branch-heading';
-    const branchIndex = document.createElement('span');
-    branchIndex.className = 'skill-tree-branch-index';
-    branchIndex.textContent = String(index + 1).padStart(2, '0');
-    const headingCopy = document.createElement('div');
-    const headingTitle = document.createElement('strong');
-    headingTitle.textContent = branch.title;
-    const headingSubtitle = document.createElement('small');
-    headingSubtitle.textContent = branch.subtitle;
-    headingCopy.append(headingTitle, headingSubtitle);
-    heading.append(branchIndex, headingCopy);
-    branchSection.append(heading);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('skill-tree-connections');
+  svg.setAttribute('viewBox', `0 0 ${SKILL_TREE_STAGE_SIZE} ${SKILL_TREE_STAGE_SIZE}`);
+  svg.setAttribute('aria-hidden', 'true');
+  skillTreeGraph.append(svg);
 
-    const nodeList = document.createElement('div');
-    nodeList.className = 'skill-tree-node-list';
-    getSkillTreeBranch(branch.id).forEach((node) => {
-      const stateName = getSkillNodeState(node);
-      const nodeCard = document.createElement('article');
-      nodeCard.className = `skill-tree-node skill-tree-node--${node.kind}`;
-      nodeCard.dataset.state = stateName;
-      nodeCard.dataset.skillNodeId = node.id;
-      nodeCard.setAttribute('aria-label', `${node.title}, ${stateName}`);
+  const positions = new Map<string, { x: number; y: number }>();
+  const branchAngles = SKILL_TREE_BRANCHES.map((_, index) => -Math.PI / 2 + index * (Math.PI * 2 / SKILL_TREE_BRANCHES.length));
+  const branchById = new Map(SKILL_TREE_BRANCHES.map((branch) => [branch.id, branch]));
 
-      const nodeTopline = document.createElement('div');
-      nodeTopline.className = 'skill-tree-node-topline';
-      const kind = document.createElement('span');
-      kind.className = 'skill-tree-node-kind';
-      kind.textContent = node.kind;
-      const state = document.createElement('span');
-      state.className = 'skill-tree-node-state';
-      state.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
-      nodeTopline.append(kind, state);
-
-      const title = document.createElement('strong');
-      title.textContent = node.title;
-      const description = document.createElement('p');
-      description.textContent = node.description;
-      const effect = document.createElement('span');
-      effect.className = 'skill-tree-node-effect';
-      effect.textContent = node.effect;
-      const consequence = document.createElement('small');
-      consequence.className = 'skill-tree-node-consequence';
-      consequence.textContent = `World: ${node.worldConsequence}`;
-
-      const footer = document.createElement('div');
-      footer.className = 'skill-tree-node-footer';
-      const cost = document.createElement('span');
-      cost.textContent = `${node.cost.craftingPoints} CP`;
-      const rank = document.createElement('span');
-      rank.textContent = node.maxRank > 1 ? `${node.maxRank} ranks` : '1 rank';
-      footer.append(cost, rank);
-
-      const prerequisites = document.createElement('small');
-      prerequisites.className = 'skill-tree-node-prerequisites';
-      prerequisites.textContent = node.prerequisites.length > 0
-        ? `Requires: ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
-        : 'Branch starting point';
-
-      nodeCard.append(nodeTopline, title, description, effect, consequence, footer, prerequisites);
-      nodeList.append(nodeCard);
+  SKILL_TREE_BRANCHES.forEach((branch, branchIndex) => {
+    const angle = branchAngles[branchIndex];
+    const nodes = getSkillTreeBranch(branch.id);
+    nodes.forEach((node, nodeIndex) => {
+      const depth = Math.floor(nodeIndex / 3);
+      const arm = nodeIndex % 3 - 1;
+      const nodeAngle = angle + arm * 0.14;
+      const radius = 235 + depth * 82;
+      positions.set(node.id, {
+        x: SKILL_TREE_CENTER + Math.cos(nodeAngle) * radius,
+        y: SKILL_TREE_CENTER + Math.sin(nodeAngle) * radius,
+      });
     });
-    branchSection.append(nodeList);
-    branches.append(branchSection);
   });
-  skillTreeGraph.append(branches);
+
+  const drawEdge = (from: { x: number; y: number }, to: { x: number; y: number }, colour: string, stateName: string) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.classList.add('skill-tree-edge');
+    path.dataset.state = stateName;
+    path.setAttribute('d', `M ${from.x} ${from.y} L ${to.x} ${to.y}`);
+    path.style.setProperty('--branch-colour', colour);
+    svg.append(path);
+  };
+
+  const core = document.createElement('div');
+  core.className = 'skill-tree-core';
+  core.style.left = `${SKILL_TREE_CENTER}px`;
+  core.style.top = `${SKILL_TREE_CENTER}px`;
+  core.innerHTML = '<span class="skill-tree-core-glyph">✦</span><span>WORLD CORE</span>';
+  skillTreeGraph.append(core);
+
+  SKILL_TREE_BRANCHES.forEach((branch, branchIndex) => {
+    const angle = branchAngles[branchIndex];
+    const branchLabel = document.createElement('div');
+    branchLabel.className = 'skill-tree-branch-label';
+    branchLabel.style.left = `${SKILL_TREE_CENTER + Math.cos(angle) * 695}px`;
+    branchLabel.style.top = `${SKILL_TREE_CENTER + Math.sin(angle) * 695}px`;
+    branchLabel.style.setProperty('--branch-colour', branch.colour);
+    const title = document.createElement('strong');
+    title.textContent = branch.title;
+    const subtitle = document.createElement('small');
+    subtitle.textContent = branch.subtitle;
+    branchLabel.append(title, subtitle);
+    skillTreeGraph.append(branchLabel);
+  });
+
+  SKILL_TREE_BRANCHES.forEach((branch) => {
+    const branchNodes = getSkillTreeBranch(branch.id);
+    const firstNode = positions.get(branchNodes[0]?.id ?? '');
+    if (firstNode) {
+      const branchAngle = branchAngles[SKILL_TREE_BRANCHES.indexOf(branch)];
+      drawEdge(
+        { x: SKILL_TREE_CENTER + Math.cos(branchAngle) * 78, y: SKILL_TREE_CENTER + Math.sin(branchAngle) * 78 },
+        firstNode,
+        branch.colour,
+        getSkillNodeState(branchNodes[0]),
+      );
+    }
+  });
+
+  SKILL_TREE_NODES.forEach((node) => {
+    const position = positions.get(node.id);
+    const branch = branchById.get(node.branch);
+    if (!position || !branch) return;
+    const stateName = getSkillNodeState(node);
+    node.prerequisites.forEach((prerequisiteId) => {
+      const prerequisitePosition = positions.get(prerequisiteId);
+      if (prerequisitePosition) drawEdge(prerequisitePosition, position, branch.colour, stateName);
+    });
+
+    const nodeOrb = document.createElement('button');
+    nodeOrb.type = 'button';
+    nodeOrb.className = `skill-tree-orb skill-tree-orb--${node.kind}`;
+    nodeOrb.dataset.state = stateName;
+    nodeOrb.dataset.skillNodeId = node.id;
+    nodeOrb.style.left = `${position.x}px`;
+    nodeOrb.style.top = `${position.y}px`;
+    nodeOrb.style.setProperty('--branch-colour', branch.colour);
+    nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. ${stateName}. Cost ${node.cost.craftingPoints} Crafting Points.`);
+    nodeOrb.title = `${node.title} · ${node.effect}${node.prerequisites.length > 0 ? ` · Requires ${node.prerequisites.map(getSkillNodeTitle).join(', ')}` : ''}`;
+
+    const glyph = document.createElement('span');
+    glyph.className = 'skill-tree-orb-glyph';
+    glyph.textContent = getSkillNodeGlyph(node);
+    const label = document.createElement('span');
+    label.className = 'skill-tree-orb-label';
+    label.textContent = node.title;
+    nodeOrb.append(glyph, label);
+    skillTreeGraph.append(nodeOrb);
+  });
+
+  updateSkillTreeView();
 }
 
 function updateUi(): void {
@@ -634,6 +712,7 @@ function setSkillTreeOpen(open: boolean): void {
   skillTreeButton.setAttribute('aria-expanded', String(open));
   if (open) {
     renderSkillTree();
+    fitSkillTreeView();
     skillTreeClose.focus();
   }
   else skillTreeButton.focus();
@@ -644,6 +723,39 @@ skillTreeClose.addEventListener('click', () => setSkillTreeOpen(false));
 skillTreeOverlay.addEventListener('click', (event) => {
   if (event.target === skillTreeOverlay) setSkillTreeOpen(false);
 });
+
+skillTreeZoomOutButton.addEventListener('click', () => changeSkillTreeZoom(-1));
+skillTreeZoomInButton.addEventListener('click', () => changeSkillTreeZoom(1));
+skillTreeViewport.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  changeSkillTreeZoom(event.deltaY < 0 ? 1 : -1);
+}, { passive: false });
+skillTreeViewport.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 && event.button !== 1) return;
+  if ((event.target as Element).closest('.skill-tree-orb')) return;
+  event.preventDefault();
+  isPanningSkillTree = true;
+  lastSkillTreePanX = event.clientX;
+  lastSkillTreePanY = event.clientY;
+  skillTreeViewport.classList.add('is-panning');
+  skillTreeViewport.setPointerCapture(event.pointerId);
+});
+skillTreeViewport.addEventListener('pointermove', (event) => {
+  if (!isPanningSkillTree) return;
+  skillTreePanX += event.clientX - lastSkillTreePanX;
+  skillTreePanY += event.clientY - lastSkillTreePanY;
+  lastSkillTreePanX = event.clientX;
+  lastSkillTreePanY = event.clientY;
+  updateSkillTreeView();
+});
+function endSkillTreePan(event: PointerEvent): void {
+  if (!isPanningSkillTree) return;
+  isPanningSkillTree = false;
+  skillTreeViewport.classList.remove('is-panning');
+  if (skillTreeViewport.hasPointerCapture(event.pointerId)) skillTreeViewport.releasePointerCapture(event.pointerId);
+}
+skillTreeViewport.addEventListener('pointerup', endSkillTreePan);
+skillTreeViewport.addEventListener('pointercancel', endSkillTreePan);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
 });

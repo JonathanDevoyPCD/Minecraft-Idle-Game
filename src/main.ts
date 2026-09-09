@@ -466,7 +466,8 @@ const zoomLevelEl = document.querySelector('#zoom-level')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
-const volumeSlider = document.querySelector<HTMLInputElement>('#volume-slider')!;
+const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
+const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-slider')!;
 const musicToggle = document.querySelector<HTMLButtonElement>('#music-toggle')!;
 const sfxToggle = document.querySelector<HTMLButtonElement>('#sfx-toggle')!;
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
@@ -526,7 +527,8 @@ function updateCurrentTool(): void {
 
 function updateAudioUi(): void {
   const settings = audioManager.getSettings();
-  volumeSlider.value = String(Math.round(settings.volume * 100));
+  musicVolumeSlider.value = String(Math.round(settings.musicVolume * 100));
+  sfxVolumeSlider.value = String(Math.round(settings.sfxVolume * 100));
   musicToggle.setAttribute('aria-pressed', String(settings.musicMuted));
   musicToggle.setAttribute('aria-label', settings.musicMuted ? 'Unmute music' : 'Mute music');
   musicToggle.title = settings.musicMuted ? 'Unmute music' : 'Mute music';
@@ -1094,7 +1096,8 @@ directionButtons.forEach((button) => {
 });
 
 document.querySelector('#mine-button')!.addEventListener('click', () => mine(getActiveMiningNode()));
-volumeSlider.addEventListener('input', () => audioManager.setVolume(Number(volumeSlider.value) / 100));
+musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));
+sfxVolumeSlider.addEventListener('input', () => audioManager.setSfxVolume(Number(sfxVolumeSlider.value) / 100));
 musicToggle.addEventListener('click', () => {
   audioManager.toggleMusic();
   updateAudioUi();

@@ -1,13 +1,14 @@
 export type MiningSound = 'grass' | 'stone' | 'break';
 
 interface AudioSettings {
-  volume: number;
+  musicVolume: number;
+  sfxVolume: number;
   musicMuted: boolean;
   sfxMuted: boolean;
 }
 
 const AUDIO_SETTINGS_KEY = 'idlecraft-audio-v1';
-const DEFAULT_SETTINGS: AudioSettings = { volume: 0.45, musicMuted: false, sfxMuted: false };
+const DEFAULT_SETTINGS: AudioSettings = { musicVolume: 0.45, sfxVolume: 0.45, musicMuted: false, sfxMuted: false };
 const SOUND_FILES: Record<MiningSound, readonly string[]> = {
   grass: ['assets/audio/sfx/grass1.ogg', 'assets/audio/sfx/grass2.ogg'],
   stone: ['assets/audio/sfx/stone1.ogg', 'assets/audio/sfx/stone2.ogg'],
@@ -17,8 +18,12 @@ const SOUND_FILES: Record<MiningSound, readonly string[]> = {
 function readSettings(): AudioSettings {
   try {
     const parsed = JSON.parse(localStorage.getItem(AUDIO_SETTINGS_KEY) ?? '{}') as Partial<AudioSettings>;
+    const legacyVolume = Number((parsed as Partial<AudioSettings> & { volume?: number }).volume);
+    const musicVolume = Number(parsed.musicVolume);
+    const sfxVolume = Number(parsed.sfxVolume);
     return {
-      volume: Number.isFinite(parsed.volume) ? Math.min(1, Math.max(0, Number(parsed.volume))) : DEFAULT_SETTINGS.volume,
+      musicVolume: Number.isFinite(musicVolume) ? Math.min(1, Math.max(0, musicVolume)) : Number.isFinite(legacyVolume) ? Math.min(1, Math.max(0, legacyVolume)) : DEFAULT_SETTINGS.musicVolume,
+      sfxVolume: Number.isFinite(sfxVolume) ? Math.min(1, Math.max(0, sfxVolume)) : Number.isFinite(legacyVolume) ? Math.min(1, Math.max(0, legacyVolume)) : DEFAULT_SETTINGS.sfxVolume,
       musicMuted: parsed.musicMuted === true,
       sfxMuted: parsed.sfxMuted === true,
     };
@@ -61,9 +66,14 @@ export class AudioManager {
     this.saveSettings();
   }
 
-  setVolume(value: number): void {
-    this.settings.volume = Math.min(1, Math.max(0, value));
+  setMusicVolume(value: number): void {
+    this.settings.musicVolume = Math.min(1, Math.max(0, value));
     this.applyMusicSettings();
+    this.saveSettings();
+  }
+
+  setSfxVolume(value: number): void {
+    this.settings.sfxVolume = Math.min(1, Math.max(0, value));
     this.saveSettings();
   }
 
@@ -73,12 +83,12 @@ export class AudioManager {
     const files = SOUND_FILES[kind];
     const file = files[Math.floor(Math.random() * files.length)];
     const sound = new Audio(`${import.meta.env.BASE_URL}${file}`);
-    sound.volume = this.settings.volume;
+    sound.volume = this.settings.sfxVolume;
     void sound.play().catch(() => undefined);
   }
 
   private applyMusicSettings(): void {
-    this.music.volume = this.settings.volume * 0.35;
+    this.music.volume = this.settings.musicVolume * 0.35;
     if (this.settings.musicMuted) {
       this.music.pause();
     } else if (this.musicStarted) {

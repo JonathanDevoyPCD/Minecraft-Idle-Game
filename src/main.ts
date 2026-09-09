@@ -5,14 +5,17 @@ import {
   SPEED_RATES,
   BLOCK_DEFINITIONS,
   addXp,
+  buySkillNode,
   buyWorldExpansion,
   buySpeedUpgrade,
   buyToolUpgrade,
+  canAffordSkillNode,
   calculateOfflineXp,
   getAutoRate,
   getContextTool,
   getExpansionChunkOrigin,
   getTool,
+  getSkillNodeRank,
   getWorldTier,
   harvestResource,
   loadState,
@@ -366,6 +369,7 @@ const skillTreeInspectorPrerequisites = document.querySelector<HTMLElement>('#sk
 const skillTreeInspectorState = document.querySelector<HTMLElement>('#skill-tree-inspector-state')!;
 const skillTreeInspectorCost = document.querySelector<HTMLElement>('#skill-tree-inspector-cost')!;
 const skillTreeInspectorClose = document.querySelector<HTMLButtonElement>('#skill-tree-inspector-close')!;
+const skillTreePurchaseButton = document.querySelector<HTMLButtonElement>('#skill-tree-purchase')!;
 const skillTreeZoomOutButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-out')!;
 const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-in')!;
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
@@ -383,6 +387,7 @@ let skillTreePanY = 0;
 let isPanningSkillTree = false;
 let lastSkillTreePanX = 0;
 let lastSkillTreePanY = 0;
+let selectedSkillNodeId: string | null = null;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -401,9 +406,10 @@ function updateCurrentTool(): void {
   });
 }
 
-function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' {
-  if (node.prerequisites.length > 0) return 'locked';
-  return state.craftingPoints >= node.cost.craftingPoints ? 'ready' : 'available';
+function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' | 'maxed' {
+  if (getSkillNodeRank(state, node.id) >= node.maxRank) return 'maxed';
+  if (!node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0)) return 'locked';
+  return canAffordSkillNode(state, node) ? 'ready' : 'available';
 }
 
 function getSkillNodeTitle(id: string): string {
@@ -437,7 +443,8 @@ function renderSkillTree(): void {
   skillTreeGraph.replaceChildren();
   skillTreeInspector.hidden = true;
   skillTreeViewport.classList.remove('has-inspector');
-  skillTreeSummary.textContent = `${SKILL_TREE_NODES.length} unlocks · ${SKILL_TREE_BRANCHES.length} paths · Crafting Points reveal the next step`;
+  const purchasedRanks = SKILL_TREE_NODES.reduce((total, node) => total + getSkillNodeRank(state, node.id), 0);
+  skillTreeSummary.textContent = `${purchasedRanks}/${SKILL_TREE_NODES.length} ranks · ${state.craftingPoints} CP · ${state.worldPower} World Power`;
 
   skillTreeGraph.style.width = `${SKILL_TREE_STAGE_SIZE}px`;
   skillTreeGraph.style.height = `${SKILL_TREE_STAGE_SIZE}px`;
@@ -532,7 +539,8 @@ function renderSkillTree(): void {
     nodeOrb.style.left = `${position.x}px`;
     nodeOrb.style.top = `${position.y}px`;
     nodeOrb.style.setProperty('--branch-colour', branch.colour);
-    nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. ${stateName}. Cost ${node.cost.craftingPoints} Crafting Points.`);
+    const rank = getSkillNodeRank(state, node.id);
+    nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. Rank ${rank} of ${node.maxRank}. ${stateName}. Cost ${node.cost.craftingPoints} Crafting Points.`);
     nodeOrb.title = `${node.title} · ${node.effect}${node.prerequisites.length > 0 ? ` · Requires ${node.prerequisites.map(getSkillNodeTitle).join(', ')}` : ''}`;
 
     const icon = document.createElement('img');
@@ -553,20 +561,40 @@ function renderSkillTree(): void {
 
 function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TREE_BRANCHES[number]): void {
   const stateName = getSkillNodeState(node);
+  const rank = getSkillNodeRank(state, node.id);
   skillTreeInspectorImage.src = `${import.meta.env.BASE_URL}assets/skill-tree/${getSkillNodeIconName(node)}`;
   skillTreeInspectorBranch.textContent = branch.title;
   skillTreeInspectorTitle.textContent = node.title;
   skillTreeInspectorDescription.textContent = node.description;
-  skillTreeInspectorEffect.textContent = node.effect;
+  skillTreeInspectorEffect.textContent = `${node.effect} · Rank ${rank}/${node.maxRank}`;
   skillTreeInspectorConsequence.textContent = `World impact: ${node.worldConsequence}`;
   skillTreeInspectorPrerequisites.textContent = node.prerequisites.length > 0
     ? `Requires ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
     : 'Starting point for this branch';
   skillTreeInspectorState.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
-  skillTreeInspectorCost.textContent = `${node.cost.craftingPoints} CP`;
+  const resourceCost = Object.entries(node.cost.resources).map(([resource, amount]) => `${amount} ${resource}`).join(' · ');
+  const worldPowerCost = (node.cost.worldPower ?? 0) > 0 ? `${node.cost.worldPower} World Power` : '';
+  skillTreeInspectorCost.textContent = [node.cost.craftingPoints > 0 ? `${node.cost.craftingPoints} CP` : '', resourceCost, worldPowerCost].filter(Boolean).join(' · ') || 'No cost';
   skillTreeInspector.dataset.state = stateName;
+  skillTreePurchaseButton.disabled = stateName !== 'ready';
+  skillTreePurchaseButton.textContent = stateName === 'ready'
+    ? rank > 0 ? `Upgrade Rank ${rank + 1}` : 'Unlock Node'
+    : stateName === 'maxed' ? 'Fully Unlocked' : stateName === 'locked' ? 'Requires Previous Nodes' : 'Need More Resources';
+  selectedSkillNodeId = node.id;
   skillTreeViewport.classList.add('has-inspector');
   skillTreeInspector.hidden = false;
+}
+
+function purchaseSelectedSkillNode(): void {
+  if (!selectedSkillNodeId) return;
+  const node = SKILL_TREE_NODES.find((entry) => entry.id === selectedSkillNodeId);
+  if (!node || !buySkillNode(state, node.id)) return;
+  updateWorldScene();
+  updateUi();
+  saveState(localStorage, state);
+  renderSkillTree();
+  const branch = SKILL_TREE_BRANCHES.find((entry) => entry.id === node.branch);
+  if (branch) showSkillNodeDetails(node, branch);
 }
 
 function updateUi(): void {
@@ -756,7 +784,9 @@ skillTreeZoomInButton.addEventListener('click', () => changeSkillTreeZoom(1));
 skillTreeInspectorClose.addEventListener('click', () => {
   skillTreeInspector.hidden = true;
   skillTreeViewport.classList.remove('has-inspector');
+  selectedSkillNodeId = null;
 });
+skillTreePurchaseButton.addEventListener('click', purchaseSelectedSkillNode);
 skillTreeViewport.addEventListener('wheel', (event) => {
   event.preventDefault();
   changeSkillTreeZoom(event.deltaY < 0 ? 1 : -1);

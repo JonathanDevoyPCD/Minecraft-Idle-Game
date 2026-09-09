@@ -1,3 +1,5 @@
+import { SKILL_TREE_BY_ID, type SkillNodeDefinition } from './skill-tree';
+
 export interface GameState {
   level: number;
   xp: number;
@@ -6,9 +8,11 @@ export interface GameState {
   speedRank: number;
   toolRank: number;
   worldRank: number;
+  worldPower: number;
   worldSeed: number;
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
+  skillRanks: Record<string, number>;
   lastSavedAt: number;
 }
 
@@ -44,6 +48,23 @@ export const WORLD_TIERS = [
   { name: 'Second Meadow', requiredLevel: 6, cost: 2, blockCount: 54, description: 'Choose a direction and grow another connected meadow chunk.' },
 ] as const;
 
+const AUTO_STRIKE_NODE_ID = 'automation-auto-strike';
+const TOOL_BENCH_NODE_ID = 'tools-tool-bench';
+const WOODEN_PICKAXE_NODE_ID = 'tools-wooden-pickaxe';
+const STONE_TOOL_SET_NODE_ID = 'tools-stone-set';
+const IRON_PICKAXE_NODE_ID = 'tools-iron-pickaxe';
+const ADJACENT_BLOCK_NODE_ID = 'world-adjacent-block';
+const SURFACE_3X3_NODE_ID = 'world-surface-3x3';
+const TOOL_NODE_IDS = [
+  'tools-wooden-shovel',
+  'tools-wooden-pickaxe',
+  'tools-wooden-axe',
+  'tools-stone-set',
+  'tools-iron-shovel',
+  'tools-iron-pickaxe',
+  'tools-iron-axe',
+] as const;
+
 export function getExpansionChunkOrigin(expansionNumber: number, direction: WorldDirection): { x: number; z: number } {
   const distance = Math.max(1, Math.floor(expansionNumber));
   if (direction === 'north') return { x: -1, z: -1 - distance * 3 };
@@ -61,9 +82,11 @@ export function freshState(now = Date.now()): GameState {
     speedRank: 0,
     toolRank: 0,
     worldRank: 0,
+    worldPower: 0,
     worldSeed: 184731,
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
+    skillRanks: {},
     lastSavedAt: now,
   };
 }
@@ -87,6 +110,90 @@ export function addXp(state: GameState, amount: number): number {
   return levelUps;
 }
 
+export function getSkillNodeRank(state: GameState, nodeId: string): number {
+  return Math.max(0, Math.floor(Number(state.skillRanks[nodeId]) || 0));
+}
+
+function setSkillNodeRank(state: GameState, nodeId: string, rank: number): void {
+  if (rank <= 0) delete state.skillRanks[nodeId];
+  else state.skillRanks[nodeId] = rank;
+}
+
+function hasSkillPrerequisites(state: GameState, node: SkillNodeDefinition): boolean {
+  return node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0);
+}
+
+export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition): boolean {
+  if (state.craftingPoints < node.cost.craftingPoints) return false;
+  if ((node.cost.worldPower ?? 0) > state.worldPower) return false;
+  return Object.entries(node.cost.resources).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount);
+}
+
+export function buySkillNode(state: GameState, nodeId: string): boolean {
+  const node = SKILL_TREE_BY_ID.get(nodeId);
+  if (!node) return false;
+  const currentRank = getSkillNodeRank(state, node.id);
+  if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
+
+  state.craftingPoints -= node.cost.craftingPoints;
+  state.worldPower -= node.cost.worldPower ?? 0;
+  Object.entries(node.cost.resources).forEach(([resource, amount]) => {
+    state.resources[resource] = (state.resources[resource] ?? 0) - amount;
+  });
+  setSkillNodeRank(state, node.id, currentRank + 1);
+
+  if (node.id === AUTO_STRIKE_NODE_ID) state.speedRank = Math.min(currentRank + 1, SPEED_RATES.length - 1);
+  if (node.id === ADJACENT_BLOCK_NODE_ID) {
+    state.worldRank = Math.max(state.worldRank, 1);
+    state.worldPower += 1;
+  }
+  if (node.id === SURFACE_3X3_NODE_ID) state.worldRank = Math.max(state.worldRank, 2);
+  if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
+    state.toolRank = getToolRankFromSkills(state);
+  }
+  return true;
+}
+
+function getToolRankFromSkills(state: GameState): number {
+  if (getSkillNodeRank(state, IRON_PICKAXE_NODE_ID) > 0) return 3;
+  if (getSkillNodeRank(state, STONE_TOOL_SET_NODE_ID) > 0) return 2;
+  if (getSkillNodeRank(state, WOODEN_PICKAXE_NODE_ID) > 0) return 1;
+  return 0;
+}
+
+function migrateSkillRanks(parsed: Partial<GameState>): Record<string, number> {
+  const ranks: Record<string, number> = {};
+  if (parsed.skillRanks && typeof parsed.skillRanks === 'object') {
+    Object.entries(parsed.skillRanks).forEach(([nodeId, value]) => {
+      const node = SKILL_TREE_BY_ID.get(nodeId);
+      const rank = Math.max(0, Math.floor(Number(value) || 0));
+      if (node && rank > 0) ranks[nodeId] = Math.min(node.maxRank, rank);
+    });
+  }
+
+  // v1 saves stored the three prototype upgrade tracks separately. Mirror that
+  // progress into their stable tree nodes without charging the player again.
+  const speedRank = Math.max(0, Math.floor(Number(parsed.speedRank) || 0));
+  if (!ranks[AUTO_STRIKE_NODE_ID] && speedRank > 0) ranks[AUTO_STRIKE_NODE_ID] = Math.min(3, speedRank);
+  const toolRank = Math.max(0, Math.floor(Number(parsed.toolRank) || 0));
+  if (toolRank > 0) {
+    ranks[TOOL_BENCH_NODE_ID] = 1;
+    ranks['tools-wooden-shovel'] = 1;
+    ranks[WOODEN_PICKAXE_NODE_ID] = 1;
+    ranks['tools-wooden-axe'] = 1;
+  }
+  if (toolRank > 1) ranks[STONE_TOOL_SET_NODE_ID] = 1;
+  if (toolRank > 2) {
+    ranks['tools-iron-shovel'] = 1;
+    ranks[IRON_PICKAXE_NODE_ID] = 1;
+    ranks['tools-iron-axe'] = 1;
+  }
+  const worldRank = Math.max(0, Math.floor(Number(parsed.worldRank) || 0));
+  if (worldRank > 0) ranks[ADJACENT_BLOCK_NODE_ID] = 1;
+  if (worldRank > 1) ranks[SURFACE_3X3_NODE_ID] = 1;
+  return ranks;
+}
+
 export function getAutoRate(state: GameState): number {
   return SPEED_RATES[Math.min(state.speedRank, SPEED_RATES.length - 1)];
 }
@@ -98,6 +205,7 @@ export function buySpeedUpgrade(state: GameState): boolean {
 
   state.craftingPoints -= 1;
   state.speedRank += 1;
+  setSkillNodeRank(state, AUTO_STRIKE_NODE_ID, Math.min(3, state.speedRank));
   return true;
 }
 
@@ -106,15 +214,24 @@ export function getTool(state: GameState) {
 }
 
 export function getHarvestPower(state: GameState): number {
-  return getTool(state).harvestPower;
+  // Offline and automatic gains currently target the starting grass block, so
+  // use the tool actually unlocked for that block family rather than a global
+  // pickaxe tier that could overstate the player's active capability.
+  return getContextTool(state, 'grass').harvestPower;
 }
 
 export function getContextTool(state: GameState, blockType: BlockType) {
   const requiredTool = BLOCK_DEFINITIONS[blockType].requiredTool;
-  if (state.toolRank === 0) return TOOL_KIND_PROFILES.hand;
-  const tier = getTool(state);
   const profile = TOOL_KIND_PROFILES[requiredTool];
-  return { ...profile, name: `${tier.material} ${profile.name}`, harvestPower: tier.harvestPower };
+  const unlocked = getSkillNodeRank(state, 'tools-iron-' + requiredTool) > 0
+    ? { material: 'Iron', harvestPower: 4 }
+    : getSkillNodeRank(state, STONE_TOOL_SET_NODE_ID) > 0
+      ? { material: 'Stone', harvestPower: 3 }
+      : getSkillNodeRank(state, 'tools-wooden-' + requiredTool) > 0
+        ? { material: 'Wooden', harvestPower: 2 }
+        : null;
+  if (!unlocked) return TOOL_KIND_PROFILES.hand;
+  return { ...profile, name: `${unlocked.material} ${profile.name}`, harvestPower: unlocked.harvestPower };
 }
 
 export function harvestResource(state: GameState, blockType: BlockType, amount = 1): void {
@@ -130,6 +247,18 @@ export function buyToolUpgrade(state: GameState): boolean {
 
   state.craftingPoints -= nextTool.cost;
   state.toolRank += 1;
+  if (state.toolRank >= 1) {
+    setSkillNodeRank(state, TOOL_BENCH_NODE_ID, 1);
+    setSkillNodeRank(state, 'tools-wooden-shovel', 1);
+    setSkillNodeRank(state, WOODEN_PICKAXE_NODE_ID, 1);
+    setSkillNodeRank(state, 'tools-wooden-axe', 1);
+  }
+  if (state.toolRank >= 2) setSkillNodeRank(state, STONE_TOOL_SET_NODE_ID, 1);
+  if (state.toolRank >= 3) {
+    setSkillNodeRank(state, 'tools-iron-shovel', 1);
+    setSkillNodeRank(state, IRON_PICKAXE_NODE_ID, 1);
+    setSkillNodeRank(state, 'tools-iron-axe', 1);
+  }
   return true;
 }
 
@@ -150,6 +279,11 @@ export function buyWorldExpansion(state: GameState, direction: WorldDirection = 
 
   state.craftingPoints -= nextWorld.cost;
   state.worldRank += 1;
+  if (state.worldRank >= 1) {
+    setSkillNodeRank(state, ADJACENT_BLOCK_NODE_ID, 1);
+    state.worldPower += 1;
+  }
+  if (state.worldRank >= 2) setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
   if (state.worldRank >= 2) state.expansionDirections.push(direction);
   return true;
 }
@@ -161,6 +295,11 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   try {
     const parsed = JSON.parse(raw) as Partial<GameState>;
     const base = freshState(now);
+    const skillRanks = migrateSkillRanks(parsed);
+    const parsedWorldPower = Number(parsed.worldPower);
+    const resources = Object.fromEntries(
+      Object.entries(parsed.resources ?? {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Math.max(0, Number(value))]),
+    );
     return {
       level: Math.max(1, Number(parsed.level) || base.level),
       xp: Math.max(0, Number(parsed.xp) || 0),
@@ -169,14 +308,15 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
       toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
       worldRank: Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0)),
+      worldPower: Number.isFinite(parsedWorldPower)
+        ? Math.max(0, parsedWorldPower)
+        : Number(parsed.worldRank) > 0 ? 1 : 0,
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
         : base.expansionDirections,
-      resources: {
-        dirt: Math.max(0, Number(parsed.resources?.dirt) || 0),
-        cobblestone: Math.max(0, Number(parsed.resources?.cobblestone) || 0),
-      },
+      resources: { ...base.resources, ...resources },
+      skillRanks,
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
   } catch {

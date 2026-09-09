@@ -164,6 +164,8 @@ button { font: inherit; }
 .skill-tree-orb[data-state='locked'] { filter: grayscale(.6); opacity: .45; }
 .skill-tree-orb[data-state='available'] { background: #8d9588; border-color: #758074; }
 .skill-tree-orb[data-state='ready'] { box-shadow: 0 0 0 5px color-mix(in srgb, var(--branch-colour) 20%, transparent), 0 3px 0 rgba(89,51,26,.22), inset 0 1px 0 rgba(255,255,255,.52); }
+.skill-tree-orb[data-state='maxed'] { filter: none; opacity: 1; box-shadow: 0 0 0 4px rgba(255,244,201,.72), 0 3px 0 rgba(89,51,26,.22), inset 0 1px 0 rgba(255,255,255,.58); }
+.skill-tree-orb[data-state='maxed']::after { position: absolute; top: -7px; right: -7px; display: grid; width: 13px; height: 13px; place-items: center; color: #fff8dd; border: 2px solid #fff8dd; border-radius: 50%; background: #416a49; content: '✓'; font-size: 9px; line-height: 1; }
 .skill-tree-inspector { position: absolute; right: 16px; bottom: 16px; z-index: 7; display: flex; width: min(310px, calc(100% - 32px)); flex-direction: column; gap: 10px; padding: 14px; }
 .skill-tree-inspector[hidden] { display: none; }
 .skill-tree-inspector-heading { display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px; gap: 10px; align-items: center; }
@@ -179,7 +181,11 @@ button { font: inherit; }
 .skill-tree-inspector-consequence { color: #8d795b !important; }
 .skill-tree-inspector-prerequisites { color: #927e61; font-size: 9px; line-height: 1.25; }
 .skill-tree-inspector-footer { display: flex; justify-content: space-between; gap: 8px; color: #66563f; font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.skill-tree-purchase { width: 100%; min-height: 34px; padding: 8px 10px; color: #fff8dd; cursor: pointer; border: 2px solid #8c4c25; border-radius: 9px; background: linear-gradient(#df9b38, #c87528); box-shadow: 0 3px 0 #8c4c25; font: inherit; font-size: 11px; font-weight: 900; }
+.skill-tree-purchase:hover:not(:disabled), .skill-tree-purchase:focus-visible:not(:disabled) { filter: brightness(1.06); outline: none; }
+.skill-tree-purchase:disabled { color: #756b5c; cursor: not-allowed; border-color: #a9a18e; background: #d5cfbb; box-shadow: 0 3px 0 #aaa28f; }
 .skill-tree-inspector[data-state='ready'] #skill-tree-inspector-state { color: #416a49; }
+.skill-tree-inspector[data-state='purchased'] #skill-tree-inspector-state, .skill-tree-inspector[data-state='maxed'] #skill-tree-inspector-state { color: #416a49; }
 .skill-tree-inspector[data-state='locked'] #skill-tree-inspector-state { color: #8d9588; }
 .skill-tree-viewport.has-inspector .skill-tree-zoom-controls { top: 16px; bottom: auto; }
 .skill-tree-zoom-controls { position: absolute; bottom: 16px; left: 16px; z-index: 6; display: flex; align-items: center; gap: 4px; padding: 6px; }

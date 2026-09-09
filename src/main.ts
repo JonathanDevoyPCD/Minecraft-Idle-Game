@@ -455,7 +455,7 @@ function getBlockAtPointer(event: PointerEvent): BlockNode | null {
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(miningTargets)[0];
+  const hit = raycaster.intersectObjects(miningTargets, false)[0];
   return hit ? blockByMesh.get(hit.object) ?? null : null;
 }
 

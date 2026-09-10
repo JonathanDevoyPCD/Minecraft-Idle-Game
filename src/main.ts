@@ -378,7 +378,8 @@ function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual 
   const visual: MeadowFeatureVisual = { feature, group };
 
   if (feature.kind === 'path') {
-    addFeatureCube(group, pathMaterial, [0.88, 0.05, 0.88], [0, 0.49, 0]);
+    const isSouthConnector = feature.id === 'path-south';
+    addFeatureCube(group, pathMaterial, isSouthConnector ? [0.16, 0.05, 0.88] : [0.88, 0.05, 0.88], [0, 0.49, 0]);
   }
 
   if (feature.kind === 'tree') {

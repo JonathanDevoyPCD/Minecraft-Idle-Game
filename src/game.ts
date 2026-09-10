@@ -228,13 +228,12 @@ export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[
   // the southeast edge and trees kept around the outer boundary.
   const treeCandidates = [
     { x: 0.95, z: -0.95 },
-    { x: 0.95, z: 0.05 },
     { x: -0.95, z: 0.95 },
   ].sort((a, b) => seededNoise(worldSeed, b.x, b.z) - seededNoise(worldSeed, a.x, a.z));
   return [
     { id: 'path-north', kind: 'path', x: 0, z: -1 },
     { id: 'path-core', kind: 'path', x: 0, z: 0 },
-    { id: 'path-south', kind: 'path', x: 0, z: 1 },
+    { id: 'path-south', kind: 'path', x: 0.49, z: 0.95 },
     { id: 'starter-farm', kind: 'farm', x: -0.05, z: 0.95 },
     { id: 'starter-well', kind: 'well', x: 0.95, z: 0.95 },
     { id: 'starter-dwelling', kind: 'dwelling', x: -0.55, z: -0.55 },
@@ -251,11 +250,11 @@ export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan
   if (state.worldRank < 2) return [];
   const entities: LivingEntityPlan[] = [];
   if (getSkillNodeRank(state, 'life-animals') > 0) {
-    entities.push({ id: 'starter-pig', kind: 'pig', x: 0.72, z: 1.1 });
-    entities.push({ id: 'starter-cow', kind: 'cow', x: 1.28, z: 1.1 });
+    entities.push({ id: 'starter-pig', kind: 'pig', x: 0.55, z: 0.25 });
+    entities.push({ id: 'starter-cow', kind: 'cow', x: 1.05, z: 0.25 });
   }
   if (getSkillNodeRank(state, 'life-animal-pens') > 0) {
-    entities.push({ id: 'starter-sheep', kind: 'sheep', x: 1.05, z: 0.7 });
+    entities.push({ id: 'starter-sheep', kind: 'sheep', x: 0.85, z: -0.1 });
   }
   if (getSkillNodeRank(state, 'life-first-villager') > 0) {
     const role = getSkillNodeRank(state, 'life-specialist-miner') > 0
@@ -265,7 +264,7 @@ export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan
         : getSkillNodeRank(state, 'life-toolsmith') > 0
           ? 'toolsmith'
           : 'unassigned';
-    entities.push({ id: 'first-villager', kind: 'villager', x: 0, z: -1.08, role });
+    entities.push({ id: 'first-villager', kind: 'villager', x: 0.35, z: -1.08, role });
   }
   return entities;
 }

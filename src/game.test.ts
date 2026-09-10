@@ -236,6 +236,7 @@ describe('IdleCraft progression', () => {
     expect(plan.find((feature) => feature.kind === 'dwelling')).toMatchObject({ x: -0.55, z: -0.55 });
     expect(plan.find((feature) => feature.kind === 'farm')).toMatchObject({ x: -0.05, z: 0.95 });
     expect(plan.find((feature) => feature.kind === 'well')).toMatchObject({ x: 0.95, z: 0.95 });
+    expect(plan.find((feature) => feature.id === 'path-south')).toMatchObject({ x: 0.49, z: 0.95 });
     expect(plan.filter((feature) => feature.kind === 'tree').every((feature) => feature.x >= -1 && feature.x <= 1 && feature.z >= -1 && feature.z <= 1)).toBe(true);
   });
 
@@ -246,7 +247,10 @@ describe('IdleCraft progression', () => {
     state.skillRanks = { 'life-animals': 1, 'life-first-villager': 1 };
     const entityPlan = getLivingEntityPlan(state);
     expect(entityPlan.map((entity) => entity.kind)).toEqual(['pig', 'cow', 'villager']);
-    expect(entityPlan.filter((entity) => entity.kind !== 'villager').every((entity) => entity.x >= 0.5 && entity.x <= 1.5 && entity.z >= 0.5 && entity.z <= 1.5)).toBe(true);
+    const animals = entityPlan.filter((entity) => entity.kind !== 'villager');
+    expect(animals.every((entity) => entity.x >= -1.35 && entity.x <= 1.35 && entity.z >= -1.35 && entity.z <= 1.35)).toBe(true);
+    expect(new Set(animals.map((entity) => `${entity.x},${entity.z}`)).size).toBe(animals.length);
+    expect(entityPlan.find((entity) => entity.kind === 'villager')).toMatchObject({ x: 0.35, z: -1.08 });
     state.skillRanks['life-specialist-miner'] = 1;
     expect(getLivingEntityPlan(state).find((entity) => entity.kind === 'villager')?.role).toBe('miner');
   });

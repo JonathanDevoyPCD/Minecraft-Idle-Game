@@ -16,6 +16,8 @@ import {
   getMineCartCount,
   getMineLayer,
   getMineTripDuration,
+  getNextSettlementStage,
+  getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
   loadState,
@@ -24,7 +26,6 @@ import {
   type BlockType,
   type MineSite,
   type WorldDirection,
-  xpRequired,
 } from './game';
 import {
   getSkillTreeBranch,
@@ -471,8 +472,9 @@ const offlineXp = initialMineResult.trips > 0 ? initialMineResult.xp : calculate
 updateWorldScene();
 
 const levelEl = document.querySelector('#level')!;
-const xpLabelEl = document.querySelector('#xp-label')!;
-const xpFillEl = document.querySelector<HTMLElement>('#xp-fill')!;
+const settlementStageEl = document.querySelector('#settlement-stage')!;
+const settlementProgressLabelEl = document.querySelector('#settlement-progress-label')!;
+const settlementFillEl = document.querySelector<HTMLElement>('#settlement-fill')!;
 const totalXpEl = document.querySelector('#total-xp')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
 const pointsEl = document.querySelector('#upgrade-points')!;
@@ -865,11 +867,20 @@ function purchaseSelectedSkillNode(): void {
 }
 
 function updateUi(): void {
-  const required = xpRequired(state.level);
   const rate = state.mines.length > 0 ? getMineCartCount(state) * 1000 / getMineTripDuration(state) : 0;
+  const settlementStage = getSettlementStage(state);
+  const nextSettlementStage = getNextSettlementStage(state);
   levelEl.textContent = String(state.level);
-  xpLabelEl.textContent = `${state.xp.toLocaleString()} / ${required.toLocaleString()} XP`;
-  xpFillEl.style.width = `${Math.min(100, state.xp / required * 100)}%`;
+  settlementStageEl.textContent = settlementStage.name;
+  if (nextSettlementStage) {
+    settlementProgressLabelEl.textContent = `${state.settlementProgress.toLocaleString()} / ${nextSettlementStage.requiredProgress.toLocaleString()} Growth`;
+    const stageSpan = Math.max(1, nextSettlementStage.requiredProgress - settlementStage.requiredProgress);
+    const stageProgress = Math.max(0, state.settlementProgress - settlementStage.requiredProgress);
+    settlementFillEl.style.width = `${Math.min(100, stageProgress / stageSpan * 100)}%`;
+  } else {
+    settlementProgressLabelEl.textContent = `${state.settlementProgress.toLocaleString()} Growth`;
+    settlementFillEl.style.width = '100%';
+  }
   totalXpEl.textContent = state.totalXp.toLocaleString();
   autoRateEl.textContent = rate.toFixed(2);
   pointsEl.textContent = `${state.craftingPoints} CP`;

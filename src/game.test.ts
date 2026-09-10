@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMineCartCount, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, unlockStarterMine, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -108,6 +108,28 @@ describe('IdleCraft progression', () => {
     expect(state.worldRank).toBe(1);
     expect(state.worldCells).toHaveLength(2);
     expect(state.craftingPoints).toBe(1);
+    expect(state.settlementProgress).toBe(100);
+  });
+
+  it('progresses through deliberately spaced settlement stages', () => {
+    const state = freshState();
+    expect(SETTLEMENT_STAGES.map((stage) => stage.requiredProgress)).toEqual([0, 500, 2_000, 7_500, 25_000, 75_000, 200_000, 500_000]);
+    expect(getSettlementStage(state).name).toBe('Dwelling');
+    expect(getNextSettlementStage(state)?.name).toBe('Hamlet');
+    state.worldRank = 1;
+    addSettlementProgress(state, 500);
+    expect(getSettlementStage(state).name).toBe('Hamlet');
+    expect(getNextSettlementStage(state)?.name).toBe('Village');
+    state.worldRank = 2;
+    addSettlementProgress(state, 1_500);
+    expect(getSettlementStage(state).name).toBe('Village');
+  });
+
+  it('does not advance settlement progress from mine output alone', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    expect(state.settlementProgress).toBe(0);
   });
 
   it('grows surface cells in deliberate stages', () => {
@@ -198,6 +220,13 @@ describe('IdleCraft progression', () => {
       getItem: () => JSON.stringify({ ...freshState(0), worldRank: 2, worldPower: 0 }),
     } as unknown as Storage;
     expect(loadState(storage, 1000).worldPower).toBe(0);
+  });
+
+  it('migrates old expanded saves into settlement growth', () => {
+    const storage = {
+      getItem: () => JSON.stringify({ ...freshState(0), settlementProgress: undefined, worldRank: 2, worldCells: undefined }),
+    } as unknown as Storage;
+    expect(loadState(storage, 1000).settlementProgress).toBe(500);
   });
 
   it('migrates legacy expanded saves into coordinate cells', () => {

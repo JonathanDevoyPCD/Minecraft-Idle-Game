@@ -40,7 +40,9 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 
 - Replace the misleading World Seed display with a settlement/world-growth progress bar while keeping player XP separate.
 - Add the progression stages: Dwelling, Hamlet, Village, Small Town, Town, City, Large City, and Endless Mode.
+- Persist settlement growth separately from player XP and award it when construction projects complete, not from passive mine output alone.
 - Make each stage require a long-term combination of settlement progress, structures, population, food/storage, resources, and skill-tree unlocks.
+- Reserve population, food, storage, structure, and district gates for the living-world phases so the progression spine does not claim systems that do not exist yet.
 - Use increasing thresholds and construction requirements so progression is deliberately slow.
 
 ### Step 5 — Author the first living meadow
@@ -89,4 +91,5 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Step 1: **complete** — authored terrain is preserved and legacy-save migration is implemented and verified.
 - Step 2: **complete** — coordinate cells now grow through a persisted construction queue with visible build progress.
 - Step 3: **complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented and verified.
-- Steps 4–9: queued.
+- Step 4: **foundation in progress** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
+- Steps 5–9: queued.

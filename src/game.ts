@@ -10,6 +10,7 @@ export interface GameState {
   worldRank: number;
   worldPower: number;
   worldSeed: number;
+  settlementProgress: number;
   worldCells: WorldCell[];
   undergroundLayer: number;
   mines: MineSite[];
@@ -107,6 +108,32 @@ export const WORLD_TIERS = [
   { name: 'Second Meadow', requiredLevel: 6, cost: 2, blockCount: 54, description: 'Choose a direction and grow another connected meadow chunk.' },
 ] as const;
 
+export type SettlementStageId = 'dwelling' | 'hamlet' | 'village' | 'small-town' | 'town' | 'city' | 'large-city' | 'endless';
+
+export interface SettlementStageDefinition {
+  id: SettlementStageId;
+  name: string;
+  requiredProgress: number;
+  requiredWorldRank: number;
+  description: string;
+}
+
+export const SETTLEMENT_STAGES: readonly SettlementStageDefinition[] = [
+  { id: 'dwelling', name: 'Dwelling', requiredProgress: 0, requiredWorldRank: 0, description: 'A first foothold for the growing world.' },
+  { id: 'hamlet', name: 'Hamlet', requiredProgress: 500, requiredWorldRank: 1, description: 'A few connected plots now form a small community.' },
+  { id: 'village', name: 'Village', requiredProgress: 2_000, requiredWorldRank: 2, description: 'The settlement has room for dedicated homes and work.' },
+  { id: 'small-town', name: 'Small Town', requiredProgress: 7_500, requiredWorldRank: 2, description: 'A dependable settlement with several working districts.' },
+  { id: 'town', name: 'Town', requiredProgress: 25_000, requiredWorldRank: 2, description: 'A durable center of trade, craft, and exploration.' },
+  { id: 'city', name: 'City', requiredProgress: 75_000, requiredWorldRank: 2, description: 'A mature settlement with a broad connected world.' },
+  { id: 'large-city', name: 'Large City', requiredProgress: 200_000, requiredWorldRank: 2, description: 'A major living world built over a long campaign.' },
+  { id: 'endless', name: 'Endless Mode', requiredProgress: 500_000, requiredWorldRank: 2, description: 'The settlement loop continues without a final cap.' },
+] as const;
+
+const SETTLEMENT_PROGRESS_BY_CONSTRUCTION: Record<ConstructionKind, number> = {
+  'adjacent-cell': 100,
+  'surface-3x3': 400,
+};
+
 const AUTO_STRIKE_NODE_ID = 'automation-auto-strike';
 const TOOL_BENCH_NODE_ID = 'tools-tool-bench';
 const WOODEN_PICKAXE_NODE_ID = 'tools-wooden-pickaxe';
@@ -144,6 +171,7 @@ export function freshState(now = Date.now()): GameState {
     worldRank: 0,
     worldPower: 0,
     worldSeed: 184731,
+    settlementProgress: 0,
     worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
     undergroundLayer: 0,
     mines: [],
@@ -310,9 +338,30 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
     const project = state.constructionQueue.shift()!;
     if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
     if (project.kind === 'surface-3x3') expandToSurface3x3(state);
+    addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   }
   return completed;
+}
+
+export function addSettlementProgress(state: GameState, amount: number): number {
+  const safeAmount = Math.max(0, Math.floor(amount));
+  if (safeAmount <= 0) return 0;
+  state.settlementProgress += safeAmount;
+  return safeAmount;
+}
+
+export function getSettlementStage(state: GameState): SettlementStageDefinition {
+  let current = SETTLEMENT_STAGES[0];
+  SETTLEMENT_STAGES.forEach((stage) => {
+    if (state.settlementProgress >= stage.requiredProgress && state.worldRank >= stage.requiredWorldRank) current = stage;
+  });
+  return current;
+}
+
+export function getNextSettlementStage(state: GameState): SettlementStageDefinition | null {
+  const currentIndex = SETTLEMENT_STAGES.findIndex((stage) => stage.id === getSettlementStage(state).id);
+  return SETTLEMENT_STAGES[currentIndex + 1] ?? null;
 }
 
 export function xpRequired(level: number): number {
@@ -567,6 +616,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const base = freshState(now);
     const skillRanks = migrateSkillRanks(parsed);
     const parsedWorldPower = Number(parsed.worldPower);
+    const parsedSettlementProgress = Number(parsed.settlementProgress);
     const worldRank = Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0));
     const worldCells = parseWorldCells(parsed.worldCells) ?? legacyWorldCells(worldRank);
     const resources = Object.fromEntries(
@@ -584,6 +634,9 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         ? Math.max(0, parsedWorldPower)
         : Number(parsed.worldRank) > 0 ? 1 : 0,
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
+      settlementProgress: Number.isFinite(parsedSettlementProgress)
+        ? Math.max(0, Math.floor(parsedSettlementProgress))
+        : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
       worldCells,
       undergroundLayer: Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
       mines: parseMines(parsed.mines, now),

@@ -66,6 +66,8 @@ export interface MineSite {
   completedTrips: number;
 }
 
+export type MineCargoKind = 'stone' | 'coal' | 'iron' | 'gold' | 'diamond';
+
 export interface MineProductionResult {
   trips: number;
   xp: number;
@@ -525,6 +527,15 @@ export function getMineLayer(state: GameState): number {
   return Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
 }
 
+export function getMineCargoKind(state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>): MineCargoKind {
+  const layer = Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
+  if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) return 'diamond';
+  if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0) return 'gold';
+  if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0) return 'iron';
+  if (layer >= 1 && getSkillNodeRank(state, 'materials-coal') > 0) return 'coal';
+  return 'stone';
+}
+
 export function getMineCartCount(state: GameState): number {
   const cartRanks = getSkillNodeRank(state, MINE_CART_NODE_ID);
   return Math.max(1, 1 + cartRanks);
@@ -565,6 +576,12 @@ export function advanceMineOperations(state: GameState, now = Date.now()): MineP
     }
     if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0) {
       addMineResource(result, 'iron', Math.floor(cartTrips / 5));
+    }
+    if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0) {
+      addMineResource(result, 'gold', Math.floor(cartTrips / 6));
+    }
+    if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) {
+      addMineResource(result, 'diamond', Math.floor(cartTrips / 10));
     }
   });
   Object.entries(result.resources).forEach(([resource, amount]) => {
@@ -664,7 +681,7 @@ export function addXp(state: GameState, amount: number): number {
   return levelUps;
 }
 
-export function getSkillNodeRank(state: GameState, nodeId: string): number {
+export function getSkillNodeRank(state: Pick<GameState, 'skillRanks'>, nodeId: string): number {
   return Math.max(0, Math.floor(Number(state.skillRanks[nodeId]) || 0));
 }
 

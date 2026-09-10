@@ -24,7 +24,7 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Keep the coordinate-based surface grid as the source of truth for world cells, paths, and occupied footprints.
 - Separate harvesting from construction: resources and World Power pay for new cells and structures.
 - Add a construction queue and visible build timer for expansions.
-- Make the free mine use a four-cell rail footprint extending from, but not replacing, a path tile.
+- Make the free mine use a four-cell placement footprint extending from, but not replacing, a path tile. The visible rail must stop at a compact path-side junction so the mine entrance stays off the path and the cart reads as the delivery link.
 - Add player placement validation: within the chunk, no footprint collision, and at least one orthogonal connection to the path network.
 - Add path-facing rules for structures so entrances rotate toward a connected path.
 - Make chunk upgrades expand the current square perimeter: 5×5 → 7×7 → 9×9 → 11×11 and onward.
@@ -35,6 +35,7 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Keep each visible terrain block's identity stable: grass stays grass, dirt stays dirt, stone stays stone, deepslate stays deepslate, and bedrock remains permanent.
 - Stop terrain blocks from breaking, disappearing, or transforming during ordinary play.
 - Run minecarts as the primary idle mining loop; cart count, miners, storage carts, and powered rails improve production.
+- Show the minecart payload as part of the operation: empty on the return leg, stone by default on the loaded leg, and the deepest unlocked ore visibly mixed into the rock cargo.
 - Keep underground strata persistent and add layers one at a time through the world-growth branch.
 - Scatter small, layer-appropriate ore deposits as optional clickable bonus targets. They award extra resources and XP but never break or alter terrain.
 - Route mine output into the existing resource, XP, save, and skill-tree systems.
@@ -100,8 +101,8 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 
 - Previous skill-tree and mining prototype work: complete.
 - Step 1: **complete foundation** — the new schema, procedural 5×5 chunk, five-tile path cross, and free mine placement foundation are implemented; the old prototype save is intentionally not migrated.
-- Step 2: **in progress** — reusable collision-safe placement validation, path-side mine footprints, tile-upgrade API, and 5×5 → 7×7 → 9×9 perimeter expansion are implemented; player-facing structure placement controls remain next.
-- Step 3: **foundation complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented; they are being reconnected to the new placement grid.
+- Step 2: **in progress** — reusable collision-safe placement validation, path-side mine footprints, compact path junction rendering, tile-upgrade API, and 5×5 → 7×7 → 9×9 perimeter expansion are implemented; player-facing structure placement controls remain next.
+- Step 3: **foundation complete** — permanent mine operations, layered terrain, non-destructive ore clicks, minecart rock/ore cargo states, and visible deep-material output are implemented; broader resource tables remain queued for later balancing.
 - Step 4: **complete (foundation)** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
 - Step 5: superseded foundation — the old deterministic 3×3 authored meadow is retired from the active scene; it will return as player-placed, grid-valid content.
 - Step 6: paused behind placement — entities remain available as assets, but they will not spawn until a valid pen/farm/habitat footprint exists.

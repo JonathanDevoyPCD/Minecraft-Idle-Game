@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -333,5 +333,18 @@ describe('IdleCraft progression', () => {
     expect(collectOreBonus(state, 'diamond')).toBe(1);
     expect(state.resources.diamond).toBe(1);
     expect(dispatchMineCart(state, 1000).trips).toBe(3);
+  });
+
+  it('shows the deepest unlocked material in returning minecart cargo', () => {
+    const state = freshState();
+    expect(getMineCargoKind(state)).toBe('stone');
+    state.undergroundLayer = 1;
+    state.skillRanks = { 'materials-coal': 1, 'materials-iron': 1 };
+    expect(getMineCargoKind(state)).toBe('iron');
+    state.undergroundLayer = 2;
+    state.skillRanks['materials-gold'] = 1;
+    expect(getMineCargoKind(state)).toBe('gold');
+    state.skillRanks['materials-diamond'] = 1;
+    expect(getMineCargoKind(state)).toBe('diamond');
   });
 });

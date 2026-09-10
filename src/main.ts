@@ -20,6 +20,7 @@ import {
   getMineLayer,
   getMineTripDuration,
   getLivingEntityPlan,
+  getMineCargoKind,
   getMeadowFeaturePlan,
   getNextSettlementStage,
   getSettlementStage,
@@ -31,6 +32,7 @@ import {
   WORLD_DIRECTIONS,
   type BlockType,
   type LivingEntityPlan,
+  type MineCargoKind,
   type MeadowFeature,
   type MineSite,
   type PathCell,
@@ -665,6 +667,8 @@ interface MineVisual {
   carts: THREE.Group[];
   ghost: boolean;
   pathConnector: THREE.Group;
+  railSegments: THREE.Group[];
+  cargoKind: MineCargoKind | null;
 }
 
 interface MinePlacementPreview {
@@ -674,8 +678,22 @@ interface MinePlacementPreview {
   valid: boolean;
 }
 
-const mineVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: false, pathConnector: new THREE.Group() };
-const mineGhostVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: true, pathConnector: new THREE.Group() };
+const mineVisual: MineVisual = {
+  group: new THREE.Group(),
+  carts: [],
+  ghost: false,
+  pathConnector: new THREE.Group(),
+  railSegments: [],
+  cargoKind: null,
+};
+const mineGhostVisual: MineVisual = {
+  group: new THREE.Group(),
+  carts: [],
+  ghost: true,
+  pathConnector: new THREE.Group(),
+  railSegments: [],
+  cargoKind: null,
+};
 world.add(mineVisual.group, mineGhostVisual.group);
 
 function createMineMaterial(
@@ -701,12 +719,14 @@ function addMinePart(
   material: THREE.Material,
   size: [number, number, number],
   position: [number, number, number],
+  rotation: [number, number, number] = [0, 0, 0],
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
     material,
   );
   mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
   const ghost = Boolean(parent.userData.isGhost);
   mesh.castShadow = !ghost;
   mesh.receiveShadow = !ghost;
@@ -714,9 +734,63 @@ function addMinePart(
   return mesh;
 }
 
-function createMineCartVisual(ghost: boolean, storage: boolean): THREE.Group {
+const mineCargoColors: Record<MineCargoKind, number> = {
+  stone: 0x7c8587,
+  coal: 0x303638,
+  iron: 0xd6b8a4,
+  gold: 0xf2c14d,
+  diamond: 0x71e4f1,
+};
+
+function createMineCargoVisual(kind: MineCargoKind, ghost: boolean): THREE.Group {
+  const cargo = new THREE.Group();
+  cargo.userData.isGhost = ghost;
+  cargo.userData.isMineCargo = true;
+  cargo.visible = !ghost;
+  const rockMaterial = createMineMaterial(0x6c7678, undefined, ghost);
+  const rockPositions: Array<[number, number, number, number]> = [
+    [-0.17, 1.0, -0.14, 0.18],
+    [0.04, 1.02, -0.11, -0.24],
+    [0.18, 1.01, 0.02, 0.12],
+    [-0.06, 1.03, 0.11, 0.36],
+    [0.12, 1.0, 0.16, -0.1],
+  ];
+  rockPositions.forEach(([x, y, z, rotation]) => {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(BLOCK_SIZE * 0.11, 0), rockMaterial);
+    rock.position.set(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
+    rock.rotation.set(rotation, rotation * 0.7, rotation * 1.2);
+    rock.castShadow = !ghost;
+    cargo.add(rock);
+  });
+  if (kind !== 'stone') {
+    const oreMaterial = new THREE.MeshStandardMaterial({
+      color: mineCargoColors[kind],
+      emissive: kind === 'diamond' ? 0x124f59 : 0x000000,
+      emissiveIntensity: kind === 'diamond' ? 0.35 : 0,
+      map: oreTextures[kind],
+      roughness: 0.72,
+      transparent: ghost,
+      opacity: ghost ? 0.5 : 1,
+      depthWrite: !ghost,
+    });
+    [[-0.13, 1.11, -0.06], [0.09, 1.1, 0.09]].forEach(([x, y, z], index) => {
+      const ore = new THREE.Mesh(
+        new THREE.BoxGeometry(BLOCK_SIZE * 0.11, BLOCK_SIZE * 0.13, BLOCK_SIZE * 0.11),
+        oreMaterial,
+      );
+      ore.position.set(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
+      ore.rotation.set(0.18 * index, -0.24, 0.12);
+      ore.castShadow = !ghost;
+      cargo.add(ore);
+    });
+  }
+  return cargo;
+}
+
+function createMineCartVisual(ghost: boolean, storage: boolean, cargoKind: MineCargoKind | null): THREE.Group {
   const cart = new THREE.Group();
   cart.userData.isGhost = ghost;
+  cart.userData.cargoKind = cargoKind;
   const bodyMaterial = createMineMaterial(storage ? 0x9f7951 : 0xb8c0c0, undefined, ghost);
   const darkMaterial = createMineMaterial(0x182126, undefined, ghost);
   const wheelMaterial = createMineMaterial(0x20282b, undefined, ghost);
@@ -728,6 +802,7 @@ function createMineCartVisual(ghost: boolean, storage: boolean): THREE.Group {
   addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [-0.3, 0.94, 0]);
   addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [0.3, 0.94, 0]);
   if (storage) addMinePart(cart, woodMaterial, [0.46, 0.22, 0.48], [0, 1.05, 0]);
+  if (!storage && cargoKind) cart.add(createMineCargoVisual(cargoKind, ghost));
 
   [-0.3, 0.3].forEach((x) => {
     [-0.2, 0.2].forEach((z) => {
@@ -753,6 +828,7 @@ function createMineVisual(visual: MineVisual): void {
   const sleeperMaterial = createMineMaterial(0x855235, undefined, visual.ghost);
   const railMaterial = createMineMaterial(0xa8b1ad, railTexture, visual.ghost);
   const poweredMaterial = createMineMaterial(0xd59b3c, poweredRailTexture, visual.ghost);
+  const roofMaterial = createMineMaterial(0x5f3e2a, darkOakPlanksTexture, visual.ghost);
 
   addMinePart(visual.group, darkMaterial, [0.78, 1.1, 0.12], [0, 1.0, 0.58]);
   [-0.36, 0.36].forEach((x) => {
@@ -763,11 +839,22 @@ function createMineVisual(visual: MineVisual): void {
   addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
   addMinePart(visual.group, woodMaterial, [0.92, 0.16, 0.18], [0, 1.68, 0.44]);
 
-  [-0.2, 0.2].forEach((x) => {
-    addMinePart(visual.group, railMaterial, [0.07, 0.05, 2.65], [x, 0.52, 1.78]);
+  const roofRotation: [number, number, number] = [Math.PI * 0.08, 0, 0];
+  addMinePart(visual.group, roofMaterial, [0.86, 0.12, 1.08], [0, 1.77, 0.14], roofRotation);
+  [-0.28, 0.28].forEach((x) => {
+    addMinePart(visual.group, woodMaterial, [0.1, 0.1, 1.12], [x, 1.86, 0.14], roofRotation);
   });
+
   for (let index = 0; index < 4; index += 1) {
-    addMinePart(visual.group, index === 2 ? poweredMaterial : sleeperMaterial, [0.78, 0.06, 0.12], [0, 0.49, 0.62 + index * 0.78]);
+    const segment = new THREE.Group();
+    segment.userData.isGhost = visual.ghost;
+    addMinePart(segment, railMaterial, [0.07, 0.05, 0.78], [-0.2, 0.52, 0.62]);
+    addMinePart(segment, railMaterial, [0.07, 0.05, 0.78], [0.2, 0.52, 0.62]);
+    addMinePart(segment, index === 2 ? poweredMaterial : sleeperMaterial, [0.78, 0.06, 0.12], [0, 0.49, 0.62]);
+    segment.position.z = index * 0.78 * BLOCK_SIZE;
+    segment.visible = false;
+    visual.group.add(segment);
+    visual.railSegments.push(segment);
   }
   visual.pathConnector.userData.isGhost = visual.ghost;
   addMinePart(visual.pathConnector, railMaterial, [0.07, 0.05, 0.9], [-0.2, 0, 0]);
@@ -784,9 +871,15 @@ createMineVisual(mineGhostVisual);
 
 function syncMineCartMeshes(visual: MineVisual, cartCount: number, storageCarts: number): void {
   const wanted = visual.ghost ? 1 : Math.max(1, cartCount) + storageCarts;
+  const cargoKind = visual.ghost ? 'stone' : getMineCargoKind(state);
+  if (visual.cargoKind !== cargoKind) {
+    visual.carts.forEach((cart) => visual.group.remove(cart));
+    visual.carts = [];
+    visual.cargoKind = cargoKind;
+  }
   while (visual.carts.length < wanted) {
     const isStorage = !visual.ghost && visual.carts.length >= cartCount;
-    const cart = createMineCartVisual(visual.ghost, isStorage);
+    const cart = createMineCartVisual(visual.ghost, isStorage, isStorage ? null : cargoKind);
     visual.group.add(cart);
     visual.carts.push(cart);
   }
@@ -853,6 +946,20 @@ function updateMinePathConnector(visual: MineVisual, x: number, z: number, direc
     : (connection.localZ > 0 ? 0 : Math.PI);
 }
 
+function updateMineRailLength(visual: MineVisual, x: number, z: number, direction: WorldDirection): number {
+  const connection = getMinePathConnection(x, z, direction);
+  const connectionIndex = connection?.index ?? visual.railSegments.length - 1;
+  visual.railSegments.forEach((segment, index) => {
+    segment.visible = index <= connectionIndex;
+  });
+  return connectionIndex;
+}
+
+function setMineCartCargoVisible(cart: THREE.Group, visible: boolean): void {
+  const cargo = cart.children.find((child) => child.userData.isMineCargo);
+  if (cargo) cargo.visible = visible;
+}
+
 function updateMineVisual(): void {
   const mine: MineSite | undefined = state.mines[0];
   mineVisual.group.visible = Boolean(mine);
@@ -861,11 +968,12 @@ function updateMineVisual(): void {
   mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
   setMineRotation(mineVisual.group, direction);
   updateMinePathConnector(mineVisual, mine.x, mine.z, direction);
+  const connectionIndex = updateMineRailLength(mineVisual, mine.x, mine.z, direction);
   syncMineCartMeshes(mineVisual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
   const startZ = BLOCK_SIZE * 0.5;
-  const endZ = BLOCK_SIZE * 2.68;
+  const endZ = BLOCK_SIZE * Math.min(2.68, 0.56 + (connectionIndex + 1) * 0.78);
   mineVisual.carts.forEach((cart, index) => {
     if (!cart.visible) return;
     const phase = (baseProgress + index * 0.27) % 1;
@@ -873,6 +981,7 @@ function updateMineVisual(): void {
     const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
     cart.position.set(lane * BLOCK_SIZE, 0, startZ + (endZ - startZ) * travel);
     cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
+    setMineCartCargoVisible(cart, phase < 0.5);
   });
 }
 
@@ -883,9 +992,11 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
   setMineRotation(mineGhostVisual.group, preview.direction);
   updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction);
+  const connectionIndex = updateMineRailLength(mineGhostVisual, preview.x, preview.z, preview.direction);
   syncMineCartMeshes(mineGhostVisual, 1, 0);
-  mineGhostVisual.carts[0].position.set(0, 0, BLOCK_SIZE * 2.05);
+  mineGhostVisual.carts[0].position.set(0, 0, BLOCK_SIZE * Math.min(2.2, 0.56 + (connectionIndex + 0.65) * 0.78));
   mineGhostVisual.carts[0].rotation.y = 0;
+  setMineCartCargoVisible(mineGhostVisual.carts[0], false);
   setMineGhostValid(preview.valid);
 }
 

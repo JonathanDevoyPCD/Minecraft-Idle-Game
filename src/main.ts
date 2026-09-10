@@ -837,20 +837,28 @@ function createMineVisual(visual: MineVisual): void {
     addMinePart(visual.group, woodMaterial, [0.12, 1.3, 0.18], [x * 1.08, 1.01, 0.42]);
   });
   addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
-  // The mine head is a square timber portal with a compact rear housing, not
-  // a roof over the cart. Keep the housing behind the portal so the rail and
-  // path remain visually and physically clear in front of it.
+  // The rear is a sloped mine-head support like the reference: parallel
+  // timber beams over narrow stone side supports, rather than a flat roof or
+  // an open box. It angles backward from the portal and stays off the rail.
   addMinePart(visual.group, beamMaterial, [1.04, 0.18, 0.22], [0, 1.68, 0.42]);
   addMinePart(visual.group, woodMaterial, [0.18, 0.14, 0.3], [-0.46, 0.38, 0.42]);
   addMinePart(visual.group, woodMaterial, [0.18, 0.14, 0.3], [0.46, 0.38, 0.42]);
-  addMinePart(visual.group, stoneMaterial, [0.88, 1.24, 0.16], [0, 0.98, -0.2]);
-  [-0.46, 0.46].forEach((x) => {
-    addMinePart(visual.group, stoneAccentMaterial, [0.14, 1.16, 0.68], [x, 0.98, 0.06]);
-    addMinePart(visual.group, beamMaterial, [0.16, 1.3, 0.16], [x, 1.0, -0.2]);
-    addMinePart(visual.group, beamMaterial, [0.16, 0.16, 0.72], [x, 1.68, 0.06]);
+  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.22, 0, 0];
+  [-0.5, 0, 0.5].forEach((x) => {
+    addMinePart(visual.group, beamMaterial, [0.14, 0.16, 1.7], [x, 1.16, -0.08], rearSlopeRotation);
   });
-  addMinePart(visual.group, beamMaterial, [1.04, 0.18, 0.18], [0, 1.68, -0.2]);
-  addMinePart(visual.group, stoneAccentMaterial, [0.96, 0.16, 0.24], [0, 0.36, -0.2]);
+  [-0.42, 0.42].forEach((x) => {
+    addMinePart(visual.group, stoneAccentMaterial, [0.16, 0.86, 1.25], [x, 1.0, -0.08], rearSlopeRotation);
+  });
+  [
+    { y: 0.82, z: -0.58 },
+    { y: 1.08, z: -0.2 },
+    { y: 1.34, z: 0.18 },
+    { y: 1.55, z: 0.48 },
+  ].forEach(({ y, z }) => {
+    addMinePart(visual.group, woodMaterial, [0.94, 0.11, 0.12], [0, y, z]);
+  });
+  addMinePart(visual.group, stoneAccentMaterial, [0.96, 0.16, 0.24], [0, 0.36, -0.58]);
 
   for (let index = 0; index < 4; index += 1) {
     const segment = new THREE.Group();

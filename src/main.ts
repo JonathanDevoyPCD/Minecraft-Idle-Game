@@ -833,20 +833,24 @@ function createMineVisual(visual: MineVisual): void {
   addMinePart(visual.group, darkMaterial, [0.78, 1.1, 0.12], [0, 1.0, 0.58]);
   [-0.36, 0.36].forEach((x) => {
     addMinePart(visual.group, stoneMaterial, [0.16, 1.18, 0.3], [x, 0.96, 0.58]);
-    addMinePart(visual.group, stoneAccentMaterial, [0.2, 0.16, 0.34], [x, 0.38, 0.58]);
-    addMinePart(visual.group, woodMaterial, [0.12, 1.3, 0.18], [x * 1.08, 1.01, 0.42]);
+    addMinePart(visual.group, stoneAccentMaterial, [0.2, 0.18, 0.34], [x, 0.32, 0.58]);
+    // Sink the timber feet a touch into the turf so the entrance reads as planted,
+    // rather than hovering above the placement block from low camera angles.
+    addMinePart(visual.group, woodMaterial, [0.12, 1.4, 0.18], [x * 1.08, 0.95, 0.42]);
   });
   addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
   // The rear is a compact, closed mine-head support like the reference:
   // parallel timber ribs and cross-beams sit on a solid sloped back body.
   // Its shortened rear edge stays inside the anchor block and clear of the rail.
   addMinePart(visual.group, beamMaterial, [0.92, 0.18, 0.22], [0, 1.68, 0.42]);
-  addMinePart(visual.group, woodMaterial, [0.14, 0.14, 0.3], [-0.39, 0.38, 0.42]);
-  addMinePart(visual.group, woodMaterial, [0.14, 0.14, 0.3], [0.39, 0.38, 0.42]);
-  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.24, 0, 0];
-  addMinePart(visual.group, stoneMaterial, [0.78, 0.56, 1.08], [0, 1.02, 0.16], rearSlopeRotation);
+  addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [-0.39, 0.3, 0.42]);
+  addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [0.39, 0.3, 0.42]);
+  // A steeper, lower rear plane reaches the turf before the back edge of the
+  // anchor block.  This removes the daylight under the mine without widening it.
+  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.28, 0, 0];
+  addMinePart(visual.group, stoneMaterial, [0.78, 0.56, 1.12], [0, 0.98, 0.17], rearSlopeRotation);
   [-0.27, 0, 0.27].forEach((x) => {
-    addMinePart(visual.group, beamMaterial, [0.13, 0.16, 1.1], [x, 1.3, -0.1], rearSlopeRotation);
+    addMinePart(visual.group, beamMaterial, [0.13, 0.16, 1.14], [x, 1.25, -0.1], rearSlopeRotation);
   });
   [
     { y: 0.92, z: -0.35 },
@@ -855,7 +859,7 @@ function createMineVisual(visual: MineVisual): void {
   ].forEach(({ y, z }) => {
     addMinePart(visual.group, woodMaterial, [0.78, 0.11, 0.12], [0, y, z]);
   });
-  addMinePart(visual.group, stoneAccentMaterial, [0.84, 0.16, 0.24], [0, 0.36, -0.3]);
+  addMinePart(visual.group, stoneAccentMaterial, [0.84, 0.22, 0.24], [0, 0.28, -0.31]);
 
   for (let index = 0; index < 4; index += 1) {
     const segment = new THREE.Group();

@@ -14,6 +14,7 @@ import {
   buyToolUpgrade,
   canAffordSkillNode,
   calculateOfflineXp,
+  completeConstructionProjects,
   getAutoRate,
   getContextTool,
   getExpansionChunkOrigin,
@@ -482,6 +483,10 @@ const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
 const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
 const zoomLevelEl = document.querySelector('#zoom-level')!;
+const constructionStatusEl = document.querySelector<HTMLElement>('#construction-status')!;
+const constructionLabelEl = document.querySelector<HTMLElement>('#construction-label')!;
+const constructionTimeEl = document.querySelector<HTMLElement>('#construction-time')!;
+const constructionFillEl = document.querySelector<HTMLElement>('#construction-fill')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
@@ -805,6 +810,24 @@ function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TR
   skillTreeInspector.hidden = false;
 }
 
+function updateConstructionUi(now = Date.now()): void {
+  const project = state.constructionQueue[0];
+  if (!project) {
+    constructionStatusEl.hidden = true;
+    return;
+  }
+  const duration = Math.max(1, project.completesAt - project.startedAt);
+  const elapsed = Math.max(0, Math.min(duration, now - project.startedAt));
+  const remainingSeconds = Math.max(0, Math.ceil((project.completesAt - now) / 1000));
+  const label = project.kind === 'adjacent-cell' ? 'Building adjacent plot' : 'Building 3×3 meadow';
+  constructionLabelEl.textContent = label;
+  constructionTimeEl.textContent = now < project.startedAt
+    ? `Queued · starts in ${Math.ceil((project.startedAt - now) / 1000)}s`
+    : `${remainingSeconds}s remaining`;
+  constructionFillEl.style.width = `${elapsed / duration * 100}%`;
+  constructionStatusEl.hidden = false;
+}
+
 function purchaseSelectedSkillNode(): void {
   if (!selectedSkillNodeId) return;
   const node = SKILL_TREE_NODES.find((entry) => entry.id === selectedSkillNodeId);
@@ -878,6 +901,17 @@ function updateUi(): void {
     button.setAttribute('aria-pressed', String(canChooseDirection && !used && direction === selectedExpansionDirection));
   });
   updateCurrentTool();
+  updateConstructionUi();
+}
+
+function updateConstructionState(now: number): void {
+  const completed = completeConstructionProjects(state, now);
+  if (completed.length > 0) {
+    updateWorldScene();
+    updateUi();
+    saveState(localStorage, state);
+  }
+  updateConstructionUi(now);
 }
 
 function flashXpCard(): void {
@@ -1238,6 +1272,7 @@ function render(now: number): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   updateCameraPan(delta);
   const wallClockNow = Date.now();
+  updateConstructionState(wallClockNow);
   resetStaleBlockDamage(wallClockNow);
   updateBlockReplacements(wallClockNow);
   const interval = 1000 / getAutoRate(state);

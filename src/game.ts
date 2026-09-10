@@ -12,6 +12,7 @@ export interface GameState {
   worldSeed: number;
   worldCells: WorldCell[];
   undergroundLayer: number;
+  constructionQueue: ConstructionProject[];
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
   blockProgress: Record<string, BlockMiningProgress>;
@@ -29,6 +30,15 @@ export interface WorldCell {
   x: number;
   z: number;
   biome: BiomeId;
+}
+
+export type ConstructionKind = 'adjacent-cell' | 'surface-3x3';
+
+export interface ConstructionProject {
+  kind: ConstructionKind;
+  startedAt: number;
+  completesAt: number;
+  direction?: WorldDirection;
 }
 
 export interface BlockMiningProgress {
@@ -107,6 +117,7 @@ export function freshState(now = Date.now()): GameState {
     worldSeed: 184731,
     worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
     undergroundLayer: 0,
+    constructionQueue: [],
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
     blockProgress: {},
@@ -151,6 +162,40 @@ export function expandToSurface3x3(state: GameState): void {
   state.worldRank = Math.max(state.worldRank, 2);
 }
 
+export const CONSTRUCTION_DURATIONS_MS: Record<ConstructionKind, number> = {
+  'adjacent-cell': 10_000,
+  'surface-3x3': 30_000,
+};
+
+export function queueConstruction(
+  state: GameState,
+  kind: ConstructionKind,
+  now = Date.now(),
+  direction?: WorldDirection,
+): boolean {
+  if (state.constructionQueue.some((project) => project.kind === kind)) return false;
+  const previousProject = state.constructionQueue.at(-1);
+  const startedAt = Math.max(now, previousProject?.completesAt ?? now);
+  state.constructionQueue.push({
+    kind,
+    startedAt,
+    completesAt: startedAt + CONSTRUCTION_DURATIONS_MS[kind],
+    direction,
+  });
+  return true;
+}
+
+export function completeConstructionProjects(state: GameState, now = Date.now()): ConstructionProject[] {
+  const completed: ConstructionProject[] = [];
+  while (state.constructionQueue[0] && state.constructionQueue[0].completesAt <= now) {
+    const project = state.constructionQueue.shift()!;
+    if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
+    if (project.kind === 'surface-3x3') expandToSurface3x3(state);
+    completed.push(project);
+  }
+  return completed;
+}
+
 export function xpRequired(level: number): number {
   return 100 + 150 * Math.max(0, level - 1);
 }
@@ -189,11 +234,17 @@ export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition):
   return Object.entries(node.cost.resources).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount);
 }
 
-export function buySkillNode(state: GameState, nodeId: string): boolean {
+export function buySkillNode(state: GameState, nodeId: string, now = Date.now()): boolean {
   const node = SKILL_TREE_BY_ID.get(nodeId);
   if (!node) return false;
   const currentRank = getSkillNodeRank(state, node.id);
   if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
+  const constructionKind = node.id === ADJACENT_BLOCK_NODE_ID
+    ? 'adjacent-cell'
+    : node.id === SURFACE_3X3_NODE_ID
+      ? 'surface-3x3'
+      : null;
+  if (constructionKind && state.constructionQueue.some((project) => project.kind === constructionKind)) return false;
 
   state.craftingPoints -= node.cost.craftingPoints;
   state.worldPower -= node.cost.worldPower ?? 0;
@@ -204,10 +255,10 @@ export function buySkillNode(state: GameState, nodeId: string): boolean {
 
   if (node.id === AUTO_STRIKE_NODE_ID) state.speedRank = Math.min(currentRank + 1, SPEED_RATES.length - 1);
   if (node.id === ADJACENT_BLOCK_NODE_ID) {
-    expandToFirstAdjacentCell(state);
+    queueConstruction(state, 'adjacent-cell', now);
     state.worldPower += 1;
   }
-  if (node.id === SURFACE_3X3_NODE_ID) expandToSurface3x3(state);
+  if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'surface-3x3', now);
   if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, 1);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
@@ -363,7 +414,7 @@ export function getWorldTier(state: GameState) {
   return WORLD_TIERS[Math.min(state.worldRank, WORLD_TIERS.length - 1)];
 }
 
-export function buyWorldExpansion(state: GameState, direction: WorldDirection = 'north'): boolean {
+export function buyWorldExpansion(state: GameState, direction: WorldDirection = 'north', now = Date.now()): boolean {
   const nextWorld = WORLD_TIERS[state.worldRank + 1];
   if (
     !nextWorld
@@ -374,18 +425,16 @@ export function buyWorldExpansion(state: GameState, direction: WorldDirection = 
     return false;
   }
 
+  const constructionKind: ConstructionKind = state.worldRank === 0 ? 'adjacent-cell' : 'surface-3x3';
+  if (!queueConstruction(state, constructionKind, now, direction)) return false;
   state.craftingPoints -= nextWorld.cost;
-  state.worldRank += 1;
-  if (state.worldRank >= 1) {
-    expandToFirstAdjacentCell(state, direction);
+  if (constructionKind === 'adjacent-cell') {
     setSkillNodeRank(state, ADJACENT_BLOCK_NODE_ID, 1);
     state.worldPower += 1;
   }
-  if (state.worldRank >= 2) {
-    expandToSurface3x3(state);
+  if (constructionKind === 'surface-3x3') {
     setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
   }
-  if (state.worldRank >= 2) state.expansionDirections.push(direction);
   return true;
 }
 
@@ -417,6 +466,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
       worldCells,
       undergroundLayer: Math.min(1, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
+      constructionQueue: parseConstructionQueue(parsed.constructionQueue),
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
         : base.expansionDirections,
@@ -428,6 +478,20 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   } catch {
     return freshState(now);
   }
+}
+
+function parseConstructionQueue(value: unknown): ConstructionProject[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate): ConstructionProject[] => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const entry = candidate as Partial<ConstructionProject>;
+    if (entry.kind !== 'adjacent-cell' && entry.kind !== 'surface-3x3') return [];
+    const startedAt = Number(entry.startedAt);
+    const completesAt = Number(entry.completesAt);
+    if (!Number.isFinite(startedAt) || !Number.isFinite(completesAt) || completesAt < startedAt) return [];
+    const direction = WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : undefined;
+    return [{ kind: entry.kind, startedAt, completesAt, direction }];
+  }).slice(0, 2);
 }
 
 const VALID_BIOMES: readonly BiomeId[] = ['meadow', 'forest', 'desert', 'mountain', 'snow', 'swamp', 'crystal'];

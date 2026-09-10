@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, xpRequired } from './game';
+import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -99,8 +99,14 @@ describe('IdleCraft progression', () => {
     const state = freshState();
     addXp(state, 350);
     expect(state.level).toBe(3);
-    expect(buyWorldExpansion(state)).toBe(true);
+    const now = 1000;
+    expect(buyWorldExpansion(state, 'north', now)).toBe(true);
+    expect(state.worldRank).toBe(0);
+    expect(state.constructionQueue[0]).toMatchObject({ kind: 'adjacent-cell', startedAt: now, completesAt: now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] });
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] - 1)).toHaveLength(0);
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'])).toHaveLength(1);
     expect(state.worldRank).toBe(1);
+    expect(state.worldCells).toHaveLength(2);
     expect(state.craftingPoints).toBe(1);
   });
 
@@ -119,9 +125,29 @@ describe('IdleCraft progression', () => {
     addXp(state, 750);
     expect(buySkillNode(state, 'branch-entry-world-growth-biomes')).toBe(true);
     expect(buySkillNode(state, 'world-adjacent-block')).toBe(true);
-    expect(state).toMatchObject({ worldRank: 1, worldPower: 1, craftingPoints: 1 });
+    expect(state).toMatchObject({ worldRank: 0, worldPower: 1, craftingPoints: 1 });
+    const now = Date.now();
+    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
     expect(buySkillNode(state, 'world-surface-3x3')).toBe(true);
-    expect(state).toMatchObject({ worldRank: 2, worldPower: 0, craftingPoints: 0 });
+    expect(state).toMatchObject({ worldRank: 1, worldPower: 0, craftingPoints: 0 });
+    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3']);
+    expect(state.worldRank).toBe(2);
+  });
+
+  it('queues the 3×3 build behind an adjacent plot', () => {
+    const state = freshState();
+    state.craftingPoints = 3;
+    state.skillRanks = { 'branch-entry-world-growth-biomes': 1 };
+    const now = 5000;
+    expect(buySkillNode(state, 'world-adjacent-block', now)).toBe(true);
+    expect(buySkillNode(state, 'world-surface-3x3', now + 1)).toBe(true);
+    expect(state.worldCells).toHaveLength(1);
+    expect(state.constructionQueue).toHaveLength(2);
+    expect(state.constructionQueue[1].startedAt).toBe(now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
+    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
+    expect(state.worldCells).toHaveLength(2);
+    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3']);
+    expect(state.worldCells).toHaveLength(9);
   });
 
   it('opens the deepslate layer through the world-growth node', () => {

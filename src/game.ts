@@ -222,18 +222,22 @@ function seededNoise(seed: number, x: number, z: number): number {
 }
 
 export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[] {
+  // The 3x3 meadow is still the current surface size, so settlement features
+  // use reserved sub-cell positions instead of competing for the same integer
+  // cell. The house occupies the northwest plot, with the well and farm along
+  // the southeast edge and trees kept around the outer boundary.
   const treeCandidates = [
-    { x: -1, z: -1 },
-    { x: 1, z: -1 },
-    { x: 1, z: 0 },
+    { x: 0.95, z: -0.95 },
+    { x: 0.95, z: 0.05 },
+    { x: -0.95, z: 0.95 },
   ].sort((a, b) => seededNoise(worldSeed, b.x, b.z) - seededNoise(worldSeed, a.x, a.z));
   return [
     { id: 'path-north', kind: 'path', x: 0, z: -1 },
     { id: 'path-core', kind: 'path', x: 0, z: 0 },
     { id: 'path-south', kind: 'path', x: 0, z: 1 },
-    { id: 'starter-farm', kind: 'farm', x: -1, z: 0 },
-    { id: 'starter-well', kind: 'well', x: -1, z: 1 },
-    { id: 'starter-dwelling', kind: 'dwelling', x: 0, z: 0 },
+    { id: 'starter-farm', kind: 'farm', x: -0.05, z: 0.95 },
+    { id: 'starter-well', kind: 'well', x: 0.95, z: 0.95 },
+    { id: 'starter-dwelling', kind: 'dwelling', x: -0.55, z: -0.55 },
     ...treeCandidates.slice(0, 2).map((candidate, index) => ({
       id: `starter-tree-${index}`,
       kind: 'tree' as const,

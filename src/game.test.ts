@@ -233,8 +233,10 @@ describe('IdleCraft progression', () => {
     expect(getMeadowFeaturePlan(184731)).toEqual(getMeadowFeaturePlan(184731));
     const plan = getMeadowFeaturePlan(184731);
     expect(plan.filter((feature) => feature.kind === 'tree')).toHaveLength(2);
-    expect(plan.find((feature) => feature.kind === 'dwelling')).toMatchObject({ x: 0, z: 0 });
-    expect(plan.filter((feature) => feature.kind === 'tree').every((feature) => feature.x !== -1 || feature.z !== 1)).toBe(true);
+    expect(plan.find((feature) => feature.kind === 'dwelling')).toMatchObject({ x: -0.55, z: -0.55 });
+    expect(plan.find((feature) => feature.kind === 'farm')).toMatchObject({ x: -0.05, z: 0.95 });
+    expect(plan.find((feature) => feature.kind === 'well')).toMatchObject({ x: 0.95, z: 0.95 });
+    expect(plan.filter((feature) => feature.kind === 'tree').every((feature) => feature.x >= -1 && feature.x <= 1 && feature.z >= -1 && feature.z <= 1)).toBe(true);
   });
 
   it('reveals living entities from the settlement branch', () => {

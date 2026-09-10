@@ -393,23 +393,23 @@ function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual 
   }
 
   if (feature.kind === 'well') {
-    visual.water = addFeatureCube(group, waterMaterial, [0.52, 0.05, 0.52], [0, 0.68, 0]);
-    addFeatureCube(group, cobblestoneMaterial, [0.9, 0.24, 0.9], [0, 0.61, 0]);
-    [-0.32, 0.32].forEach((x) => {
-      addFeatureCube(group, stoneBricksMaterial, [0.18, 0.82, 0.18], [x, 1.04, -0.32]);
-      addFeatureCube(group, stoneBricksMaterial, [0.18, 0.82, 0.18], [x, 1.04, 0.32]);
+    visual.water = addFeatureCube(group, waterMaterial, [0.42, 0.05, 0.42], [0, 0.68, 0]);
+    addFeatureCube(group, cobblestoneMaterial, [0.72, 0.2, 0.72], [0, 0.59, 0]);
+    [-0.24, 0.24].forEach((x) => {
+      addFeatureCube(group, stoneBricksMaterial, [0.16, 0.76, 0.16], [x, 1.0, -0.24]);
+      addFeatureCube(group, stoneBricksMaterial, [0.16, 0.76, 0.16], [x, 1.0, 0.24]);
     });
-    addFeatureCube(group, oakPlanksMaterial, [0.98, 0.18, 0.98], [0, 1.54, 0]);
+    addFeatureCube(group, oakPlanksMaterial, [0.78, 0.16, 0.78], [0, 1.48, 0]);
     addFeatureCube(group, lanternMaterial, [0.16, 0.24, 0.16], [0, 1.16, 0]);
   }
 
   if (feature.kind === 'dwelling') {
-    addFeatureCube(group, oakPlanksMaterial, [1.9, 0.16, 1.9], [0, 0.55, 0]);
-    addFeatureCube(group, oakPlanksMaterial, [1.58, 1.1, 1.58], [0, 1.13, 0]);
-    addFeatureCube(group, darkOakPlanksMaterial, [1.9, 0.22, 1.9], [0, 1.78, 0]);
-    addFeatureCube(group, darkOakPlanksMaterial, [1.55, 0.18, 1.55], [0, 1.98, 0]);
-    addFeatureCube(group, oakDoorMaterial, [0.4, 0.82, 0.06], [0, 0.98, -0.82]);
-    addFeatureCube(group, lanternMaterial, [0.18, 0.24, 0.18], [0.58, 1.3, -0.84]);
+    addFeatureCube(group, oakPlanksMaterial, [1.6, 0.16, 1.6], [0, 0.55, 0]);
+    addFeatureCube(group, oakPlanksMaterial, [1.34, 1.1, 1.34], [0, 1.13, 0]);
+    addFeatureCube(group, darkOakPlanksMaterial, [1.6, 0.22, 1.6], [0, 1.78, 0]);
+    addFeatureCube(group, darkOakPlanksMaterial, [1.3, 0.18, 1.3], [0, 1.98, 0]);
+    addFeatureCube(group, oakDoorMaterial, [0.34, 0.78, 0.06], [0, 0.98, -0.66]);
+    addFeatureCube(group, lanternMaterial, [0.16, 0.24, 0.16], [0.5, 1.3, -0.68]);
   }
 
   group.visible = false;

@@ -828,22 +828,21 @@ function createMineVisual(visual: MineVisual): void {
   const sleeperMaterial = createMineMaterial(0x855235, undefined, visual.ghost);
   const railMaterial = createMineMaterial(0xa8b1ad, railTexture, visual.ghost);
   const poweredMaterial = createMineMaterial(0xd59b3c, poweredRailTexture, visual.ghost);
-  const roofMaterial = createMineMaterial(0x5f3e2a, darkOakPlanksTexture, visual.ghost);
+  const beamMaterial = createMineMaterial(0x5f3e2a, darkOakPlanksTexture, visual.ghost);
 
   addMinePart(visual.group, darkMaterial, [0.78, 1.1, 0.12], [0, 1.0, 0.58]);
   [-0.36, 0.36].forEach((x) => {
     addMinePart(visual.group, stoneMaterial, [0.16, 1.18, 0.3], [x, 0.96, 0.58]);
     addMinePart(visual.group, stoneAccentMaterial, [0.2, 0.16, 0.34], [x, 0.38, 0.58]);
-    addMinePart(visual.group, woodMaterial, [0.1, 1.24, 0.16], [x * 1.03, 1.01, 0.44]);
+    addMinePart(visual.group, woodMaterial, [0.12, 1.3, 0.18], [x * 1.08, 1.01, 0.42]);
   });
   addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
-  addMinePart(visual.group, woodMaterial, [0.92, 0.16, 0.18], [0, 1.68, 0.44]);
-
-  const roofRotation: [number, number, number] = [0, 0, -Math.PI * 0.30];
-  addMinePart(visual.group, roofMaterial, [1.55, 0.18, 1.55], [0, 1.72, 0.35], roofRotation);
-  [-0.15, 0.42, 0.99].forEach((z) => {
-    addMinePart(visual.group, woodMaterial, [1.62, 0.11, 0.11], [0, 1.82, z], roofRotation);
-  });
+  // The mine head is a square timber portal, not a roof over the cart. Keep
+  // every beam inside the entrance footprint so the rail and path remain
+  // visually and physically clear in front of it.
+  addMinePart(visual.group, beamMaterial, [1.04, 0.18, 0.22], [0, 1.68, 0.42]);
+  addMinePart(visual.group, woodMaterial, [0.18, 0.14, 0.3], [-0.46, 0.38, 0.42]);
+  addMinePart(visual.group, woodMaterial, [0.18, 0.14, 0.3], [0.46, 0.38, 0.42]);
 
   for (let index = 0; index < 4; index += 1) {
     const segment = new THREE.Group();

@@ -17,6 +17,7 @@ import {
   getAutoRate,
   getContextTool,
   getExpansionChunkOrigin,
+  getWorldSurfaceCells,
   getTool,
   getSkillNodeRank,
   getWorldTier,
@@ -263,30 +264,31 @@ function generateMeadowChunk(
   return cells;
 }
 
-function generateWorldLayout(currentState: typeof state): GeneratedBlock[] {
-  const cells: GeneratedBlock[] = [{
-    type: 'grass',
-    coordinate: { x: 0, y: 0, z: 0 },
-    requiredWorldRank: 0,
-  }];
-  cells.push(
-    ...generateMeadowChunk({ x: -1, z: -1 }, 1, undefined, currentState.worldSeed, true),
-    { type: 'dirt', coordinate: { x: 0, y: -1, z: 0 }, requiredWorldRank: 1 },
-    { type: 'stone', coordinate: { x: 0, y: -2, z: 0 }, requiredWorldRank: 1 },
-  );
+function generateWorldLayout(): GeneratedBlock[] {
+  const cells: GeneratedBlock[] = [];
+  // Keep the authored starter meadow in the scene graph from the beginning;
+  // updateWorldScene controls which coordinate cells are currently unlocked.
+  for (let x = -1; x <= 1; x += 1) {
+    for (let z = -1; z <= 1; z += 1) {
+      const isCore = x === 0 && z === 0;
+      cells.push({ type: 'grass', coordinate: { x, y: 0, z }, requiredWorldRank: isCore ? 0 : 1 });
+      cells.push({ type: 'dirt', coordinate: { x, y: -1, z }, requiredWorldRank: 2 });
+      cells.push({ type: 'stone', coordinate: { x, y: -2, z }, requiredWorldRank: 2 });
+    }
+  }
   WORLD_DIRECTIONS.forEach((direction) => {
     const expansionNumber = 1;
     cells.push(...generateMeadowChunk(
       getExpansionChunkOrigin(expansionNumber, direction),
       expansionNumber + 1,
       direction,
-      currentState.worldSeed,
+      state.worldSeed,
     ));
   });
   return cells;
 }
 
-const blockNodes: BlockNode[] = generateWorldLayout(state).map(({ type, coordinate, requiredWorldRank, requiredDirection }) => {
+const blockNodes: BlockNode[] = generateWorldLayout().map(({ type, coordinate, requiredWorldRank, requiredDirection }) => {
   const { x, y, z } = coordinate;
   return createBlockNode(`block-${x}-${y}-${z}-${requiredDirection ?? 'core'}`, type, coordinate, requiredWorldRank, requiredDirection);
 });
@@ -374,11 +376,17 @@ function updateWorldFloor(): void {
 }
 
 function updateWorldScene(): void {
+  const unlockedSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
   blockNodes.forEach((node) => {
     const directionIndex = node.requiredWorldRank - 2;
     const directionUnlocked = !node.requiredDirection
       || state.expansionDirections[directionIndex] === node.requiredDirection;
-    node.mesh.visible = state.worldRank >= node.requiredWorldRank && directionUnlocked && node.replacementAt === null;
+    const isAuthoredExpansion = node.requiredDirection !== undefined;
+    const surfaceCellUnlocked = unlockedSurfaceCells.has(`${node.coordinate.x},${node.coordinate.z}`);
+    const layerUnlocked = node.coordinate.y === 0 || state.worldRank >= 2;
+    node.mesh.visible = isAuthoredExpansion
+      ? state.worldRank >= node.requiredWorldRank && directionUnlocked && node.replacementAt === null
+      : surfaceCellUnlocked && layerUnlocked && node.replacementAt === null;
     updateDestroyOverlay(node);
   });
   miningTargets.length = 0;

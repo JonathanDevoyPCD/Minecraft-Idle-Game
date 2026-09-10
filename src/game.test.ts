@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, harvestResource, loadState, xpRequired } from './game';
+import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, harvestResource, loadState, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -97,6 +97,16 @@ describe('IdleCraft progression', () => {
     expect(state.craftingPoints).toBe(1);
   });
 
+  it('grows surface cells in deliberate stages', () => {
+    const state = freshState();
+    expect(state.worldCells).toHaveLength(1);
+    expandToFirstAdjacentCell(state);
+    expect(state.worldCells).toHaveLength(2);
+    expect(state.worldCells).toContainEqual({ x: 0, z: -1, biome: 'meadow' });
+    expandToSurface3x3(state);
+    expect(state.worldCells).toHaveLength(9);
+  });
+
   it('uses World Power for the major surface expansion', () => {
     const state = freshState();
     addXp(state, 750);
@@ -138,6 +148,13 @@ describe('IdleCraft progression', () => {
       getItem: () => JSON.stringify({ ...freshState(0), worldRank: 2, worldPower: 0 }),
     } as unknown as Storage;
     expect(loadState(storage, 1000).worldPower).toBe(0);
+  });
+
+  it('migrates legacy expanded saves into coordinate cells', () => {
+    const storage = {
+      getItem: () => JSON.stringify({ ...freshState(0), worldRank: 1, worldCells: undefined }),
+    } as unknown as Storage;
+    expect(loadState(storage, 1000).worldCells).toHaveLength(9);
   });
 
   it('calculates offline gains at half efficiency', () => {

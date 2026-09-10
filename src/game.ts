@@ -10,6 +10,7 @@ export interface GameState {
   worldRank: number;
   worldPower: number;
   worldSeed: number;
+  worldCells: WorldCell[];
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
   blockProgress: Record<string, BlockMiningProgress>;
@@ -20,7 +21,14 @@ export interface GameState {
 export type ToolKind = 'hand' | 'pickaxe' | 'shovel' | 'axe';
 export type BlockType = 'grass' | 'dirt' | 'stone';
 export type WorldDirection = 'north' | 'east' | 'south' | 'west';
+export type BiomeId = 'meadow' | 'forest' | 'desert' | 'mountain' | 'snow' | 'swamp' | 'crystal';
 export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
+
+export interface WorldCell {
+  x: number;
+  z: number;
+  biome: BiomeId;
+}
 
 export interface BlockMiningProgress {
   type: BlockType;
@@ -93,12 +101,45 @@ export function freshState(now = Date.now()): GameState {
     worldRank: 0,
     worldPower: 0,
     worldSeed: 184731,
+    worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
     blockProgress: {},
     skillRanks: {},
     lastSavedAt: now,
   };
+}
+
+function worldCellKey(x: number, z: number): string {
+  return `${x},${z}`;
+}
+
+function addWorldCell(state: GameState, x: number, z: number, biome: BiomeId = 'meadow'): void {
+  if (state.worldCells.some((cell) => cell.x === x && cell.z === z)) return;
+  state.worldCells.push({ x, z, biome });
+}
+
+export function getWorldSurfaceCells(state: GameState): readonly WorldCell[] {
+  return state.worldCells;
+}
+
+export function expandToFirstAdjacentCell(state: GameState, direction: WorldDirection = 'north'): void {
+  const offsets: Record<WorldDirection, readonly [number, number]> = {
+    north: [0, -1],
+    east: [1, 0],
+    south: [0, 1],
+    west: [-1, 0],
+  };
+  const [x, z] = offsets[direction];
+  addWorldCell(state, x, z);
+  state.worldRank = Math.max(state.worldRank, 1);
+}
+
+export function expandToSurface3x3(state: GameState): void {
+  for (let x = -1; x <= 1; x += 1) {
+    for (let z = -1; z <= 1; z += 1) addWorldCell(state, x, z);
+  }
+  state.worldRank = Math.max(state.worldRank, 2);
 }
 
 export function xpRequired(level: number): number {
@@ -154,10 +195,10 @@ export function buySkillNode(state: GameState, nodeId: string): boolean {
 
   if (node.id === AUTO_STRIKE_NODE_ID) state.speedRank = Math.min(currentRank + 1, SPEED_RATES.length - 1);
   if (node.id === ADJACENT_BLOCK_NODE_ID) {
-    state.worldRank = Math.max(state.worldRank, 1);
+    expandToFirstAdjacentCell(state);
     state.worldPower += 1;
   }
-  if (node.id === SURFACE_3X3_NODE_ID) state.worldRank = Math.max(state.worldRank, 2);
+  if (node.id === SURFACE_3X3_NODE_ID) expandToSurface3x3(state);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
@@ -325,10 +366,14 @@ export function buyWorldExpansion(state: GameState, direction: WorldDirection = 
   state.craftingPoints -= nextWorld.cost;
   state.worldRank += 1;
   if (state.worldRank >= 1) {
+    expandToFirstAdjacentCell(state, direction);
     setSkillNodeRank(state, ADJACENT_BLOCK_NODE_ID, 1);
     state.worldPower += 1;
   }
-  if (state.worldRank >= 2) setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
+  if (state.worldRank >= 2) {
+    expandToSurface3x3(state);
+    setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
+  }
   if (state.worldRank >= 2) state.expansionDirections.push(direction);
   return true;
 }
@@ -342,6 +387,8 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const base = freshState(now);
     const skillRanks = migrateSkillRanks(parsed);
     const parsedWorldPower = Number(parsed.worldPower);
+    const worldRank = Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0));
+    const worldCells = parseWorldCells(parsed.worldCells) ?? legacyWorldCells(worldRank);
     const resources = Object.fromEntries(
       Object.entries(parsed.resources ?? {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Math.max(0, Number(value))]),
     );
@@ -352,11 +399,12 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       craftingPoints: Math.max(0, Number(parsed.craftingPoints) || 0),
       speedRank: Math.min(SPEED_RATES.length - 1, Math.max(0, Number(parsed.speedRank) || 0)),
       toolRank: Math.min(TOOL_TIERS.length - 1, Math.max(0, Number(parsed.toolRank) || 0)),
-      worldRank: Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0)),
+      worldRank,
       worldPower: Number.isFinite(parsedWorldPower)
         ? Math.max(0, parsedWorldPower)
         : Number(parsed.worldRank) > 0 ? 1 : 0,
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
+      worldCells,
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
         : base.expansionDirections,
@@ -368,6 +416,40 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   } catch {
     return freshState(now);
   }
+}
+
+const VALID_BIOMES: readonly BiomeId[] = ['meadow', 'forest', 'desert', 'mountain', 'snow', 'swamp', 'crystal'];
+
+function parseWorldCells(value: unknown): WorldCell[] | null {
+  if (!Array.isArray(value)) return null;
+  const cells: WorldCell[] = [];
+  const seen = new Set<string>();
+  value.forEach((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const entry = candidate as Partial<WorldCell>;
+    const x = Number(entry.x);
+    const z = Number(entry.z);
+    if (!Number.isInteger(x) || !Number.isInteger(z)) return;
+    const key = worldCellKey(x, z);
+    if (seen.has(key)) return;
+    seen.add(key);
+    cells.push({
+      x,
+      z,
+      biome: VALID_BIOMES.includes(entry.biome as BiomeId) ? entry.biome as BiomeId : 'meadow',
+    });
+  });
+  if (!seen.has(worldCellKey(0, 0))) cells.unshift({ x: 0, z: 0, biome: 'meadow' });
+  return cells.length > 0 ? cells : null;
+}
+
+function legacyWorldCells(worldRank: number): WorldCell[] {
+  if (worldRank <= 0) return [{ x: 0, z: 0, biome: 'meadow' }];
+  const cells: WorldCell[] = [];
+  for (let x = -1; x <= 1; x += 1) {
+    for (let z = -1; z <= 1; z += 1) cells.push({ x, z, biome: 'meadow' });
+  }
+  return cells;
 }
 
 function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress> {

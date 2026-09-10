@@ -14,6 +14,8 @@ import {
   collectOreBonus,
   dispatchMineCart,
   getExpansionChunkOrigin,
+  getChunkBounds,
+  getMineFootprint,
   getMineCartCount,
   getMineLayer,
   getMineTripDuration,
@@ -153,8 +155,6 @@ const stoneBricksTexture = loadBlockTexture('stone_bricks.png');
 const cobblestoneTexture = loadBlockTexture('cobblestone.png');
 const lanternTexture = loadBlockTexture('lantern.png');
 const oakDoorTexture = loadBlockTexture('oak_door_bottom.png');
-const minecartTexture = loadAssetTexture('items/minecart.png');
-const chestMinecartTexture = loadAssetTexture('items/chest_minecart.png');
 const pigEntityTexture = loadAssetTexture('entities/pig/pig.png');
 const cowEntityTexture = loadAssetTexture('entities/cow/cow.png');
 const sheepEntityTexture = loadAssetTexture('entities/sheep/sheep.png');
@@ -662,67 +662,152 @@ function updateWorldScene(): void {
 
 interface MineVisual {
   group: THREE.Group;
-  carts: THREE.Mesh[];
+  carts: THREE.Group[];
+  ghost: boolean;
 }
 
-const mineVisual: MineVisual = { group: new THREE.Group(), carts: [] };
-world.add(mineVisual.group);
+interface MinePlacementPreview {
+  x: number;
+  z: number;
+  direction: WorldDirection;
+  valid: boolean;
+}
 
-function createMineVisual(): void {
-  const opening = new THREE.Mesh(
-    new THREE.BoxGeometry(BLOCK_SIZE * 1.55, BLOCK_SIZE * 1.45, BLOCK_SIZE * 0.14),
-    new THREE.MeshBasicMaterial({ color: 0x182329 }),
+const mineVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: false };
+const mineGhostVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: true };
+world.add(mineVisual.group, mineGhostVisual.group);
+
+function createMineMaterial(
+  colour: number,
+  map: THREE.Texture | undefined,
+  ghost: boolean,
+): THREE.MeshStandardMaterial {
+  const parameters: THREE.MeshStandardMaterialParameters = {
+    color: ghost ? 0x78c56d : colour,
+    roughness: 0.92,
+    transparent: ghost,
+    opacity: ghost ? 0.5 : 1,
+    depthWrite: !ghost,
+    emissive: ghost ? 0x315b39 : 0x000000,
+    emissiveIntensity: ghost ? 0.25 : 0,
+  };
+  if (!ghost && map) parameters.map = map;
+  return new THREE.MeshStandardMaterial(parameters);
+}
+
+function addMinePart(
+  parent: THREE.Group,
+  material: THREE.Material,
+  size: [number, number, number],
+  position: [number, number, number],
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
+    material,
   );
-  opening.position.set(0, BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.82);
-  mineVisual.group.add(opening);
+  mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  const ghost = Boolean(parent.userData.isGhost);
+  mesh.castShadow = !ghost;
+  mesh.receiveShadow = !ghost;
+  parent.add(mesh);
+  return mesh;
+}
 
-  const woodMaterial = new THREE.MeshStandardMaterial({ map: oakLogTexture, roughness: 1 });
-  const postGeometry = new THREE.BoxGeometry(BLOCK_SIZE * 0.2, BLOCK_SIZE * 1.25, BLOCK_SIZE * 0.2);
-  [-0.72, 0.72].forEach((x) => {
-    const post = new THREE.Mesh(postGeometry, woodMaterial);
-    post.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 1.05, BLOCK_SIZE * 0.72);
-    post.castShadow = true;
-    mineVisual.group.add(post);
+function createMineCartVisual(ghost: boolean, storage: boolean): THREE.Group {
+  const cart = new THREE.Group();
+  cart.userData.isGhost = ghost;
+  const bodyMaterial = createMineMaterial(storage ? 0x9f7951 : 0xb8c0c0, undefined, ghost);
+  const darkMaterial = createMineMaterial(0x182126, undefined, ghost);
+  const wheelMaterial = createMineMaterial(0x20282b, undefined, ghost);
+  const woodMaterial = createMineMaterial(0x95643b, oakPlanksTexture, ghost);
+  addMinePart(cart, bodyMaterial, [0.62, 0.3, 0.68], [0, 0.72, 0]);
+  addMinePart(cart, darkMaterial, [0.46, 0.05, 0.5], [0, 0.9, 0]);
+  addMinePart(cart, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, -0.3]);
+  addMinePart(cart, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, 0.3]);
+  addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [-0.3, 0.94, 0]);
+  addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [0.3, 0.94, 0]);
+  if (storage) addMinePart(cart, woodMaterial, [0.46, 0.22, 0.48], [0, 1.05, 0]);
+
+  [-0.3, 0.3].forEach((x) => {
+    [-0.2, 0.2].forEach((z) => {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(BLOCK_SIZE * 0.09, BLOCK_SIZE * 0.09, BLOCK_SIZE * 0.08, 8),
+        wheelMaterial,
+      );
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 0.49, z * BLOCK_SIZE);
+      wheel.castShadow = !ghost;
+      cart.add(wheel);
+    });
   });
-  const header = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 1.85, BLOCK_SIZE * 0.2, BLOCK_SIZE * 0.22), woodMaterial);
-  header.position.set(0, BLOCK_SIZE * 1.7, BLOCK_SIZE * 0.72);
-  header.castShadow = true;
-  mineVisual.group.add(header);
+  return cart;
+}
 
-  const sleeperMaterial = new THREE.MeshStandardMaterial({ color: 0x855235, roughness: 1 });
-  const railMaterial = new THREE.MeshStandardMaterial({ map: railTexture, roughness: 0.85 });
-  const poweredMaterial = new THREE.MeshStandardMaterial({ map: poweredRailTexture, roughness: 0.85 });
+function createMineVisual(visual: MineVisual): void {
+  visual.group.userData.isGhost = visual.ghost;
+  const stoneMaterial = createMineMaterial(0x9aa4a3, stoneBricksTexture, visual.ghost);
+  const stoneAccentMaterial = createMineMaterial(0x697578, cobblestoneTexture, visual.ghost);
+  const woodMaterial = createMineMaterial(0x8c5b36, oakLogTexture, visual.ghost);
+  const darkMaterial = createMineMaterial(0x10191d, undefined, visual.ghost);
+  const sleeperMaterial = createMineMaterial(0x855235, undefined, visual.ghost);
+  const railMaterial = createMineMaterial(0xa8b1ad, railTexture, visual.ghost);
+  const poweredMaterial = createMineMaterial(0xd59b3c, poweredRailTexture, visual.ghost);
+
+  addMinePart(visual.group, darkMaterial, [1.02, 1.2, 0.12], [0, 1.02, 0.58]);
+  [-0.43, 0.43].forEach((x) => {
+    addMinePart(visual.group, stoneMaterial, [0.24, 1.25, 0.32], [x, 0.98, 0.58]);
+    addMinePart(visual.group, stoneAccentMaterial, [0.3, 0.18, 0.38], [x, 0.38, 0.58]);
+    addMinePart(visual.group, woodMaterial, [0.14, 1.3, 0.18], [x * 1.1, 1.03, 0.44]);
+  });
+  addMinePart(visual.group, stoneMaterial, [1.05, 0.22, 0.32], [0, 1.62, 0.58]);
+  addMinePart(visual.group, woodMaterial, [1.22, 0.18, 0.2], [0, 1.74, 0.44]);
+
   [-0.2, 0.2].forEach((x) => {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 0.08, BLOCK_SIZE * 0.045, BLOCK_SIZE * 3.1), railMaterial);
-    rail.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 0.51, BLOCK_SIZE * 2.05);
-    mineVisual.group.add(rail);
+    addMinePart(visual.group, railMaterial, [0.07, 0.05, 3.05], [x, 0.52, 2.03]);
   });
   for (let index = 0; index < 5; index += 1) {
-    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 0.78, BLOCK_SIZE * 0.05, BLOCK_SIZE * 0.12), index === 2 ? poweredMaterial : sleeperMaterial);
-    sleeper.position.set(0, BLOCK_SIZE * 0.49, BLOCK_SIZE * (0.95 + index * 0.55));
-    mineVisual.group.add(sleeper);
+    addMinePart(visual.group, index === 2 ? poweredMaterial : sleeperMaterial, [0.78, 0.06, 0.12], [0, 0.49, 0.95 + index * 0.55]);
   }
-  mineVisual.group.position.set(0, 0, 0);
-  mineVisual.group.visible = false;
+  visual.group.position.set(0, 0, 0);
+  visual.group.visible = false;
 }
 
-createMineVisual();
+createMineVisual(mineVisual);
+createMineVisual(mineGhostVisual);
 
-function syncMineCartMeshes(cartCount: number, storageCarts: number): void {
-  const wanted = Math.max(1, cartCount) + storageCarts;
-  while (mineVisual.carts.length < wanted) {
-    const isStorage = mineVisual.carts.length >= cartCount;
-    const cart = new THREE.Mesh(
-      new THREE.BoxGeometry(BLOCK_SIZE * 0.48, BLOCK_SIZE * 0.26, BLOCK_SIZE * 0.42),
-      new THREE.MeshStandardMaterial({ map: isStorage ? chestMinecartTexture : minecartTexture, roughness: 1 }),
-    );
-    cart.castShadow = true;
-    mineVisual.group.add(cart);
-    mineVisual.carts.push(cart);
+function syncMineCartMeshes(visual: MineVisual, cartCount: number, storageCarts: number): void {
+  const wanted = visual.ghost ? 1 : Math.max(1, cartCount) + storageCarts;
+  while (visual.carts.length < wanted) {
+    const isStorage = !visual.ghost && visual.carts.length >= cartCount;
+    const cart = createMineCartVisual(visual.ghost, isStorage);
+    visual.group.add(cart);
+    visual.carts.push(cart);
   }
-  mineVisual.carts.forEach((cart, index) => {
+  visual.carts.forEach((cart, index) => {
     cart.visible = index < wanted;
   });
+}
+
+function setMineGhostValid(valid: boolean): void {
+  mineGhostVisual.group.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => {
+      if (!(material instanceof THREE.MeshStandardMaterial)) return;
+      material.color.set(valid ? 0x79c56d : 0xd86c62);
+      material.emissive.set(valid ? 0x315b39 : 0x6b2c2c);
+    });
+  });
+}
+
+function setMineRotation(group: THREE.Group, direction: WorldDirection): void {
+  group.rotation.y = direction === 'east'
+    ? Math.PI / 2
+    : direction === 'west'
+      ? -Math.PI / 2
+      : direction === 'north'
+        ? Math.PI
+        : 0;
 }
 
 function updateMineVisual(): void {
@@ -731,14 +816,8 @@ function updateMineVisual(): void {
   if (!mine) return;
   const direction = mine.direction ?? 'south';
   mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
-  mineVisual.group.rotation.y = direction === 'east'
-    ? Math.PI / 2
-    : direction === 'west'
-      ? -Math.PI / 2
-      : direction === 'north'
-        ? Math.PI
-        : 0;
-  syncMineCartMeshes(mine.cartCount, mine.storageCarts);
+  setMineRotation(mineVisual.group, direction);
+  syncMineCartMeshes(mineVisual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
   const startZ = BLOCK_SIZE * 1.05;
@@ -747,9 +826,19 @@ function updateMineVisual(): void {
     if (!cart.visible) return;
     const phase = (baseProgress + index * 0.27) % 1;
     const travel = phase < 0.5 ? phase * 2 : 2 - phase * 2;
-    cart.position.set((index % 2 === 0 ? -0.2 : 0.2) * BLOCK_SIZE, BLOCK_SIZE * 0.68, startZ + (endZ - startZ) * travel);
+    cart.position.set((index % 2 === 0 ? -0.2 : 0.2) * BLOCK_SIZE, 0, startZ + (endZ - startZ) * travel);
     cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
   });
+}
+
+function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
+  const visible = placingMine && state.mines.length === 0 && Boolean(preview);
+  mineGhostVisual.group.visible = visible;
+  if (!visible || !preview) return;
+  mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
+  setMineRotation(mineGhostVisual.group, preview.direction);
+  syncMineCartMeshes(mineGhostVisual, 1, 0);
+  setMineGhostValid(preview.valid);
 }
 
 const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
@@ -857,6 +946,7 @@ const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
 let placingMine = false;
+let minePlacementPreview: MinePlacementPreview | null = null;
 let xpFlashTimeout = 0;
 const SKILL_TREE_STAGE_SIZE = 1600;
 const SKILL_TREE_CENTER = SKILL_TREE_STAGE_SIZE / 2;
@@ -1181,13 +1271,13 @@ function updateMineUi(): void {
     const available = state.availableMineSites > 0;
     mineStatusEl.hidden = !available && state.mines.length === 0;
     mineLabelEl.textContent = available ? 'Free mine blueprint ready' : 'Mine entrance locked';
-    mineRateEl.textContent = available ? 'Place beside a path' : 'Unlock another mine';
+    mineRateEl.textContent = placingMine ? 'Green preview = valid site' : available ? 'Place beside a path' : 'Unlock another mine';
     mineFillEl.style.width = '0%';
     mineButton.disabled = !available;
     mineActionTitleEl.textContent = placingMine ? 'CHOOSE MINE SITE' : 'PLACE FREE MINE';
     mineActionHintEl.textContent = placingMine ? 'Click a path-side plot' : 'Click to choose a location';
     mineButton.classList.toggle('is-placement-mode', placingMine);
-    currentToolHintEl.textContent = available ? 'Place your free mine beside a path' : 'Unlock a mine entrance';
+    currentToolHintEl.textContent = placingMine ? 'Preview a four-block rail footprint' : available ? 'Place your free mine beside a path' : 'Unlock a mine entrance';
     updateMineVisual();
     return;
   }
@@ -1268,7 +1358,7 @@ function getOreAtPointer(event: PointerEvent): OreNode | null {
   return hit ? oreByMesh.get(hit.object) ?? null : null;
 }
 
-function getMinePlacementAtPointer(event: PointerEvent): { x: number; z: number; direction: WorldDirection } | null {
+function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | null {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1279,8 +1369,18 @@ function getMinePlacementAtPointer(event: PointerEvent): { x: number; z: number;
   const x = Math.round(hit.point.x / BLOCK_SIZE);
   const z = Math.round(hit.point.z / BLOCK_SIZE);
   const directions: WorldDirection[] = ['south', 'east', 'north', 'west'];
-  const direction = directions.find((candidate) => canPlaceMine(state, x, z, candidate));
-  return direction ? { x, z, direction } : null;
+  const validDirection = directions.find((candidate) => canPlaceMine(state, x, z, candidate));
+  const fallbackDirection = directions.find((candidate) => getMineFootprint(x, z, candidate).every((cell) => {
+    const bounds = getChunkBounds(state);
+    return cell.x >= bounds.minX && cell.x <= bounds.maxX && cell.z >= bounds.minZ && cell.z <= bounds.maxZ;
+  })) ?? 'south';
+  return { x, z, direction: validDirection ?? fallbackDirection, valid: Boolean(validDirection) };
+}
+
+function updateMinePlacementPreview(event: PointerEvent): void {
+  if (!placingMine || state.mines.length > 0) return;
+  minePlacementPreview = getMinePlacementAtPointer(event);
+  updateMineGhostVisual(minePlacementPreview);
 }
 
 function setHoveredOre(nextOre: OreNode | null): void {
@@ -1335,9 +1435,11 @@ canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
     if (placingMine) {
       const placement = getMinePlacementAtPointer(event);
-      if (placement && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction)) {
+      if (placement?.valid && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction)) {
         placingMine = false;
+        minePlacementPreview = null;
         canvas.classList.remove('is-placing-mine');
+        updateMineGhostVisual(null);
         updateWorldScene();
         updateUi();
         saveState(localStorage, state);
@@ -1357,7 +1459,8 @@ canvas.addEventListener('pointerdown', (event) => {
 });
 canvas.addEventListener('pointermove', (event) => {
   if (!isOrbiting) {
-    updateHoverTarget(event);
+    if (placingMine) updateMinePlacementPreview(event);
+    else updateHoverTarget(event);
     return;
   }
   const deltaX = event.clientX - lastOrbitX;
@@ -1368,9 +1471,14 @@ canvas.addEventListener('pointermove', (event) => {
   orbitPitch = THREE.MathUtils.clamp(orbitPitch + deltaY * 0.006, 0.18, 1.35);
   updateCameraTransform();
 });
-canvas.addEventListener('pointerenter', updateHoverTarget);
+canvas.addEventListener('pointerenter', (event) => {
+  if (placingMine) updateMinePlacementPreview(event);
+  else updateHoverTarget(event);
+});
 canvas.addEventListener('pointerleave', () => {
   setHoveredOre(null);
+  minePlacementPreview = null;
+  updateMineGhostVisual(null);
 });
 function endOrbit(event: PointerEvent): void {
   if (!isOrbiting) return;
@@ -1381,7 +1489,8 @@ function endOrbit(event: PointerEvent): void {
     // See the pointerdown note above.
   }
   canvas.classList.remove('is-orbiting');
-  updateHoverTarget(event);
+  if (placingMine) updateMinePlacementPreview(event);
+  else updateHoverTarget(event);
 }
 canvas.addEventListener('pointerup', endOrbit);
 canvas.addEventListener('pointercancel', endOrbit);
@@ -1449,6 +1558,10 @@ document.addEventListener('keydown', (event) => {
 mineButton.addEventListener('click', () => {
   if (state.mines.length === 0 && state.availableMineSites > 0) {
     placingMine = !placingMine;
+    if (!placingMine) {
+      minePlacementPreview = null;
+      updateMineGhostVisual(null);
+    }
     canvas.classList.toggle('is-placing-mine', placingMine);
     updateUi();
     return;

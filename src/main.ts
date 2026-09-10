@@ -16,6 +16,7 @@ import {
   getMineCartCount,
   getMineLayer,
   getMineTripDuration,
+  getLivingEntityPlan,
   getMeadowFeaturePlan,
   getNextSettlementStage,
   getSettlementStage,
@@ -25,6 +26,7 @@ import {
   saveState,
   WORLD_DIRECTIONS,
   type BlockType,
+  type LivingEntityPlan,
   type MeadowFeature,
   type MineSite,
   type WorldDirection,
@@ -364,29 +366,29 @@ function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual 
   const visual: MeadowFeatureVisual = { feature, group };
 
   if (feature.kind === 'path') {
-    addFeatureCube(group, pathMaterial, [0.94, 0.05, 0.94], [0, 0.49, 0]);
+    addFeatureCube(group, pathMaterial, [0.88, 0.05, 0.88], [0, 0.49, 0]);
   }
 
   if (feature.kind === 'tree') {
     addFeatureCube(group, oakLogMaterial, [0.34, 0.95, 0.34], [0, 0.96, 0]);
-    addFeatureCube(group, oakLeavesMaterial, [1.12, 0.78, 1.12], [0, 1.65, 0]);
-    addFeatureCube(group, oakLeavesMaterial, [0.72, 0.42, 0.72], [0, 2.18, 0]);
+    addFeatureCube(group, oakLeavesMaterial, [0.88, 0.7, 0.88], [0, 1.62, 0]);
+    addFeatureCube(group, oakLeavesMaterial, [0.58, 0.36, 0.58], [0, 2.1, 0]);
   }
 
   if (feature.kind === 'farm') {
-    visual.farmland = addFeatureCube(group, farmlandMaterial, [0.94, 0.05, 0.94], [0, 0.49, 0]);
+    visual.farmland = addFeatureCube(group, farmlandMaterial, [0.88, 0.05, 0.88], [0, 0.49, 0]);
     visual.crops = addFeaturePlant(group, wheatMaterial);
   }
 
   if (feature.kind === 'well') {
-    visual.water = addFeatureCube(group, waterMaterial, [0.62, 0.05, 0.62], [0, 0.68, 0]);
-    addFeatureCube(group, cobblestoneMaterial, [1.28, 0.24, 1.28], [0, 0.61, 0]);
-    [-0.48, 0.48].forEach((x) => {
-      addFeatureCube(group, stoneBricksMaterial, [0.22, 0.82, 0.22], [x, 1.04, -0.48]);
-      addFeatureCube(group, stoneBricksMaterial, [0.22, 0.82, 0.22], [x, 1.04, 0.48]);
+    visual.water = addFeatureCube(group, waterMaterial, [0.52, 0.05, 0.52], [0, 0.68, 0]);
+    addFeatureCube(group, cobblestoneMaterial, [0.9, 0.24, 0.9], [0, 0.61, 0]);
+    [-0.32, 0.32].forEach((x) => {
+      addFeatureCube(group, stoneBricksMaterial, [0.18, 0.82, 0.18], [x, 1.04, -0.32]);
+      addFeatureCube(group, stoneBricksMaterial, [0.18, 0.82, 0.18], [x, 1.04, 0.32]);
     });
-    addFeatureCube(group, oakPlanksMaterial, [1.48, 0.18, 1.48], [0, 1.54, 0]);
-    addFeatureCube(group, lanternMaterial, [0.2, 0.28, 0.2], [0, 1.16, 0]);
+    addFeatureCube(group, oakPlanksMaterial, [0.98, 0.18, 0.98], [0, 1.54, 0]);
+    addFeatureCube(group, lanternMaterial, [0.16, 0.24, 0.16], [0, 1.16, 0]);
   }
 
   if (feature.kind === 'dwelling') {
@@ -417,6 +419,96 @@ function updateMeadowScene(): void {
       if (visual.farmland) visual.farmland.visible = farmlandUnlocked;
       if (visual.crops) visual.crops.visible = cropsUnlocked;
     }
+  });
+}
+
+interface LivingEntityVisual {
+  plan: LivingEntityPlan;
+  group: THREE.Group;
+}
+
+const livingEntityRoot = new THREE.Group();
+world.add(livingEntityRoot);
+
+const villagerSkinMaterial = new THREE.MeshStandardMaterial({ color: 0x8c5d48, roughness: 1 });
+const villagerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x5b4a38, roughness: 1 });
+const minerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x59656b, roughness: 1 });
+const farmerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x588a44, roughness: 1 });
+const toolsmithRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x6d7d88, roughness: 1 });
+const animalPinkMaterial = new THREE.MeshStandardMaterial({ color: 0xe58e95, roughness: 1 });
+const animalWhiteMaterial = new THREE.MeshStandardMaterial({ color: 0xdad8ca, roughness: 1 });
+const animalBrownMaterial = new THREE.MeshStandardMaterial({ color: 0x8d5b3a, roughness: 1 });
+const animalDarkMaterial = new THREE.MeshStandardMaterial({ color: 0x4b3426, roughness: 1 });
+
+function addEntityCube(
+  parent: THREE.Group,
+  material: THREE.Material,
+  size: [number, number, number],
+  position: [number, number, number],
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
+    material,
+  );
+  mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function createLivingEntityVisual(plan: LivingEntityPlan): LivingEntityVisual {
+  const group = new THREE.Group();
+  group.position.set(plan.x * BLOCK_SIZE, 0, plan.z * BLOCK_SIZE);
+
+  if (plan.kind === 'villager') {
+    const robeMaterial = plan.role === 'miner'
+      ? minerRobeMaterial
+      : plan.role === 'farmer'
+        ? farmerRobeMaterial
+        : plan.role === 'toolsmith'
+          ? toolsmithRobeMaterial
+          : villagerRobeMaterial;
+    addEntityCube(group, villagerSkinMaterial, [0.34, 0.34, 0.34], [0, 1.66, 0]);
+    addEntityCube(group, robeMaterial, [0.42, 0.58, 0.3], [0, 1.18, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.12, 0.42, 0.12], [-0.27, 1.2, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.12, 0.42, 0.12], [0.27, 1.2, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.12, 0.4, 0.12], [-0.11, 0.7, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.12, 0.4, 0.12], [0.11, 0.7, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.12, 0.1, 0.24], [0, 1.49, -0.2]);
+  } else {
+    const bodyMaterial = plan.kind === 'pig' ? animalPinkMaterial : animalWhiteMaterial;
+    const headMaterial = plan.kind === 'sheep' ? animalDarkMaterial : bodyMaterial;
+    const legMaterial = plan.kind === 'cow' ? animalDarkMaterial : plan.kind === 'sheep' ? animalDarkMaterial : bodyMaterial;
+    addEntityCube(group, bodyMaterial, [0.65, 0.38, 0.9], [0, 0.78, 0]);
+    addEntityCube(group, headMaterial, [0.36, 0.36, 0.36], [0, 0.87, -0.55]);
+    [-0.22, 0.22].forEach((x) => {
+      [-0.27, 0.27].forEach((z) => addEntityCube(group, legMaterial, [0.14, 0.28, 0.14], [x, 0.62, z]));
+    });
+    if (plan.kind === 'cow') {
+      addEntityCube(group, animalBrownMaterial, [0.18, 0.16, 0.08], [-0.24, 0.82, 0.22]);
+      addEntityCube(group, animalBrownMaterial, [0.16, 0.14, 0.08], [0.22, 0.76, -0.18]);
+    }
+    if (plan.kind === 'pig') {
+      addEntityCube(group, animalPinkMaterial, [0.2, 0.14, 0.08], [0, 0.82, -0.74]);
+    }
+  }
+
+  group.visible = false;
+  livingEntityRoot.add(group);
+  return { plan, group };
+}
+
+function updateLivingWorld(): void {
+  livingEntityRoot.children.forEach((child) => {
+    child.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.geometry.dispose();
+    });
+  });
+  livingEntityRoot.clear();
+  getLivingEntityPlan(state).forEach((plan) => {
+    const visual = createLivingEntityVisual(plan);
+    visual.group.visible = state.worldRank >= 2;
   });
 }
 
@@ -465,6 +557,7 @@ function updateWorldScene(): void {
     if (visible) oreTargets.push(node.mesh);
   });
   updateMeadowScene();
+  updateLivingWorld();
   updateWorldFloor();
 }
 

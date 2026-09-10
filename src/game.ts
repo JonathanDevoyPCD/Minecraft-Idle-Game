@@ -62,6 +62,16 @@ export interface MeadowFeature {
   z: number;
 }
 
+export type LivingEntityKind = 'villager' | 'pig' | 'cow' | 'sheep';
+
+export interface LivingEntityPlan {
+  id: string;
+  kind: LivingEntityKind;
+  x: number;
+  z: number;
+  role?: 'unassigned' | 'miner' | 'farmer' | 'toolsmith';
+}
+
 export type ConstructionKind = 'adjacent-cell' | 'surface-3x3';
 
 export interface ConstructionProject {
@@ -215,7 +225,6 @@ export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[
   const treeCandidates = [
     { x: -1, z: -1 },
     { x: 1, z: -1 },
-    { x: -1, z: 1 },
     { x: 1, z: 0 },
   ].sort((a, b) => seededNoise(worldSeed, b.x, b.z) - seededNoise(worldSeed, a.x, a.z));
   return [
@@ -224,7 +233,7 @@ export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[
     { id: 'path-south', kind: 'path', x: 0, z: 1 },
     { id: 'starter-farm', kind: 'farm', x: -1, z: 0 },
     { id: 'starter-well', kind: 'well', x: -1, z: 1 },
-    { id: 'starter-dwelling', kind: 'dwelling', x: 1, z: 1 },
+    { id: 'starter-dwelling', kind: 'dwelling', x: 0, z: 0 },
     ...treeCandidates.slice(0, 2).map((candidate, index) => ({
       id: `starter-tree-${index}`,
       kind: 'tree' as const,
@@ -232,6 +241,29 @@ export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[
       z: candidate.z,
     })),
   ];
+}
+
+export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan[] {
+  if (state.worldRank < 2) return [];
+  const entities: LivingEntityPlan[] = [];
+  if (getSkillNodeRank(state, 'life-animals') > 0) {
+    entities.push({ id: 'starter-pig', kind: 'pig', x: -1.08, z: -0.25 });
+    entities.push({ id: 'starter-cow', kind: 'cow', x: 1.08, z: 0.72 });
+  }
+  if (getSkillNodeRank(state, 'life-animal-pens') > 0) {
+    entities.push({ id: 'starter-sheep', kind: 'sheep', x: 1.08, z: -0.72 });
+  }
+  if (getSkillNodeRank(state, 'life-first-villager') > 0) {
+    const role = getSkillNodeRank(state, 'life-specialist-miner') > 0
+      ? 'miner'
+      : getSkillNodeRank(state, 'life-specialist-farmer') > 0
+        ? 'farmer'
+        : getSkillNodeRank(state, 'life-toolsmith') > 0
+          ? 'toolsmith'
+          : 'unassigned';
+    entities.push({ id: 'first-villager', kind: 'villager', x: 0, z: -0.82, role });
+  }
+  return entities;
 }
 
 export function getStableBlockType(authoredType: BlockType, savedProgress?: Pick<BlockMiningProgress, 'stableType'>): BlockType {

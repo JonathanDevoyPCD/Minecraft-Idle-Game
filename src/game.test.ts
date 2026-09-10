@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -231,8 +231,20 @@ describe('IdleCraft progression', () => {
 
   it('keeps the first meadow feature layout deterministic per world seed', () => {
     expect(getMeadowFeaturePlan(184731)).toEqual(getMeadowFeaturePlan(184731));
-    expect(getMeadowFeaturePlan(184731).filter((feature) => feature.kind === 'tree')).toHaveLength(2);
-    expect(getMeadowFeaturePlan(184731).some((feature) => feature.kind === 'dwelling')).toBe(true);
+    const plan = getMeadowFeaturePlan(184731);
+    expect(plan.filter((feature) => feature.kind === 'tree')).toHaveLength(2);
+    expect(plan.find((feature) => feature.kind === 'dwelling')).toMatchObject({ x: 0, z: 0 });
+    expect(plan.filter((feature) => feature.kind === 'tree').every((feature) => feature.x !== -1 || feature.z !== 1)).toBe(true);
+  });
+
+  it('reveals living entities from the settlement branch', () => {
+    const state = freshState();
+    expect(getLivingEntityPlan(state)).toHaveLength(0);
+    state.worldRank = 2;
+    state.skillRanks = { 'life-animals': 1, 'life-first-villager': 1 };
+    expect(getLivingEntityPlan(state).map((entity) => entity.kind)).toEqual(['pig', 'cow', 'villager']);
+    state.skillRanks['life-specialist-miner'] = 1;
+    expect(getLivingEntityPlan(state).find((entity) => entity.kind === 'villager')?.role).toBe('miner');
   });
 
   it('migrates legacy expanded saves into coordinate cells', () => {

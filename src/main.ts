@@ -734,6 +734,46 @@ function addMinePart(
   return mesh;
 }
 
+function addMineSlopeFill(
+  parent: THREE.Group,
+  material: THREE.Material,
+  dimensions: { width: number; rearZ: number; frontZ: number; groundY: number; peakY: number },
+): THREE.Mesh {
+  const halfWidth = dimensions.width / 2;
+  const scale = BLOCK_SIZE;
+  // A closed triangular prism: its rear edge is buried just below the turf and
+  // the sloped top meets the entrance header. This prevents daylight below the
+  // mine body from every viewing angle while retaining the one-block footprint.
+  const vertices = [
+    -halfWidth, dimensions.groundY, dimensions.rearZ,
+    halfWidth, dimensions.groundY, dimensions.rearZ,
+    -halfWidth, dimensions.groundY, dimensions.frontZ,
+    halfWidth, dimensions.groundY, dimensions.frontZ,
+    -halfWidth, dimensions.peakY, dimensions.frontZ,
+    halfWidth, dimensions.peakY, dimensions.frontZ,
+  ].map((value) => value * scale);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute(
+    'uv',
+    new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1], 2),
+  );
+  geometry.setIndex([
+    0, 2, 3, 0, 3, 1, // buried base
+    2, 3, 5, 2, 5, 4, // front wall
+    0, 4, 5, 0, 5, 1, // sloped surface
+    0, 2, 4, // left side
+    1, 5, 3, // right side
+  ]);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, material);
+  const ghost = Boolean(parent.userData.isGhost);
+  mesh.castShadow = !ghost;
+  mesh.receiveShadow = !ghost;
+  parent.add(mesh);
+  return mesh;
+}
+
 const mineCargoColors: Record<MineCargoKind, number> = {
   stone: 0x7c8587,
   coal: 0x303638,
@@ -845,10 +885,19 @@ function createMineVisual(visual: MineVisual): void {
   addMinePart(visual.group, beamMaterial, [0.92, 0.18, 0.22], [0, 1.68, 0.42]);
   addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [-0.39, 0.3, 0.42]);
   addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [0.39, 0.3, 0.42]);
-  // A steeper, lower rear plane reaches the turf before the back edge of the
-  // anchor block.  This removes the daylight under the mine without widening it.
-  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.28, 0, 0];
+  // A solid, grounded rear body seals the visible sloped shell. Its rear toe
+  // is embedded in the turf at z -0.42, safely inside this tile.
+  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.285, 0, 0];
+  // Keep the visible sloped stone shell from the reference. The triangular
+  // volume below it is a concealed ground seal, not the exposed silhouette.
   addMinePart(visual.group, stoneMaterial, [0.78, 0.56, 1.12], [0, 0.98, 0.17], rearSlopeRotation);
+  addMineSlopeFill(visual.group, stoneMaterial, {
+    width: 0.78,
+    rearZ: -0.42,
+    frontZ: 0.55,
+    groundY: 0.34,
+    peakY: 1.58,
+  });
   [-0.27, 0, 0.27].forEach((x) => {
     addMinePart(visual.group, beamMaterial, [0.13, 0.16, 1.14], [x, 1.25, -0.1], rearSlopeRotation);
   });
@@ -859,7 +908,7 @@ function createMineVisual(visual: MineVisual): void {
   ].forEach(({ y, z }) => {
     addMinePart(visual.group, woodMaterial, [0.78, 0.11, 0.12], [0, y, z]);
   });
-  addMinePart(visual.group, stoneAccentMaterial, [0.84, 0.22, 0.24], [0, 0.28, -0.31]);
+  addMinePart(visual.group, stoneAccentMaterial, [0.82, 0.18, 0.22], [0, 0.34, -0.34]);
 
   for (let index = 0; index < 4; index += 1) {
     const segment = new THREE.Group();

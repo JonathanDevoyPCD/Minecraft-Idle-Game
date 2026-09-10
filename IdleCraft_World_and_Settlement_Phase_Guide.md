@@ -77,5 +77,5 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 
 - Previous skill-tree and mining prototype work: complete.
 - Step 1: **complete** — stable terrain harvesting and legacy-save migration are implemented and verified.
-- Step 2: **in progress** — coordinate cells now grow through a persisted construction queue with visible build progress.
+- Step 2: **complete** — coordinate cells now grow through a persisted construction queue with visible build progress.
 - Steps 3–8: queued.

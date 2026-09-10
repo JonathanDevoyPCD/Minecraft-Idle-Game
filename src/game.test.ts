@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -227,6 +227,12 @@ describe('IdleCraft progression', () => {
       getItem: () => JSON.stringify({ ...freshState(0), settlementProgress: undefined, worldRank: 2, worldCells: undefined }),
     } as unknown as Storage;
     expect(loadState(storage, 1000).settlementProgress).toBe(500);
+  });
+
+  it('keeps the first meadow feature layout deterministic per world seed', () => {
+    expect(getMeadowFeaturePlan(184731)).toEqual(getMeadowFeaturePlan(184731));
+    expect(getMeadowFeaturePlan(184731).filter((feature) => feature.kind === 'tree')).toHaveLength(2);
+    expect(getMeadowFeaturePlan(184731).some((feature) => feature.kind === 'dwelling')).toBe(true);
   });
 
   it('migrates legacy expanded saves into coordinate cells', () => {

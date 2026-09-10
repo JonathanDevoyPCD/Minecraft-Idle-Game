@@ -91,5 +91,6 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Step 1: **complete** — authored terrain is preserved and legacy-save migration is implemented and verified.
 - Step 2: **complete** — coordinate cells now grow through a persisted construction queue with visible build progress.
 - Step 3: **complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented and verified.
-- Step 4: **foundation in progress** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
-- Steps 5–9: queued.
+- Step 4: **complete (foundation)** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
+- Step 5: **in progress** — deterministic meadow paths, a dwelling, starter trees, a well, and gated farmland/crops are implemented and verified.
+- Steps 6–9: queued.

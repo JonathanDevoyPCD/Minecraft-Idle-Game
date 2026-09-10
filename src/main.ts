@@ -16,6 +16,7 @@ import {
   getMineCartCount,
   getMineLayer,
   getMineTripDuration,
+  getMeadowFeaturePlan,
   getNextSettlementStage,
   getSettlementStage,
   getWorldSurfaceCells,
@@ -24,6 +25,7 @@ import {
   saveState,
   WORLD_DIRECTIONS,
   type BlockType,
+  type MeadowFeature,
   type MineSite,
   type WorldDirection,
 } from './game';
@@ -128,6 +130,17 @@ const bedrockMaterial = new THREE.MeshStandardMaterial({ map: bedrockTexture, ro
 const railTexture = loadBlockTexture('rail.png');
 const poweredRailTexture = loadBlockTexture('powered_rail.png');
 const oakLogTexture = loadBlockTexture('oak_log.png');
+const oakLeavesTexture = loadBlockTexture('oak_leaves.png');
+const oakPlanksTexture = loadBlockTexture('oak_planks.png');
+const darkOakPlanksTexture = loadBlockTexture('dark_oak_planks.png');
+const waterTexture = loadBlockTexture('water_still.png');
+const pathTexture = loadBlockTexture('dirt_path_top.png');
+const farmlandTexture = loadBlockTexture('farmland.png');
+const wheatTexture = loadBlockTexture('wheat_stage3.png');
+const stoneBricksTexture = loadBlockTexture('stone_bricks.png');
+const cobblestoneTexture = loadBlockTexture('cobblestone.png');
+const lanternTexture = loadBlockTexture('lantern.png');
+const oakDoorTexture = loadBlockTexture('oak_door_bottom.png');
 const minecartTexture = loadAssetTexture('items/minecart.png');
 const chestMinecartTexture = loadAssetTexture('items/chest_minecart.png');
 const oreTextures = {
@@ -290,6 +303,123 @@ const oreNodes: OreNode[] = oreNodeDefinitions.map((definition) => {
 const oreByMesh = new Map<THREE.Object3D, OreNode>(oreNodes.map((node) => [node.mesh, node]));
 const oreTargets: THREE.Mesh[] = [];
 
+interface MeadowFeatureVisual {
+  feature: MeadowFeature;
+  group: THREE.Group;
+  water?: THREE.Object3D;
+  farmland?: THREE.Object3D;
+  crops?: THREE.Object3D;
+}
+
+const meadowFeatureRoot = new THREE.Group();
+world.add(meadowFeatureRoot);
+
+const oakLogMaterial = new THREE.MeshStandardMaterial({ map: oakLogTexture, roughness: 1 });
+const oakLeavesMaterial = new THREE.MeshStandardMaterial({ map: oakLeavesTexture, color: 0x4f963f, roughness: 1, transparent: true, alphaTest: 0.1 });
+const oakPlanksMaterial = new THREE.MeshStandardMaterial({ map: oakPlanksTexture, roughness: 1 });
+const darkOakPlanksMaterial = new THREE.MeshStandardMaterial({ map: darkOakPlanksTexture, roughness: 1 });
+const waterMaterial = new THREE.MeshStandardMaterial({ map: waterTexture, color: 0x78d7e8, roughness: 0.25, transparent: true, opacity: 0.82 });
+const pathMaterial = new THREE.MeshStandardMaterial({ map: pathTexture, roughness: 1 });
+const farmlandMaterial = new THREE.MeshStandardMaterial({ map: farmlandTexture, roughness: 1 });
+const wheatMaterial = new THREE.MeshStandardMaterial({ map: wheatTexture, roughness: 1, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
+const stoneBricksMaterial = new THREE.MeshStandardMaterial({ map: stoneBricksTexture, roughness: 1 });
+const cobblestoneMaterial = new THREE.MeshStandardMaterial({ map: cobblestoneTexture, roughness: 1 });
+const lanternMaterial = new THREE.MeshStandardMaterial({ map: lanternTexture, roughness: 0.7, emissive: 0xf5ad4b, emissiveIntensity: 0.25 });
+const oakDoorMaterial = new THREE.MeshStandardMaterial({ map: oakDoorTexture, roughness: 1, transparent: true, alphaTest: 0.1 });
+
+function addFeatureCube(
+  parent: THREE.Group,
+  material: THREE.Material,
+  size: [number, number, number],
+  position: [number, number, number],
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
+    material,
+  );
+  mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function addFeaturePlant(parent: THREE.Group, textureMaterial: THREE.Material): THREE.Group {
+  const plant = new THREE.Group();
+  const first = new THREE.Mesh(new THREE.PlaneGeometry(BLOCK_SIZE * 0.62, BLOCK_SIZE * 0.82), textureMaterial);
+  const second = first.clone();
+  first.rotation.y = Math.PI / 4;
+  second.rotation.y = -Math.PI / 4;
+  first.position.y = BLOCK_SIZE * 0.9;
+  second.position.y = BLOCK_SIZE * 0.9;
+  plant.add(first, second);
+  parent.add(plant);
+  return plant;
+}
+
+function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual {
+  const group = new THREE.Group();
+  group.position.set(feature.x * BLOCK_SIZE, 0, feature.z * BLOCK_SIZE);
+  meadowFeatureRoot.add(group);
+  const visual: MeadowFeatureVisual = { feature, group };
+
+  if (feature.kind === 'path') {
+    addFeatureCube(group, pathMaterial, [0.94, 0.05, 0.94], [0, 0.49, 0]);
+  }
+
+  if (feature.kind === 'tree') {
+    addFeatureCube(group, oakLogMaterial, [0.34, 0.95, 0.34], [0, 0.96, 0]);
+    addFeatureCube(group, oakLeavesMaterial, [1.12, 0.78, 1.12], [0, 1.65, 0]);
+    addFeatureCube(group, oakLeavesMaterial, [0.72, 0.42, 0.72], [0, 2.18, 0]);
+  }
+
+  if (feature.kind === 'farm') {
+    visual.farmland = addFeatureCube(group, farmlandMaterial, [0.94, 0.05, 0.94], [0, 0.49, 0]);
+    visual.crops = addFeaturePlant(group, wheatMaterial);
+  }
+
+  if (feature.kind === 'well') {
+    visual.water = addFeatureCube(group, waterMaterial, [0.62, 0.05, 0.62], [0, 0.68, 0]);
+    addFeatureCube(group, cobblestoneMaterial, [1.28, 0.24, 1.28], [0, 0.61, 0]);
+    [-0.48, 0.48].forEach((x) => {
+      addFeatureCube(group, stoneBricksMaterial, [0.22, 0.82, 0.22], [x, 1.04, -0.48]);
+      addFeatureCube(group, stoneBricksMaterial, [0.22, 0.82, 0.22], [x, 1.04, 0.48]);
+    });
+    addFeatureCube(group, oakPlanksMaterial, [1.48, 0.18, 1.48], [0, 1.54, 0]);
+    addFeatureCube(group, lanternMaterial, [0.2, 0.28, 0.2], [0, 1.16, 0]);
+  }
+
+  if (feature.kind === 'dwelling') {
+    addFeatureCube(group, oakPlanksMaterial, [1.9, 0.16, 1.9], [0, 0.55, 0]);
+    addFeatureCube(group, oakPlanksMaterial, [1.58, 1.1, 1.58], [0, 1.13, 0]);
+    addFeatureCube(group, darkOakPlanksMaterial, [1.9, 0.22, 1.9], [0, 1.78, 0]);
+    addFeatureCube(group, darkOakPlanksMaterial, [1.55, 0.18, 1.55], [0, 1.98, 0]);
+    addFeatureCube(group, oakDoorMaterial, [0.4, 0.82, 0.06], [0, 0.98, -0.82]);
+    addFeatureCube(group, lanternMaterial, [0.18, 0.24, 0.18], [0.58, 1.3, -0.84]);
+  }
+
+  group.visible = false;
+  return visual;
+}
+
+const meadowFeatureVisuals = getMeadowFeaturePlan(state.worldSeed).map(createMeadowFeatureVisual);
+
+function updateMeadowScene(): void {
+  const meadowUnlocked = state.worldRank >= 2;
+  const waterUnlocked = getSkillNodeRank(state, 'world-water-tile') > 0;
+  const cropsUnlocked = getSkillNodeRank(state, 'life-crops') > 0;
+  const farmlandUnlocked = getSkillNodeRank(state, 'life-farmland') > 0;
+  meadowFeatureVisuals.forEach((visual) => {
+    const { feature } = visual;
+    visual.group.visible = meadowUnlocked;
+    if (feature.kind === 'well' && visual.water) visual.water.visible = waterUnlocked;
+    if (feature.kind === 'farm') {
+      if (visual.farmland) visual.farmland.visible = farmlandUnlocked;
+      if (visual.crops) visual.crops.visible = cropsUnlocked;
+    }
+  });
+}
+
 function updateWorldFloor(): void {
   const visibleNodes = blockNodes.filter((node) => node.mesh.visible);
   if (visibleNodes.length === 0) return;
@@ -334,6 +464,7 @@ function updateWorldScene(): void {
     node.mesh.visible = visible;
     if (visible) oreTargets.push(node.mesh);
   });
+  updateMeadowScene();
   updateWorldFloor();
 }
 

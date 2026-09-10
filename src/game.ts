@@ -53,6 +53,15 @@ export interface WorldCell {
   biome: BiomeId;
 }
 
+export type MeadowFeatureKind = 'path' | 'tree' | 'farm' | 'well' | 'dwelling';
+
+export interface MeadowFeature {
+  id: string;
+  kind: MeadowFeatureKind;
+  x: number;
+  z: number;
+}
+
 export type ConstructionKind = 'adjacent-cell' | 'surface-3x3';
 
 export interface ConstructionProject {
@@ -195,6 +204,34 @@ function addWorldCell(state: GameState, x: number, z: number, biome: BiomeId = '
 
 export function getWorldSurfaceCells(state: GameState): readonly WorldCell[] {
   return state.worldCells;
+}
+
+function seededNoise(seed: number, x: number, z: number): number {
+  const raw = Math.sin(seed * 0.017 + x * 12.9898 + z * 78.233) * 43758.5453;
+  return raw - Math.floor(raw);
+}
+
+export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[] {
+  const treeCandidates = [
+    { x: -1, z: -1 },
+    { x: 1, z: -1 },
+    { x: -1, z: 1 },
+    { x: 1, z: 0 },
+  ].sort((a, b) => seededNoise(worldSeed, b.x, b.z) - seededNoise(worldSeed, a.x, a.z));
+  return [
+    { id: 'path-north', kind: 'path', x: 0, z: -1 },
+    { id: 'path-core', kind: 'path', x: 0, z: 0 },
+    { id: 'path-south', kind: 'path', x: 0, z: 1 },
+    { id: 'starter-farm', kind: 'farm', x: -1, z: 0 },
+    { id: 'starter-well', kind: 'well', x: -1, z: 1 },
+    { id: 'starter-dwelling', kind: 'dwelling', x: 1, z: 1 },
+    ...treeCandidates.slice(0, 2).map((candidate, index) => ({
+      id: `starter-tree-${index}`,
+      kind: 'tree' as const,
+      x: candidate.x,
+      z: candidate.z,
+    })),
+  ];
 }
 
 export function getStableBlockType(authoredType: BlockType, savedProgress?: Pick<BlockMiningProgress, 'stableType'>): BlockType {

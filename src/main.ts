@@ -110,7 +110,14 @@ function loadBlockTexture(fileName: string): THREE.Texture {
 }
 
 function loadAssetTexture(path: string): THREE.Texture {
-  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${path}`);
+  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${path}`, (loadedTexture) => {
+    const clones = loadedTexture.userData.entityTextureClones as THREE.Texture[] | undefined;
+    clones?.forEach((clone) => {
+      clone.image = loadedTexture.image;
+      clone.needsUpdate = true;
+    });
+    window.dispatchEvent(new Event('idlecraft-asset-loaded'));
+  });
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -145,6 +152,11 @@ const lanternTexture = loadBlockTexture('lantern.png');
 const oakDoorTexture = loadBlockTexture('oak_door_bottom.png');
 const minecartTexture = loadAssetTexture('items/minecart.png');
 const chestMinecartTexture = loadAssetTexture('items/chest_minecart.png');
+const pigEntityTexture = loadAssetTexture('entities/pig/pig.png');
+const cowEntityTexture = loadAssetTexture('entities/cow/cow.png');
+const sheepEntityTexture = loadAssetTexture('entities/sheep/sheep.png');
+const sheepFurTexture = loadAssetTexture('entities/sheep/sheep_fur.png');
+const villagerEntityTexture = loadAssetTexture('entities/villager/villager.png');
 const oreTextures = {
   coal: loadBlockTexture('coal_ore.png'),
   iron: loadBlockTexture('iron_ore.png'),
@@ -435,10 +447,9 @@ const villagerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x5b4a38, r
 const minerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x59656b, roughness: 1 });
 const farmerRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x588a44, roughness: 1 });
 const toolsmithRobeMaterial = new THREE.MeshStandardMaterial({ color: 0x6d7d88, roughness: 1 });
-const animalPinkMaterial = new THREE.MeshStandardMaterial({ color: 0xe58e95, roughness: 1 });
-const animalWhiteMaterial = new THREE.MeshStandardMaterial({ color: 0xdad8ca, roughness: 1 });
 const animalBrownMaterial = new THREE.MeshStandardMaterial({ color: 0x8d5b3a, roughness: 1 });
 const animalDarkMaterial = new THREE.MeshStandardMaterial({ color: 0x4b3426, roughness: 1 });
+const animalWhiteMaterial = new THREE.MeshStandardMaterial({ color: 0xdad8ca, roughness: 1 });
 
 function addEntityCube(
   parent: THREE.Group,
@@ -449,6 +460,52 @@ function addEntityCube(
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
     material,
+  );
+  mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function addTexturedEntityCube(
+  parent: THREE.Group,
+  texture: THREE.Texture,
+  atlasSize: [number, number],
+  textureOffset: [number, number],
+  textureSize: [number, number, number],
+  size: [number, number, number],
+  position: [number, number, number],
+): THREE.Mesh {
+  const [atlasWidth, atlasHeight] = atlasSize;
+  const [u, v] = textureOffset;
+  const [width, height, depth] = textureSize;
+  const regions = [
+    { u: u + depth + width, v: v + depth, width: depth, height },
+    { u, v: v + depth, width: depth, height },
+    { u: u + depth, v, width, height: depth },
+    { u: u + depth + width, v, width, height: depth },
+    { u: u + depth, v: v + depth, width, height },
+    { u: u + depth + width + depth, v: v + depth, width, height },
+  ];
+  const materials = regions.map((region) => {
+    const map = texture.clone();
+    map.image = texture.image;
+    const clones = (texture.userData.entityTextureClones as THREE.Texture[] | undefined) ?? [];
+    clones.push(map);
+    texture.userData.entityTextureClones = clones;
+    if (texture.image) map.needsUpdate = true;
+    map.wrapS = THREE.ClampToEdgeWrapping;
+    map.wrapT = THREE.ClampToEdgeWrapping;
+    map.repeat.set(region.width / atlasWidth, region.height / atlasHeight);
+    map.offset.set(region.u / atlasWidth, 1 - (region.v + region.height) / atlasHeight);
+    const material = new THREE.MeshStandardMaterial({ map, roughness: 1, transparent: true, alphaTest: 0.1 });
+    material.userData.disposeWithEntity = true;
+    return material;
+  });
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
+    materials,
   );
   mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
   mesh.castShadow = true;
@@ -469,28 +526,30 @@ function createLivingEntityVisual(plan: LivingEntityPlan): LivingEntityVisual {
         : plan.role === 'toolsmith'
           ? toolsmithRobeMaterial
           : villagerRobeMaterial;
-    addEntityCube(group, villagerSkinMaterial, [0.34, 0.34, 0.34], [0, 1.66, 0]);
-    addEntityCube(group, robeMaterial, [0.42, 0.58, 0.3], [0, 1.18, 0]);
-    addEntityCube(group, villagerSkinMaterial, [0.12, 0.42, 0.12], [-0.27, 1.2, 0]);
-    addEntityCube(group, villagerSkinMaterial, [0.12, 0.42, 0.12], [0.27, 1.2, 0]);
-    addEntityCube(group, villagerSkinMaterial, [0.12, 0.4, 0.12], [-0.11, 0.7, 0]);
-    addEntityCube(group, villagerSkinMaterial, [0.12, 0.4, 0.12], [0.11, 0.7, 0]);
-    addEntityCube(group, villagerSkinMaterial, [0.12, 0.1, 0.24], [0, 1.49, -0.2]);
+    addTexturedEntityCube(group, villagerEntityTexture, [64, 64], [0, 0], [8, 10, 8], [0.3, 0.3, 0.3], [0, 1.6, 0]);
+    addEntityCube(group, robeMaterial, [0.36, 0.5, 0.28], [0, 1.16, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.1, 0.34, 0.1], [-0.23, 1.18, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.1, 0.34, 0.1], [0.23, 1.18, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.1, 0.3, 0.1], [-0.1, 0.72, 0]);
+    addEntityCube(group, villagerSkinMaterial, [0.1, 0.3, 0.1], [0.1, 0.72, 0]);
+    addTexturedEntityCube(group, villagerEntityTexture, [64, 64], [0, 0], [4, 4, 4], [0.1, 0.08, 0.16], [0, 1.45, -0.17]);
   } else {
-    const bodyMaterial = plan.kind === 'pig' ? animalPinkMaterial : animalWhiteMaterial;
-    const headMaterial = plan.kind === 'sheep' ? animalDarkMaterial : bodyMaterial;
-    const legMaterial = plan.kind === 'cow' ? animalDarkMaterial : plan.kind === 'sheep' ? animalDarkMaterial : bodyMaterial;
-    addEntityCube(group, bodyMaterial, [0.65, 0.38, 0.9], [0, 0.78, 0]);
-    addEntityCube(group, headMaterial, [0.36, 0.36, 0.36], [0, 0.87, -0.55]);
-    [-0.22, 0.22].forEach((x) => {
-      [-0.27, 0.27].forEach((z) => addEntityCube(group, legMaterial, [0.14, 0.28, 0.14], [x, 0.62, z]));
+    const texture = plan.kind === 'pig' ? pigEntityTexture : plan.kind === 'cow' ? cowEntityTexture : sheepEntityTexture;
+    const furTexture = plan.kind === 'sheep' ? sheepFurTexture : texture;
+    const bodyTextureSize: [number, number, number] = plan.kind === 'pig' ? [8, 8, 12] : [12, 10, 16];
+    const bodyOffset: [number, number] = plan.kind === 'pig' ? [28, 8] : [18, 4];
+    const headTextureSize: [number, number, number] = plan.kind === 'pig' ? [8, 8, 8] : [8, 8, 6];
+    addTexturedEntityCube(group, furTexture, [64, 32], bodyOffset, bodyTextureSize, plan.kind === 'sheep' ? [0.48, 0.34, 0.64] : [0.46, 0.3, 0.64], [0, 0.72, 0]);
+    addTexturedEntityCube(group, texture, [64, 32], [0, 0], headTextureSize, plan.kind === 'sheep' ? [0.24, 0.26, 0.26] : [0.26, 0.26, 0.26], [0, 0.79, -0.4]);
+    addTexturedEntityCube(group, texture, [64, 32], [0, 0], [4, 4, 4], plan.kind === 'pig' ? [0.18, 0.12, 0.1] : [0.18, 0.12, 0.12], [0, 0.74, -0.56]);
+    [-0.17, 0.17].forEach((x) => {
+      [-0.18, 0.18].forEach((z) => addEntityCube(group, plan.kind === 'pig' ? villagerSkinMaterial : animalDarkMaterial, [0.08, 0.2, 0.08], [x * 0.82, 0.55, z]));
     });
+    [-0.1, 0.1].forEach((x) => addEntityCube(group, plan.kind === 'pig' ? villagerSkinMaterial : animalDarkMaterial, [0.06, 0.08, 0.08], [x, 0.96, -0.39]));
+    const tail = addEntityCube(group, plan.kind === 'sheep' ? animalWhiteMaterial : plan.kind === 'pig' ? villagerSkinMaterial : animalBrownMaterial, [0.06, 0.06, 0.16], [0, 0.78, 0.36]);
+    tail.rotation.x = Math.PI / 4;
     if (plan.kind === 'cow') {
-      addEntityCube(group, animalBrownMaterial, [0.18, 0.16, 0.08], [-0.24, 0.82, 0.22]);
-      addEntityCube(group, animalBrownMaterial, [0.16, 0.14, 0.08], [0.22, 0.76, -0.18]);
-    }
-    if (plan.kind === 'pig') {
-      addEntityCube(group, animalPinkMaterial, [0.2, 0.14, 0.08], [0, 0.82, -0.74]);
+      [-0.1, 0.1].forEach((x) => addEntityCube(group, animalBrownMaterial, [0.05, 0.1, 0.06], [x, 0.98, -0.39]));
     }
   }
 
@@ -500,9 +559,25 @@ function createLivingEntityVisual(plan: LivingEntityPlan): LivingEntityVisual {
 }
 
 function updateLivingWorld(): void {
+  const entityTexturesReady = [pigEntityTexture, cowEntityTexture, sheepEntityTexture, sheepFurTexture, villagerEntityTexture]
+    .every((texture) => Boolean(texture.image));
+  if (!entityTexturesReady) {
+    livingEntityRoot.visible = false;
+    return;
+  }
+  livingEntityRoot.visible = true;
   livingEntityRoot.children.forEach((child) => {
     child.traverse((object) => {
-      if (object instanceof THREE.Mesh) object.geometry.dispose();
+      if (object instanceof THREE.Mesh) {
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach((material) => {
+          if (material.userData.disposeWithEntity) {
+            (material as THREE.MeshStandardMaterial).map?.dispose();
+            material.dispose();
+          }
+        });
+      }
     });
   });
   livingEntityRoot.clear();
@@ -511,6 +586,8 @@ function updateLivingWorld(): void {
     visual.group.visible = state.worldRank >= 2;
   });
 }
+
+window.addEventListener('idlecraft-asset-loaded', updateLivingWorld);
 
 function updateWorldFloor(): void {
   const visibleNodes = blockNodes.filter((node) => node.mesh.visible);

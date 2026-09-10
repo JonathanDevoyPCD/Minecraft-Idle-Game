@@ -242,7 +242,9 @@ describe('IdleCraft progression', () => {
     expect(getLivingEntityPlan(state)).toHaveLength(0);
     state.worldRank = 2;
     state.skillRanks = { 'life-animals': 1, 'life-first-villager': 1 };
-    expect(getLivingEntityPlan(state).map((entity) => entity.kind)).toEqual(['pig', 'cow', 'villager']);
+    const entityPlan = getLivingEntityPlan(state);
+    expect(entityPlan.map((entity) => entity.kind)).toEqual(['pig', 'cow', 'villager']);
+    expect(entityPlan.filter((entity) => entity.kind !== 'villager').every((entity) => entity.x >= 0.5 && entity.x <= 1.5 && entity.z >= 0.5 && entity.z <= 1.5)).toBe(true);
     state.skillRanks['life-specialist-miner'] = 1;
     expect(getLivingEntityPlan(state).find((entity) => entity.kind === 'villager')?.role).toBe('miner');
   });

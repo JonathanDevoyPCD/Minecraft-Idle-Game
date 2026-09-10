@@ -247,11 +247,11 @@ export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan
   if (state.worldRank < 2) return [];
   const entities: LivingEntityPlan[] = [];
   if (getSkillNodeRank(state, 'life-animals') > 0) {
-    entities.push({ id: 'starter-pig', kind: 'pig', x: -1.08, z: -0.25 });
-    entities.push({ id: 'starter-cow', kind: 'cow', x: 1.08, z: 0.72 });
+    entities.push({ id: 'starter-pig', kind: 'pig', x: 0.72, z: 1.1 });
+    entities.push({ id: 'starter-cow', kind: 'cow', x: 1.28, z: 1.1 });
   }
   if (getSkillNodeRank(state, 'life-animal-pens') > 0) {
-    entities.push({ id: 'starter-sheep', kind: 'sheep', x: 1.08, z: -0.72 });
+    entities.push({ id: 'starter-sheep', kind: 'sheep', x: 1.05, z: 0.7 });
   }
   if (getSkillNodeRank(state, 'life-first-villager') > 0) {
     const role = getSkillNodeRank(state, 'life-specialist-miner') > 0
@@ -261,7 +261,7 @@ export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan
         : getSkillNodeRank(state, 'life-toolsmith') > 0
           ? 'toolsmith'
           : 'unassigned';
-    entities.push({ id: 'first-villager', kind: 'villager', x: 0, z: -0.82, role });
+    entities.push({ id: 'first-villager', kind: 'villager', x: 0, z: -1.08, role });
   }
   return entities;
 }

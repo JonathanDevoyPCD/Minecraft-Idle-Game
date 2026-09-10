@@ -58,19 +58,26 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Keep villagers and animals as world entities rather than mineable blocks.
 - Unlock these through the existing Life and Settlement skill-tree branch.
 
-### Step 7 — Add automation for harvesting and building
+### Step 7 — Animate living entities
+
+- Add lightweight Minecraft-style idle loops for villagers and animals: breathing/bobbing, head turns, leg motion, grazing, and short wandering cycles.
+- Keep animation deterministic, bounded, and local to the world scene so it does not change resource production or settlement state by itself.
+- Prevent entity animation from crossing reserved structure footprints, world edges, or the established block scale.
+- Use simple reusable keyframe or procedural motion rather than a heavy character-runtime dependency.
+
+### Step 8 — Add automation for harvesting and building
 
 - Add workers, target queues, tool assignment, storage, workshop production, and construction assistance.
 - Automation may gather resources and reduce build time, but must not bypass costs or settlement requirements.
 - Keep offline progress bounded and deterministic.
 
-### Step 8 — Expand materials, biomes, and deep-world content
+### Step 9 — Expand materials, biomes, and deep-world content
 
 - Add sand, gravel, clay, logs, leaves, ores, water, desert, forest, mountain, snow, swamp, and rare crystal content.
 - Apply the matching Bare Bones textures and tool requirements through data-driven material definitions.
 - Add caves, rare ore veins, and bedrock boundaries only when their prerequisite world layers exist.
 
-### Step 9 — Balance, performance, and release hardening
+### Step 10 — Balance, performance, and release hardening
 
 - Tune long-term thresholds, resource yields, build timers, automation, and offline gains.
 - Verify large-world camera performance, save migration, reset behavior, responsive HUD, and accessibility.
@@ -93,5 +100,6 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Step 3: **complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented and verified.
 - Step 4: **complete (foundation)** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
 - Step 5: **complete** — deterministic meadow paths, a dwelling, starter trees, a well, and gated farmland/crops are implemented and verified; feature footprints were tightened to preserve the authoritative block scale and prevent edge overhang.
-- Step 6: **in progress** — the first skill-gated animals and villager role plan are implemented as stable world entities; farming, housing, storage, and the remaining settlement population loop are next within this phase.
-- Steps 7–9: queued.
+- Step 6: **in progress** — the first skill-gated animals and villager role plan now use smaller, cell-safe textured models; farming, housing, storage, and the remaining settlement population loop are next within this phase.
+- Step 7: queued — living entity animation.
+- Steps 8–10: queued.

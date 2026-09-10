@@ -664,6 +664,7 @@ interface MineVisual {
   group: THREE.Group;
   carts: THREE.Group[];
   ghost: boolean;
+  pathConnector: THREE.Group;
 }
 
 interface MinePlacementPreview {
@@ -673,8 +674,8 @@ interface MinePlacementPreview {
   valid: boolean;
 }
 
-const mineVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: false };
-const mineGhostVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: true };
+const mineVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: false, pathConnector: new THREE.Group() };
+const mineGhostVisual: MineVisual = { group: new THREE.Group(), carts: [], ghost: true, pathConnector: new THREE.Group() };
 world.add(mineVisual.group, mineGhostVisual.group);
 
 function createMineMaterial(
@@ -753,21 +754,27 @@ function createMineVisual(visual: MineVisual): void {
   const railMaterial = createMineMaterial(0xa8b1ad, railTexture, visual.ghost);
   const poweredMaterial = createMineMaterial(0xd59b3c, poweredRailTexture, visual.ghost);
 
-  addMinePart(visual.group, darkMaterial, [1.02, 1.2, 0.12], [0, 1.02, 0.58]);
-  [-0.43, 0.43].forEach((x) => {
-    addMinePart(visual.group, stoneMaterial, [0.24, 1.25, 0.32], [x, 0.98, 0.58]);
-    addMinePart(visual.group, stoneAccentMaterial, [0.3, 0.18, 0.38], [x, 0.38, 0.58]);
-    addMinePart(visual.group, woodMaterial, [0.14, 1.3, 0.18], [x * 1.1, 1.03, 0.44]);
+  addMinePart(visual.group, darkMaterial, [0.78, 1.1, 0.12], [0, 1.0, 0.58]);
+  [-0.36, 0.36].forEach((x) => {
+    addMinePart(visual.group, stoneMaterial, [0.16, 1.18, 0.3], [x, 0.96, 0.58]);
+    addMinePart(visual.group, stoneAccentMaterial, [0.2, 0.16, 0.34], [x, 0.38, 0.58]);
+    addMinePart(visual.group, woodMaterial, [0.1, 1.24, 0.16], [x * 1.03, 1.01, 0.44]);
   });
-  addMinePart(visual.group, stoneMaterial, [1.05, 0.22, 0.32], [0, 1.62, 0.58]);
-  addMinePart(visual.group, woodMaterial, [1.22, 0.18, 0.2], [0, 1.74, 0.44]);
+  addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
+  addMinePart(visual.group, woodMaterial, [0.92, 0.16, 0.18], [0, 1.68, 0.44]);
 
   [-0.2, 0.2].forEach((x) => {
-    addMinePart(visual.group, railMaterial, [0.07, 0.05, 3.05], [x, 0.52, 2.03]);
+    addMinePart(visual.group, railMaterial, [0.07, 0.05, 2.65], [x, 0.52, 1.78]);
   });
-  for (let index = 0; index < 5; index += 1) {
-    addMinePart(visual.group, index === 2 ? poweredMaterial : sleeperMaterial, [0.78, 0.06, 0.12], [0, 0.49, 0.95 + index * 0.55]);
+  for (let index = 0; index < 4; index += 1) {
+    addMinePart(visual.group, index === 2 ? poweredMaterial : sleeperMaterial, [0.78, 0.06, 0.12], [0, 0.49, 0.62 + index * 0.78]);
   }
+  visual.pathConnector.userData.isGhost = visual.ghost;
+  addMinePart(visual.pathConnector, railMaterial, [0.07, 0.05, 0.9], [-0.2, 0, 0]);
+  addMinePart(visual.pathConnector, railMaterial, [0.07, 0.05, 0.9], [0.2, 0, 0]);
+  addMinePart(visual.pathConnector, sleeperMaterial, [0.78, 0.06, 0.12], [0, -0.03, 0]);
+  visual.group.add(visual.pathConnector);
+  visual.pathConnector.visible = false;
   visual.group.position.set(0, 0, 0);
   visual.group.visible = false;
 }
@@ -810,6 +817,42 @@ function setMineRotation(group: THREE.Group, direction: WorldDirection): void {
         : 0;
 }
 
+function getMinePathConnection(x: number, z: number, direction: WorldDirection): { index: number; localX: number; localZ: number } | null {
+  const footprint = getMineFootprint(x, z, direction);
+  let best: { index: number; localX: number; localZ: number } | null = null;
+  footprint.forEach((cell, index) => {
+    state.pathCells.forEach((path) => {
+      const dx = path.x - cell.x;
+      const dz = path.z - cell.z;
+      if (Math.abs(dx) + Math.abs(dz) !== 1) return;
+      const local = direction === 'south'
+        ? { localX: dx, localZ: dz }
+        : direction === 'north'
+          ? { localX: -dx, localZ: -dz }
+          : direction === 'east'
+            ? { localX: -dz, localZ: dx }
+            : { localX: dz, localZ: -dx };
+      if (!best || index > best.index) best = { index, ...local };
+    });
+  });
+  return best;
+}
+
+function updateMinePathConnector(visual: MineVisual, x: number, z: number, direction: WorldDirection): void {
+  const connection = getMinePathConnection(x, z, direction);
+  visual.pathConnector.visible = Boolean(connection);
+  if (!connection) return;
+  const isSideConnection = Math.abs(connection.localX) === 1;
+  visual.pathConnector.position.set(
+    isSideConnection ? connection.localX * 0.55 * BLOCK_SIZE : 0,
+    BLOCK_SIZE * 0.52,
+    isSideConnection ? connection.index * BLOCK_SIZE : (connection.index + connection.localZ * 0.56) * BLOCK_SIZE,
+  );
+  visual.pathConnector.rotation.y = isSideConnection
+    ? (connection.localX > 0 ? Math.PI / 2 : -Math.PI / 2)
+    : (connection.localZ > 0 ? 0 : Math.PI);
+}
+
 function updateMineVisual(): void {
   const mine: MineSite | undefined = state.mines[0];
   mineVisual.group.visible = Boolean(mine);
@@ -817,16 +860,18 @@ function updateMineVisual(): void {
   const direction = mine.direction ?? 'south';
   mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
   setMineRotation(mineVisual.group, direction);
+  updateMinePathConnector(mineVisual, mine.x, mine.z, direction);
   syncMineCartMeshes(mineVisual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
-  const startZ = BLOCK_SIZE * 1.05;
-  const endZ = BLOCK_SIZE * 2.85;
+  const startZ = BLOCK_SIZE * 0.5;
+  const endZ = BLOCK_SIZE * 2.68;
   mineVisual.carts.forEach((cart, index) => {
     if (!cart.visible) return;
     const phase = (baseProgress + index * 0.27) % 1;
     const travel = phase < 0.5 ? phase * 2 : 2 - phase * 2;
-    cart.position.set((index % 2 === 0 ? -0.2 : 0.2) * BLOCK_SIZE, 0, startZ + (endZ - startZ) * travel);
+    const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
+    cart.position.set(lane * BLOCK_SIZE, 0, startZ + (endZ - startZ) * travel);
     cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
   });
 }
@@ -837,7 +882,10 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   if (!visible || !preview) return;
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
   setMineRotation(mineGhostVisual.group, preview.direction);
+  updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction);
   syncMineCartMeshes(mineGhostVisual, 1, 0);
+  mineGhostVisual.carts[0].position.set(0, 0, BLOCK_SIZE * 2.05);
+  mineGhostVisual.carts[0].rotation.y = 0;
   setMineGhostValid(preview.valid);
 }
 

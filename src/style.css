@@ -38,6 +38,7 @@ button { font: inherit; }
 
 #world { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: manipulation; }
 #world.is-orbiting { cursor: grabbing; }
+#world.is-placing-mine { cursor: crosshair; }
 
 .panel {
   background: rgba(255, 248, 221, .92);
@@ -145,6 +146,8 @@ button { font: inherit; }
   transition: transform .08s, box-shadow .08s;
 }
 .mine-button:active { transform: translateY(5px); box-shadow: 0 3px 0 #8b421f; }
+.mine-button.is-placement-mode { background: linear-gradient(#83b953, #558e3a); border-color: #41682f; box-shadow: 0 8px 0 #365c2b, inset 0 2px 0 rgba(255,255,255,.4); }
+.mine-button:disabled { cursor: not-allowed; filter: grayscale(.45); opacity: .68; }
 .mine-button strong, .mine-button small { display: block; }
 .mine-button small { color: #fff2c6; letter-spacing: .02em; }
 .mine-icon { font-size: 28px; }

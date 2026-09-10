@@ -1,6 +1,7 @@
 import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillNodeDefinition } from './skill-tree';
 
 export interface GameState {
+  schemaVersion: number;
   level: number;
   xp: number;
   totalXp: number;
@@ -11,7 +12,11 @@ export interface GameState {
   worldPower: number;
   worldSeed: number;
   settlementProgress: number;
+  chunkSize: number;
   worldCells: WorldCell[];
+  pathCells: PathCell[];
+  placements: WorldPlacement[];
+  availableMineSites: number;
   undergroundLayer: number;
   mines: MineSite[];
   constructionQueue: ConstructionProject[];
@@ -27,11 +32,31 @@ export type BlockType = 'grass' | 'dirt' | 'stone' | 'deepslate' | 'bedrock';
 export type WorldDirection = 'north' | 'east' | 'south' | 'west';
 export type BiomeId = 'meadow' | 'forest' | 'desert' | 'mountain' | 'snow' | 'swamp' | 'crystal';
 export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
+export type PathTier = 'dirt' | 'cobblestone' | 'stone';
+
+export interface PathCell {
+  x: number;
+  z: number;
+  tier: PathTier;
+}
+
+export type WorldPlacementKind = 'mine' | 'dwelling' | 'well' | 'farm' | 'tree' | 'animal-pen';
+
+export interface WorldPlacement {
+  id: string;
+  kind: WorldPlacementKind;
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  direction: WorldDirection;
+}
 
 export interface MineSite {
   id: string;
   x: number;
   z: number;
+  direction?: WorldDirection;
   cartCount: number;
   storageCarts: number;
   railLevel: number;
@@ -113,7 +138,16 @@ export const BLOCK_DEFINITIONS = {
 
 export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
 
-export const SAVE_KEY = 'idlecraft-save-v1';
+export const SAVE_KEY = 'idlecraft-save-v2';
+export const SAVE_SCHEMA_VERSION = 2;
+export const STARTING_CHUNK_SIZE = 5;
+export const STARTING_PATH_CELLS: readonly PathCell[] = [
+  { x: 0, z: 0, tier: 'dirt' },
+  { x: 0, z: -1, tier: 'dirt' },
+  { x: 1, z: 0, tier: 'dirt' },
+  { x: 0, z: 1, tier: 'dirt' },
+  { x: -1, z: 0, tier: 'dirt' },
+];
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
 export const TOOL_TIERS = [
   { kind: 'hand', material: 'Bare', name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
@@ -180,7 +214,9 @@ export function getExpansionChunkOrigin(expansionNumber: number, direction: Worl
 }
 
 export function freshState(now = Date.now()): GameState {
+  const worldCells = createSquareChunkCells(STARTING_CHUNK_SIZE);
   return {
+    schemaVersion: SAVE_SCHEMA_VERSION,
     level: 1,
     xp: 0,
     totalXp: 0,
@@ -191,7 +227,11 @@ export function freshState(now = Date.now()): GameState {
     worldPower: 0,
     worldSeed: 184731,
     settlementProgress: 0,
-    worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
+    chunkSize: STARTING_CHUNK_SIZE,
+    worldCells,
+    pathCells: STARTING_PATH_CELLS.map((cell) => ({ ...cell })),
+    placements: [],
+    availableMineSites: 1,
     undergroundLayer: 0,
     mines: [],
     constructionQueue: [],
@@ -201,6 +241,87 @@ export function freshState(now = Date.now()): GameState {
     skillRanks: {},
     lastSavedAt: now,
   };
+}
+
+export function createSquareChunkCells(size: number, biome: BiomeId = 'meadow'): WorldCell[] {
+  const safeSize = Math.max(1, Math.floor(size));
+  const start = -Math.floor(safeSize / 2);
+  return Array.from({ length: safeSize * safeSize }, (_, index) => ({
+    x: start + (index % safeSize),
+    z: start + Math.floor(index / safeSize),
+    biome,
+  }));
+}
+
+export function getChunkBounds(state: Pick<GameState, 'worldCells'>): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const cells = state.worldCells.length > 0 ? state.worldCells : [{ x: 0, z: 0, biome: 'meadow' as const }];
+  return {
+    minX: Math.min(...cells.map((cell) => cell.x)),
+    maxX: Math.max(...cells.map((cell) => cell.x)),
+    minZ: Math.min(...cells.map((cell) => cell.z)),
+    maxZ: Math.max(...cells.map((cell) => cell.z)),
+  };
+}
+
+export function getPathCell(state: Pick<GameState, 'pathCells'>, x: number, z: number): PathCell | undefined {
+  return state.pathCells.find((cell) => cell.x === x && cell.z === z);
+}
+
+export function isPathCell(state: Pick<GameState, 'pathCells'>, x: number, z: number): boolean {
+  return Boolean(getPathCell(state, x, z));
+}
+
+export function getMineFootprint(x: number, z: number, direction: WorldDirection = 'south'): Array<{ x: number; z: number }> {
+  const offset = direction === 'north'
+    ? { x: 0, z: -1 }
+    : direction === 'east'
+      ? { x: 1, z: 0 }
+      : direction === 'west'
+        ? { x: -1, z: 0 }
+        : { x: 0, z: 1 };
+  return Array.from({ length: 4 }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
+}
+
+function getPlacementFootprint(placement: Pick<WorldPlacement, 'x' | 'z' | 'width' | 'depth' | 'direction'>): Array<{ x: number; z: number }> {
+  const horizontal = placement.direction === 'east' || placement.direction === 'west';
+  const width = horizontal ? placement.depth : placement.width;
+  const depth = horizontal ? placement.width : placement.depth;
+  const stepX = placement.direction === 'west' ? -1 : 1;
+  const stepZ = placement.direction === 'north' ? -1 : 1;
+  return Array.from({ length: width * depth }, (_, index) => ({
+    x: placement.x + (horizontal ? stepX * Math.floor(index / depth) : index % width),
+    z: placement.z + (horizontal ? index % depth : stepZ * Math.floor(index / width)),
+  }));
+}
+
+function areAdjacentToPath(state: Pick<GameState, 'pathCells'>, footprint: readonly { x: number; z: number }[]): boolean {
+  return footprint.some((cell) => WORLD_DIRECTIONS.some((direction) => {
+    const offset = direction === 'north'
+      ? [0, -1]
+      : direction === 'east'
+        ? [1, 0]
+        : direction === 'south'
+          ? [0, 1]
+          : [-1, 0];
+    return isPathCell(state, cell.x + offset[0], cell.z + offset[1]);
+  }));
+}
+
+export function canPlaceMine(
+  state: Pick<GameState, 'worldCells' | 'pathCells' | 'placements' | 'mines' | 'availableMineSites'>,
+  x: number,
+  z: number,
+  direction: WorldDirection = 'south',
+): boolean {
+  if (state.availableMineSites <= 0 || !Number.isInteger(x) || !Number.isInteger(z)) return false;
+  const footprint = getMineFootprint(x, z, direction);
+  const bounds = getChunkBounds(state);
+  if (footprint.some((cell) => cell.x < bounds.minX || cell.x > bounds.maxX || cell.z < bounds.minZ || cell.z > bounds.maxZ)) return false;
+  if (footprint.some((cell) => isPathCell(state, cell.x, cell.z))) return false;
+  const occupied = state.placements.flatMap((placement) => getPlacementFootprint(placement));
+  if (occupied.some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z))) return false;
+  if (state.mines.some((mine) => getMineFootprint(mine.x, mine.z, mine.direction).some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z)))) return false;
+  return areAdjacentToPath(state, footprint);
 }
 
 function worldCellKey(x: number, z: number): string {
@@ -292,11 +413,12 @@ export function expandToSurface3x3(state: GameState): void {
   state.worldRank = Math.max(state.worldRank, 2);
 }
 
-function createMineSite(now: number): MineSite {
+function createMineSite(now: number, x: number, z: number, direction: WorldDirection): MineSite {
   return {
     id: MINE_ID,
-    x: 0,
-    z: 1,
+    x,
+    z,
+    direction,
     cartCount: 1,
     storageCarts: 0,
     railLevel: 0,
@@ -307,9 +429,16 @@ function createMineSite(now: number): MineSite {
   };
 }
 
-export function unlockStarterMine(state: GameState, now = Date.now()): boolean {
-  if (state.mines.length > 0) return false;
-  state.mines.push(createMineSite(now));
+export function unlockStarterMine(
+  state: GameState,
+  now = Date.now(),
+  x = 2,
+  z = -2,
+  direction: WorldDirection = 'south',
+): boolean {
+  if (state.mines.length > 0 || !canPlaceMine(state, x, z, direction)) return false;
+  state.mines.push(createMineSite(now, x, z, direction));
+  state.availableMineSites = Math.max(0, state.availableMineSites - 1);
   return true;
 }
 
@@ -685,16 +814,20 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
 
   try {
     const parsed = JSON.parse(raw) as Partial<GameState>;
+    if (Number(parsed.schemaVersion) !== SAVE_SCHEMA_VERSION) return freshState(now);
     const base = freshState(now);
     const skillRanks = migrateSkillRanks(parsed);
     const parsedWorldPower = Number(parsed.worldPower);
     const parsedSettlementProgress = Number(parsed.settlementProgress);
     const worldRank = Math.min(WORLD_TIERS.length - 1, Math.max(0, Number(parsed.worldRank) || 0));
-    const worldCells = parseWorldCells(parsed.worldCells) ?? legacyWorldCells(worldRank);
+    const worldCells = parseWorldCells(parsed.worldCells) ?? base.worldCells;
+    const pathCells = parsePathCells(parsed.pathCells) ?? base.pathCells;
+    const placements = parseWorldPlacements(parsed.placements);
     const resources = Object.fromEntries(
       Object.entries(parsed.resources ?? {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Math.max(0, Number(value))]),
     );
     return {
+      schemaVersion: SAVE_SCHEMA_VERSION,
       level: Math.max(1, Number(parsed.level) || base.level),
       xp: Math.max(0, Number(parsed.xp) || 0),
       totalXp: Math.max(0, Number(parsed.totalXp) || 0),
@@ -709,7 +842,13 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       settlementProgress: Number.isFinite(parsedSettlementProgress)
         ? Math.max(0, Math.floor(parsedSettlementProgress))
         : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
+      chunkSize: Math.max(STARTING_CHUNK_SIZE, Math.floor(Number(parsed.chunkSize) || base.chunkSize)),
       worldCells,
+      pathCells,
+      placements,
+      availableMineSites: Number.isFinite(Number(parsed.availableMineSites))
+        ? Math.max(0, Math.floor(Number(parsed.availableMineSites)))
+        : base.availableMineSites,
       undergroundLayer: Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
       mines: parseMines(parsed.mines, now),
       constructionQueue: parseConstructionQueue(parsed.constructionQueue),
@@ -737,6 +876,7 @@ function parseMines(value: unknown, now: number): MineSite[] {
       id: MINE_ID,
       x: Number.isFinite(Number(entry.x)) ? Number(entry.x) : 0,
       z: Number.isFinite(Number(entry.z)) ? Number(entry.z) : 1,
+      direction: WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : 'south',
       cartCount: Math.max(1, Math.floor(Number(entry.cartCount) || 1)),
       storageCarts: Math.max(0, Math.floor(Number(entry.storageCarts) || 0)),
       railLevel: Math.max(0, Math.floor(Number(entry.railLevel) || 0)),
@@ -746,6 +886,51 @@ function parseMines(value: unknown, now: number): MineSite[] {
       completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
     }];
   }).slice(0, 1);
+}
+
+function parsePathCells(value: unknown): PathCell[] | null {
+  if (!Array.isArray(value)) return null;
+  const cells: PathCell[] = [];
+  const seen = new Set<string>();
+  value.forEach((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const entry = candidate as Partial<PathCell>;
+    const x = Number(entry.x);
+    const z = Number(entry.z);
+    if (!Number.isInteger(x) || !Number.isInteger(z) || seen.has(worldCellKey(x, z))) return;
+    const tier: PathTier = entry.tier === 'cobblestone' || entry.tier === 'stone' ? entry.tier : 'dirt';
+    seen.add(worldCellKey(x, z));
+    cells.push({ x, z, tier });
+  });
+  return cells.length > 0 ? cells : null;
+}
+
+function parseWorldPlacements(value: unknown): WorldPlacement[] {
+  if (!Array.isArray(value)) return [];
+  const validKinds: readonly WorldPlacementKind[] = ['mine', 'dwelling', 'well', 'farm', 'tree', 'animal-pen'];
+  const placements: WorldPlacement[] = [];
+  const seen = new Set<string>();
+  value.forEach((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return;
+    const entry = candidate as Partial<WorldPlacement>;
+    if (!entry.id || typeof entry.id !== 'string' || seen.has(entry.id) || !validKinds.includes(entry.kind as WorldPlacementKind)) return;
+    const x = Number(entry.x);
+    const z = Number(entry.z);
+    const width = Number(entry.width);
+    const depth = Number(entry.depth);
+    if (![x, z, width, depth].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(z) || width < 1 || depth < 1) return;
+    seen.add(entry.id);
+    placements.push({
+      id: entry.id,
+      kind: entry.kind as WorldPlacementKind,
+      x,
+      z,
+      width: Math.min(5, Math.floor(width)),
+      depth: Math.min(5, Math.floor(depth)),
+      direction: WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : 'south',
+    });
+  });
+  return placements;
 }
 
 function parseConstructionQueue(value: unknown): ConstructionProject[] {
@@ -785,15 +970,6 @@ function parseWorldCells(value: unknown): WorldCell[] | null {
   });
   if (!seen.has(worldCellKey(0, 0))) cells.unshift({ x: 0, z: 0, biome: 'meadow' });
   return cells.length > 0 ? cells : null;
-}
-
-function legacyWorldCells(worldRank: number): WorldCell[] {
-  if (worldRank <= 0) return [{ x: 0, z: 0, biome: 'meadow' }];
-  const cells: WorldCell[] = [];
-  for (let x = -1; x <= 1; x += 1) {
-    for (let z = -1; z <= 1; z += 1) cells.push({ x, z, biome: 'meadow' });
-  }
-  return cells;
 }
 
 function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress> {

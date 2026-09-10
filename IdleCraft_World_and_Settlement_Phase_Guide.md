@@ -10,31 +10,35 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 
 ## Fixed phases
 
-### Step 1 — Preserve authored terrain and retire destructive mining
+### Step 1 — Establish the procedural settlement grid
 
-- Keep each visible terrain block's identity stable: grass stays grass, dirt stays dirt, stone stays stone, and deepslate stays deepslate.
-- Preserve old block-progress fields and migrate prototype saves safely, but do not use them to destroy or replace terrain during ordinary play.
-- Keep legacy tool and mining helpers available for save/API compatibility until their callers are fully retired.
-- Migrate old prototype saves so transformed Dirt → Grass → Stone blocks return to their authored terrain role instead of permanently polluting the world with stone.
-- Do not add new biomes, structures, villagers, or settlement rules in this step.
+- Reset the prototype save into a new schema. There is no migration of the old one-block/3×3 layout.
+- Start with a real 5×5 surface chunk using the existing `BLOCK_SIZE`, camera, lighting, floor, and isometric presentation.
+- Add a five-tile dirt-path cross: the centre tile plus its north, east, south, and west neighbours.
+- Keep paths as a separate, tile-addressable layer over stable terrain so each path tile can be upgraded independently later.
+- Give the player one free mine blueprint, but require a valid player-selected placement beside the path; do not silently overlap the path or other footprints.
+- Keep old authored meadow visuals hidden until they are represented by the new placement model.
 
-### Step 2 — Build a real construction and expansion layer
+### Step 2 — Build a real construction and placement layer
 
-- Keep the coordinate-based surface grid as the source of truth for world cells.
+- Keep the coordinate-based surface grid as the source of truth for world cells, paths, and occupied footprints.
 - Separate harvesting from construction: resources and World Power pay for new cells and structures.
 - Add a construction queue and visible build timer for expansions.
-- Make `Add Adjacent Block` create one connected plot, then make `Expand to a 3×3 Surface` fill the authored meadow footprint.
+- Make the free mine use a four-cell rail footprint extending from, but not replacing, a path tile.
+- Add player placement validation: within the chunk, no footprint collision, and at least one orthogonal connection to the path network.
+- Add path-facing rules for structures so entrances rotate toward a connected path.
+- Make chunk upgrades expand the current square perimeter: 5×5 → 7×7 → 9×9 → 11×11 and onward.
 - Keep every new cell at the existing block scale and preserve camera zoom, pan, rotation, and floor placement.
 
-### Step 3 — Replace block breaking with permanent mine operations
+### Step 3 — Preserve terrain and use permanent mine operations
 
+- Keep each visible terrain block's identity stable: grass stays grass, dirt stays dirt, stone stays stone, deepslate stays deepslate, and bedrock remains permanent.
 - Stop terrain blocks from breaking, disappearing, or transforming during ordinary play.
-- Add a permanent mine entrance using the existing block scale and a four-block rail footprint.
 - Run minecarts as the primary idle mining loop; cart count, miners, storage carts, and powered rails improve production.
-- Keep underground strata persistent: surface, stone, deepstone, and the eventual bedrock boundary unlock layer by layer.
+- Keep underground strata persistent and add layers one at a time through the world-growth branch.
 - Scatter small, layer-appropriate ore deposits as optional clickable bonus targets. They award extra resources and XP but never break or alter terrain.
 - Route mine output into the existing resource, XP, save, and skill-tree systems.
-- Keep the existing construction queue separate: mining gathers materials; construction uses them to grow the world.
+- Keep mining, path construction, structure placement, and chunk expansion as separate actions.
 
 ### Step 4 — Add long-term village progression
 
@@ -50,7 +54,7 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Use the available Bare Bones textures for terrain and authored world details.
 - Add grid-aligned water, trees, paths, crops, a well, and the first dwelling.
 - Keep terrain blocks visually stable while structures are construction objects with their own state; mining output comes from the permanent underground operation.
-- Use deterministic placement from the world seed so the same world remains stable across saves.
+- Use deterministic asset selection and defaults, but keep player-placed objects persistent and independent of the seed once placed.
 
 ### Step 6 — Add life and settlement entities
 
@@ -95,11 +99,11 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 ## Current status
 
 - Previous skill-tree and mining prototype work: complete.
-- Step 1: **complete** — authored terrain is preserved and legacy-save migration is implemented and verified.
-- Step 2: **complete** — coordinate cells now grow through a persisted construction queue with visible build progress.
-- Step 3: **complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented and verified.
+- Step 1: **in progress** — the new schema, procedural 5×5 chunk, five-tile path cross, and free mine placement foundation are being implemented; the old prototype save is intentionally not migrated.
+- Step 2: queued — player placement validation, path-facing structures, tile-by-tile path upgrades, and perimeter chunk expansion.
+- Step 3: **foundation complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented; they are being reconnected to the new placement grid.
 - Step 4: **complete (foundation)** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
-- Step 5: **complete** — deterministic meadow paths, a dwelling, starter trees, a well, and gated farmland/crops are implemented and verified; feature footprints were tightened to preserve the authoritative block scale and prevent edge overhang.
-- Step 6: **in progress** — the first skill-gated animals and villager role plan now use smaller, cell-safe textured models; the 3×3 meadow uses reserved sub-cell plots for the dwelling, farm, well, and trees, while a larger 5×5 settlement district remains a later expansion. Farming, housing, storage, and the remaining settlement population loop are next within this phase.
-- Step 7: queued — living entity animation.
+- Step 5: superseded foundation — the old deterministic 3×3 authored meadow is retired from the active scene; it will return as player-placed, grid-valid content.
+- Step 6: paused behind placement — entities remain available as assets, but they will not spawn until a valid pen/farm/habitat footprint exists.
+- Step 7: queued — living entity animation after valid placement and scale rules are stable.
 - Steps 8–10: queued.

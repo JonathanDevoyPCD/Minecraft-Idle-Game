@@ -7,6 +7,7 @@ import {
   addXp,
   advanceMineOperations,
   buySkillNode,
+  canPlaceMine,
   canAffordSkillNode,
   calculateOfflineXp,
   completeConstructionProjects,
@@ -24,6 +25,7 @@ import {
   getSkillNodeRank,
   loadState,
   saveState,
+  unlockStarterMine,
   WORLD_DIRECTIONS,
   type BlockType,
   type LivingEntityPlan,
@@ -255,12 +257,12 @@ function generateMeadowChunk(
 
 function generateWorldLayout(): GeneratedBlock[] {
   const cells: GeneratedBlock[] = [];
-  // Keep the authored starter meadow in the scene graph from the beginning;
+  // Keep the procedural starter chunk in the scene graph from the beginning;
   // updateWorldScene controls which coordinate cells are currently unlocked.
-  for (let x = -1; x <= 1; x += 1) {
-    for (let z = -1; z <= 1; z += 1) {
-      const isCore = x === 0 && z === 0;
-      cells.push({ type: 'grass', coordinate: { x, y: 0, z }, requiredWorldRank: isCore ? 0 : 1 });
+  const chunkBounds = Math.max(1, Math.floor(state.chunkSize / 2));
+  for (let x = -chunkBounds; x <= chunkBounds; x += 1) {
+    for (let z = -chunkBounds; z <= chunkBounds; z += 1) {
+      cells.push({ type: 'grass', coordinate: { x, y: 0, z }, requiredWorldRank: 0 });
       cells.push({ type: 'dirt', coordinate: { x, y: -1, z }, requiredWorldRank: 2 });
       cells.push({ type: 'stone', coordinate: { x, y: -2, z }, requiredWorldRank: 2 });
       cells.push({ type: 'deepslate', coordinate: { x, y: -3, z }, requiredWorldRank: 2 });
@@ -418,20 +420,21 @@ function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual 
 }
 
 const meadowFeatureVisuals = getMeadowFeaturePlan(state.worldSeed).map(createMeadowFeatureVisual);
+const pathVisuals = state.pathCells.map((cell) => createMeadowFeatureVisual({
+  id: `path-${cell.x}-${cell.z}`,
+  kind: 'path',
+  x: cell.x,
+  z: cell.z,
+}));
 
 function updateMeadowScene(): void {
-  const meadowUnlocked = state.worldRank >= 2;
-  const waterUnlocked = getSkillNodeRank(state, 'world-water-tile') > 0;
-  const cropsUnlocked = getSkillNodeRank(state, 'life-crops') > 0;
-  const farmlandUnlocked = getSkillNodeRank(state, 'life-farmland') > 0;
-  meadowFeatureVisuals.forEach((visual) => {
-    const { feature } = visual;
-    visual.group.visible = meadowUnlocked;
-    if (feature.kind === 'well' && visual.water) visual.water.visible = waterUnlocked;
-    if (feature.kind === 'farm') {
-      if (visual.farmland) visual.farmland.visible = farmlandUnlocked;
-      if (visual.crops) visual.crops.visible = cropsUnlocked;
-    }
+  // The old authored 3×3 feature layout is intentionally retired. Structures,
+  // farms, wells, and entities will return through the placement model so they
+  // cannot silently overlap one another or clip across chunk boundaries.
+  meadowFeatureVisuals.forEach((visual) => { visual.group.visible = false; });
+  const visibleSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
+  pathVisuals.forEach((visual) => {
+    visual.group.visible = visibleSurfaceCells.has(`${visual.feature.x},${visual.feature.z}`);
   });
 }
 
@@ -708,6 +711,15 @@ function updateMineVisual(): void {
   const mine: MineSite | undefined = state.mines[0];
   mineVisual.group.visible = Boolean(mine);
   if (!mine) return;
+  const direction = mine.direction ?? 'south';
+  mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
+  mineVisual.group.rotation.y = direction === 'east'
+    ? Math.PI / 2
+    : direction === 'west'
+      ? -Math.PI / 2
+      : direction === 'north'
+        ? Math.PI
+        : 0;
   syncMineCartMeshes(mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
@@ -796,6 +808,8 @@ const mineFillEl = document.querySelector<HTMLElement>('#mine-fill')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const mineButton = document.querySelector<HTMLButtonElement>('#mine-button')!;
+const mineActionTitleEl = document.querySelector<HTMLElement>('#mine-action-title')!;
+const mineActionHintEl = document.querySelector<HTMLElement>('#mine-action-hint')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
 const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
 const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-slider')!;
@@ -824,6 +838,7 @@ const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
+let placingMine = false;
 let xpFlashTimeout = 0;
 const SKILL_TREE_STAGE_SIZE = 1600;
 const SKILL_TREE_CENTER = SKILL_TREE_STAGE_SIZE / 2;
@@ -1141,8 +1156,17 @@ function updateConstructionUi(now = Date.now()): void {
 function updateMineUi(): void {
   const mine = state.mines[0];
   if (!mine) {
-    mineStatusEl.hidden = true;
-    mineButton.disabled = true;
+    const available = state.availableMineSites > 0;
+    mineStatusEl.hidden = !available && state.mines.length === 0;
+    mineLabelEl.textContent = available ? 'Free mine blueprint ready' : 'Mine entrance locked';
+    mineRateEl.textContent = available ? 'Place beside a path' : 'Unlock another mine';
+    mineFillEl.style.width = '0%';
+    mineButton.disabled = !available;
+    mineActionTitleEl.textContent = placingMine ? 'CHOOSE MINE SITE' : 'PLACE FREE MINE';
+    mineActionHintEl.textContent = placingMine ? 'Click a path-side plot' : 'Click to choose a location';
+    mineButton.classList.toggle('is-placement-mode', placingMine);
+    currentToolHintEl.textContent = available ? 'Place your free mine beside a path' : 'Unlock a mine entrance';
+    updateMineVisual();
     return;
   }
   const tripDuration = getMineTripDuration(state);
@@ -1153,6 +1177,9 @@ function updateMineUi(): void {
   mineRateEl.textContent = `${tripsPerMinute.toFixed(1)} trips/min`;
   mineFillEl.style.width = `${Math.min(100, mine.progressMs / tripDuration * 100)}%`;
   mineButton.disabled = false;
+  mineActionTitleEl.textContent = 'DISPATCH CART';
+  mineActionHintEl.textContent = 'Click or press SPACE';
+  mineButton.classList.remove('is-placement-mode');
   updateMineVisual();
 }
 
@@ -1219,6 +1246,21 @@ function getOreAtPointer(event: PointerEvent): OreNode | null {
   return hit ? oreByMesh.get(hit.object) ?? null : null;
 }
 
+function getMinePlacementAtPointer(event: PointerEvent): { x: number; z: number; direction: WorldDirection } | null {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const surfaceMeshes = blockNodes.filter((node) => node.mesh.visible && node.coordinate.y === 0).map((node) => node.mesh);
+  const hit = raycaster.intersectObjects(surfaceMeshes, false)[0];
+  if (!hit) return null;
+  const x = Math.round(hit.point.x / BLOCK_SIZE);
+  const z = Math.round(hit.point.z / BLOCK_SIZE);
+  const directions: WorldDirection[] = ['south', 'east', 'north', 'west'];
+  const direction = directions.find((candidate) => canPlaceMine(state, x, z, candidate));
+  return direction ? { x, z, direction } : null;
+}
+
 function setHoveredOre(nextOre: OreNode | null): void {
   if (nextOre === hoveredOre) return;
   hoveredOre = nextOre;
@@ -1269,6 +1311,17 @@ function updateHoverTarget(event: PointerEvent): void {
 
 canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
+    if (placingMine) {
+      const placement = getMinePlacementAtPointer(event);
+      if (placement && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction)) {
+        placingMine = false;
+        canvas.classList.remove('is-placing-mine');
+        updateWorldScene();
+        updateUi();
+        saveState(localStorage, state);
+      }
+      return;
+    }
     const ore = hoveredOre ?? getOreAtPointer(event);
     if (ore) {
       setHoveredOre(ore);
@@ -1371,7 +1424,15 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
 });
 
-mineButton.addEventListener('click', dispatchCart);
+mineButton.addEventListener('click', () => {
+  if (state.mines.length === 0 && state.availableMineSites > 0) {
+    placingMine = !placingMine;
+    canvas.classList.toggle('is-placing-mine', placingMine);
+    updateUi();
+    return;
+  }
+  dispatchCart();
+});
 musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));
 sfxVolumeSlider.addEventListener('input', () => audioManager.setSfxVolume(Number(sfxVolumeSlider.value) / 100));
 musicToggle.addEventListener('click', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, unlockStarterMine, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -95,6 +95,25 @@ describe('IdleCraft progression', () => {
     expect(loadState(storage, 2000).blockProgress['block-0-0-0-core']).toEqual(saved.blockProgress['block-0-0-0-core']);
   });
 
+  it('starts on a procedural 5×5 chunk with a five-tile path cross and one free mine site', () => {
+    const state = freshState();
+    expect(state.schemaVersion).toBe(2);
+    expect(state.chunkSize).toBe(STARTING_CHUNK_SIZE);
+    expect(state.worldCells).toHaveLength(25);
+    expect(state.pathCells.map((cell) => `${cell.x},${cell.z}`)).toEqual(['0,0', '0,-1', '1,0', '0,1', '-1,0']);
+    expect(state.availableMineSites).toBe(1);
+  });
+
+  it('requires a mine footprint to stay inside the chunk and beside the path', () => {
+    const state = freshState();
+    expect(canPlaceMine(state, 2, -2, 'south')).toBe(true);
+    expect(canPlaceMine(state, 0, 0, 'south')).toBe(false);
+    expect(canPlaceMine(state, -2, -2, 'north')).toBe(false);
+    expect(unlockStarterMine(state, 1000, 2, -2, 'south')).toBe(true);
+    expect(state.availableMineSites).toBe(0);
+    expect(unlockStarterMine(state, 1000, 1, -2, 'west')).toBe(false);
+  });
+
   it('expands the world after the first growth milestone', () => {
     const state = freshState();
     addXp(state, 350);
@@ -106,7 +125,7 @@ describe('IdleCraft progression', () => {
     expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] - 1)).toHaveLength(0);
     expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'])).toHaveLength(1);
     expect(state.worldRank).toBe(1);
-    expect(state.worldCells).toHaveLength(2);
+    expect(state.worldCells).toHaveLength(25);
     expect(state.craftingPoints).toBe(1);
     expect(state.settlementProgress).toBe(100);
   });
@@ -134,12 +153,12 @@ describe('IdleCraft progression', () => {
 
   it('grows surface cells in deliberate stages', () => {
     const state = freshState();
-    expect(state.worldCells).toHaveLength(1);
+    expect(state.worldCells).toHaveLength(25);
     expandToFirstAdjacentCell(state);
-    expect(state.worldCells).toHaveLength(2);
+    expect(state.worldCells).toHaveLength(25);
     expect(state.worldCells).toContainEqual({ x: 0, z: -1, biome: 'meadow' });
     expandToSurface3x3(state);
-    expect(state.worldCells).toHaveLength(9);
+    expect(state.worldCells).toHaveLength(25);
   });
 
   it('uses World Power for the major surface expansion', () => {
@@ -163,13 +182,13 @@ describe('IdleCraft progression', () => {
     const now = 5000;
     expect(buySkillNode(state, 'world-adjacent-block', now)).toBe(true);
     expect(buySkillNode(state, 'world-surface-3x3', now + 1)).toBe(true);
-    expect(state.worldCells).toHaveLength(1);
+    expect(state.worldCells).toHaveLength(25);
     expect(state.constructionQueue).toHaveLength(2);
     expect(state.constructionQueue[1].startedAt).toBe(now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
     completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
-    expect(state.worldCells).toHaveLength(2);
+    expect(state.worldCells).toHaveLength(25);
     completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3']);
-    expect(state.worldCells).toHaveLength(9);
+    expect(state.worldCells).toHaveLength(25);
   });
 
   it('opens the deepslate layer through the world-growth node', () => {
@@ -206,13 +225,8 @@ describe('IdleCraft progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state.skillRanks).toMatchObject({
-      'automation-auto-strike': 2,
-      'tools-tool-bench': 1,
-      'tools-wooden-pickaxe': 1,
-      'world-adjacent-block': 1,
-    });
-    expect(state.worldPower).toBe(1);
+    expect(state).toMatchObject({ schemaVersion: 2, worldRank: 0, worldPower: 0, chunkSize: 5 });
+    expect(state.skillRanks).toEqual({});
   });
 
   it('preserves a spent World Power balance when loading a current save', () => {
@@ -259,7 +273,7 @@ describe('IdleCraft progression', () => {
     const storage = {
       getItem: () => JSON.stringify({ ...freshState(0), worldRank: 1, worldCells: undefined }),
     } as unknown as Storage;
-    expect(loadState(storage, 1000).worldCells).toHaveLength(9);
+    expect(loadState(storage, 1000).worldCells).toHaveLength(25);
   });
 
   it('calculates offline gains at half efficiency', () => {

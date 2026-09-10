@@ -174,8 +174,8 @@ const automation: SkillNodeDefinition[] = [
 
 const worldGrowth: SkillNodeDefinition[] = [
   branchEntry('world-growth-biomes', 'World Growth and Biomes'),
-  node('world-growth-biomes', 'world-adjacent-block', 'Add Adjacent Block', 'Grow the world one connected cell at a time.', 'Unlocks the first adjacent expansion purchase.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['world-growth-biomes']], 1, 'Adds one connected cell to the world.'),
-  node('world-growth-biomes', 'world-surface-3x3', 'Expand to a 3×3 Surface', 'Turn the seed into a small playable island.', 'Unlocks the 3×3 surface template.', 'milestone', ['world-adjacent-block'], 1, 'Builds the first authored 3×3 meadow.'),
+  node('world-growth-biomes', 'world-adjacent-block', 'Plan the Perimeter', 'Prepare the settlement for its first perimeter expansion.', 'Unlocks the first chunk-upgrade commitment.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['world-growth-biomes']], 1, 'Makes the 7×7 perimeter upgrade available.'),
+  node('world-growth-biomes', 'world-surface-3x3', 'Expand to a 7×7 Chunk', 'Add a complete perimeter ring around the starting 5×5 chunk.', 'Builds the next square chunk size.', 'milestone', ['world-adjacent-block'], 1, 'Adds a stable 7×7 settlement surface after construction completes.'),
   node('world-growth-biomes', 'world-underground-layer', 'Underground Layers I–II', 'Extend the world downward one permanent stratum at a time.', '+1 visible underground layer per rank.', 'rank', ['world-surface-3x3', 'materials-stone'], 2, 'Adds another stable stone or deepstone layer beneath the surface.'),
   node('world-growth-biomes', 'world-cave-entrance', 'Mine Entrance', 'Build the first permanent rail entrance into the underground.', 'Unlocks one mine site and its first minecart.', 'milestone', ['world-underground-layer'], 1, 'Adds a permanent mine entrance without removing terrain.'),
   node('world-growth-biomes', 'world-water-tile', 'Water Tile', 'Introduce water as a world-building material.', 'Unlocks water tiles and bucket interaction.', 'unlock', ['world-surface-3x3']),

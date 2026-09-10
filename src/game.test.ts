@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -114,6 +114,25 @@ describe('IdleCraft progression', () => {
     expect(unlockStarterMine(state, 1000, 1, -2, 'west')).toBe(false);
   });
 
+  it('uses one collision rule for path-facing structures', () => {
+    const state = freshState();
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    expect(canPlaceWorldPlacement(state, dwelling)).toBe(true);
+    expect(placeWorldPlacement(state, dwelling)).toBe(true);
+    expect(canPlaceWorldPlacement(state, createWorldPlacement('well', 'well-1', 1, 1, 'south'))).toBe(false);
+    expect(canPlaceWorldPlacement(state, createWorldPlacement('dwelling', 'dwelling-2', 0, 0, 'south'))).toBe(false);
+  });
+
+  it('upgrades path tiles independently', () => {
+    const state = freshState();
+    state.resources.cobblestone = 8;
+    expect(upgradePathCell(state, 0, 0)).toBe(true);
+    expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 0)?.tier).toBe('cobblestone');
+    expect(state.resources.cobblestone).toBe(0);
+    expect(upgradePathCell(state, 0, 0)).toBe(false);
+    expect(upgradePathCell(state, 0, -1)).toBe(false);
+  });
+
   it('expands the world after the first growth milestone', () => {
     const state = freshState();
     addXp(state, 350);
@@ -121,13 +140,14 @@ describe('IdleCraft progression', () => {
     const now = 1000;
     expect(buyWorldExpansion(state, 'north', now)).toBe(true);
     expect(state.worldRank).toBe(0);
-    expect(state.constructionQueue[0]).toMatchObject({ kind: 'adjacent-cell', startedAt: now, completesAt: now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] });
-    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] - 1)).toHaveLength(0);
-    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'])).toHaveLength(1);
+    expect(state.constructionQueue[0]).toMatchObject({ kind: 'chunk-upgrade', startedAt: now, completesAt: now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'] });
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'] - 1)).toHaveLength(0);
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'])).toHaveLength(1);
     expect(state.worldRank).toBe(1);
-    expect(state.worldCells).toHaveLength(25);
+    expect(state.chunkSize).toBe(7);
+    expect(state.worldCells).toHaveLength(49);
     expect(state.craftingPoints).toBe(1);
-    expect(state.settlementProgress).toBe(100);
+    expect(state.settlementProgress).toBe(400);
   });
 
   it('progresses through deliberately spaced settlement stages', () => {
@@ -155,10 +175,10 @@ describe('IdleCraft progression', () => {
     const state = freshState();
     expect(state.worldCells).toHaveLength(25);
     expandToFirstAdjacentCell(state);
-    expect(state.worldCells).toHaveLength(25);
+    expect(state.worldCells).toHaveLength(49);
     expect(state.worldCells).toContainEqual({ x: 0, z: -1, biome: 'meadow' });
     expandToSurface3x3(state);
-    expect(state.worldCells).toHaveLength(25);
+    expect(state.worldCells).toHaveLength(81);
   });
 
   it('uses World Power for the major surface expansion', () => {
@@ -170,12 +190,13 @@ describe('IdleCraft progression', () => {
     const now = Date.now();
     completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
     expect(buySkillNode(state, 'world-surface-3x3')).toBe(true);
-    expect(state).toMatchObject({ worldRank: 1, worldPower: 0, craftingPoints: 0 });
-    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3']);
-    expect(state.worldRank).toBe(2);
+    expect(state).toMatchObject({ worldRank: 0, worldPower: 0, craftingPoints: 0 });
+    completeConstructionProjects(state, now + 1 + CONSTRUCTION_DURATIONS_MS['chunk-upgrade']);
+    expect(state.worldRank).toBe(1);
+    expect(state.chunkSize).toBe(7);
   });
 
-  it('queues the 3×3 build behind an adjacent plot', () => {
+  it('queues the 7×7 build after perimeter planning', () => {
     const state = freshState();
     state.craftingPoints = 3;
     state.skillRanks = { 'branch-entry-world-growth-biomes': 1 };
@@ -183,12 +204,10 @@ describe('IdleCraft progression', () => {
     expect(buySkillNode(state, 'world-adjacent-block', now)).toBe(true);
     expect(buySkillNode(state, 'world-surface-3x3', now + 1)).toBe(true);
     expect(state.worldCells).toHaveLength(25);
-    expect(state.constructionQueue).toHaveLength(2);
-    expect(state.constructionQueue[1].startedAt).toBe(now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
-    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
-    expect(state.worldCells).toHaveLength(25);
-    completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3']);
-    expect(state.worldCells).toHaveLength(25);
+    expect(state.constructionQueue).toHaveLength(1);
+    expect(state.constructionQueue[0].startedAt).toBe(now + 1);
+    completeConstructionProjects(state, now + 1 + CONSTRUCTION_DURATIONS_MS['chunk-upgrade']);
+    expect(state.worldCells).toHaveLength(49);
   });
 
   it('opens the deepslate layer through the world-growth node', () => {

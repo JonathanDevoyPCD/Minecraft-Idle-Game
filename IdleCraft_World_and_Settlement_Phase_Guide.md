@@ -99,8 +99,8 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 ## Current status
 
 - Previous skill-tree and mining prototype work: complete.
-- Step 1: **in progress** — the new schema, procedural 5×5 chunk, five-tile path cross, and free mine placement foundation are being implemented; the old prototype save is intentionally not migrated.
-- Step 2: queued — player placement validation, path-facing structures, tile-by-tile path upgrades, and perimeter chunk expansion.
+- Step 1: **complete foundation** — the new schema, procedural 5×5 chunk, five-tile path cross, and free mine placement foundation are implemented; the old prototype save is intentionally not migrated.
+- Step 2: **in progress** — reusable collision-safe placement validation, path-side mine footprints, tile-upgrade API, and 5×5 → 7×7 → 9×9 perimeter expansion are implemented; player-facing structure placement controls remain next.
 - Step 3: **foundation complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented; they are being reconnected to the new placement grid.
 - Step 4: **complete (foundation)** — persistent settlement growth, stage thresholds, construction rewards, and the replacement HUD are implemented and verified; living-world requirements remain queued for Steps 5–7.
 - Step 5: superseded foundation — the old deterministic 3×3 authored meadow is retired from the active scene; it will return as player-placed, grid-valid content.

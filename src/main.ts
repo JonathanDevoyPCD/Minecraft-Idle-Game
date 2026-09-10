@@ -31,6 +31,7 @@ import {
   type LivingEntityPlan,
   type MeadowFeature,
   type MineSite,
+  type PathCell,
   type WorldDirection,
 } from './game';
 import {
@@ -259,7 +260,10 @@ function generateWorldLayout(): GeneratedBlock[] {
   const cells: GeneratedBlock[] = [];
   // Keep the procedural starter chunk in the scene graph from the beginning;
   // updateWorldScene controls which coordinate cells are currently unlocked.
-  const chunkBounds = Math.max(1, Math.floor(state.chunkSize / 2));
+  // Keep one extra set of perimeter cells authored in the scene graph so the
+  // first 7×7 upgrade can reveal them without changing the camera or mesh
+  // scale. Later infinite expansion will grow this pool deliberately.
+  const chunkBounds = Math.max(5, Math.floor(state.chunkSize / 2));
   for (let x = -chunkBounds; x <= chunkBounds; x += 1) {
     for (let z = -chunkBounds; z <= chunkBounds; z += 1) {
       cells.push({ type: 'grass', coordinate: { x, y: 0, z }, requiredWorldRank: 0 });
@@ -420,12 +424,25 @@ function createMeadowFeatureVisual(feature: MeadowFeature): MeadowFeatureVisual 
 }
 
 const meadowFeatureVisuals = getMeadowFeaturePlan(state.worldSeed).map(createMeadowFeatureVisual);
-const pathVisuals = state.pathCells.map((cell) => createMeadowFeatureVisual({
-  id: `path-${cell.x}-${cell.z}`,
-  kind: 'path',
-  x: cell.x,
-  z: cell.z,
-}));
+interface PathVisual {
+  cell: PathCell;
+  group: THREE.Group;
+  surface: THREE.Mesh;
+}
+
+function getPathMaterial(tier: PathCell['tier']): THREE.Material {
+  return tier === 'cobblestone' ? cobblestoneMaterial : tier === 'stone' ? stoneMaterial : pathMaterial;
+}
+
+function createPathVisual(cell: PathCell): PathVisual {
+  const group = new THREE.Group();
+  group.position.set(cell.x * BLOCK_SIZE, 0, cell.z * BLOCK_SIZE);
+  meadowFeatureRoot.add(group);
+  const surface = addFeatureCube(group, getPathMaterial(cell.tier), [0.88, 0.05, 0.88], [0, 0.49, 0]);
+  return { cell, group, surface };
+}
+
+const pathVisuals = state.pathCells.map(createPathVisual);
 
 function updateMeadowScene(): void {
   // The old authored 3×3 feature layout is intentionally retired. Structures,
@@ -434,7 +451,8 @@ function updateMeadowScene(): void {
   meadowFeatureVisuals.forEach((visual) => { visual.group.visible = false; });
   const visibleSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
   pathVisuals.forEach((visual) => {
-    visual.group.visible = visibleSurfaceCells.has(`${visual.feature.x},${visual.feature.z}`);
+    visual.surface.material = getPathMaterial(visual.cell.tier);
+    visual.group.visible = visibleSurfaceCells.has(`${visual.cell.x},${visual.cell.z}`);
   });
 }
 
@@ -1144,7 +1162,11 @@ function updateConstructionUi(now = Date.now()): void {
   const duration = Math.max(1, project.completesAt - project.startedAt);
   const elapsed = Math.max(0, Math.min(duration, now - project.startedAt));
   const remainingSeconds = Math.max(0, Math.ceil((project.completesAt - now) / 1000));
-  const label = project.kind === 'adjacent-cell' ? 'Building adjacent plot' : 'Building 3×3 meadow';
+  const label = project.kind === 'adjacent-cell'
+    ? 'Preparing perimeter'
+    : project.kind === 'chunk-upgrade'
+      ? `Expanding to ${state.chunkSize + 2}×${state.chunkSize + 2} chunk`
+      : 'Expanding chunk';
   constructionLabelEl.textContent = label;
   constructionTimeEl.textContent = now < project.startedAt
     ? `Queued · starts in ${Math.ceil((project.startedAt - now) / 1000)}s`

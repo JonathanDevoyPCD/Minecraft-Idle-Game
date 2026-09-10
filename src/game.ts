@@ -97,7 +97,7 @@ export interface LivingEntityPlan {
   role?: 'unassigned' | 'miner' | 'farmer' | 'toolsmith';
 }
 
-export type ConstructionKind = 'adjacent-cell' | 'surface-3x3';
+export type ConstructionKind = 'adjacent-cell' | 'surface-3x3' | 'chunk-upgrade';
 
 export interface ConstructionProject {
   kind: ConstructionKind;
@@ -148,6 +148,19 @@ export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 1, tier: 'dirt' },
   { x: -1, z: 0, tier: 'dirt' },
 ];
+export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; resourceCost: number; description: string }[] = [
+  { tier: 'dirt', resourceCost: 0, description: 'A simple route that keeps villagers moving.' },
+  { tier: 'cobblestone', requiredResource: 'cobblestone', resourceCost: 8, description: 'A durable route that improves settlement traffic.' },
+  { tier: 'stone', requiredResource: 'cobblestone', resourceCost: 16, description: 'A finished route prepared for a larger settlement.' },
+];
+export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { width: number; depth: number; requiresPath: boolean }>> = {
+  mine: { width: 1, depth: 4, requiresPath: true },
+  dwelling: { width: 2, depth: 2, requiresPath: true },
+  well: { width: 1, depth: 1, requiresPath: true },
+  farm: { width: 2, depth: 2, requiresPath: true },
+  tree: { width: 1, depth: 1, requiresPath: false },
+  'animal-pen': { width: 2, depth: 2, requiresPath: true },
+};
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
 export const TOOL_TIERS = [
   { kind: 'hand', material: 'Bare', name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
@@ -156,9 +169,9 @@ export const TOOL_TIERS = [
   { kind: 'pickaxe', material: 'Iron', name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
 ] as const;
 export const WORLD_TIERS = [
-  { name: 'One Block', requiredLevel: 1, cost: 0, blockCount: 1, description: 'A humble starting point for your world.' },
-  { name: 'First Meadow', requiredLevel: 3, cost: 1, blockCount: 27, description: 'Grow a connected 3×3 meadow with dirt and stone beneath.' },
-  { name: 'Second Meadow', requiredLevel: 6, cost: 2, blockCount: 54, description: 'Choose a direction and grow another connected meadow chunk.' },
+  { name: 'Starting Chunk 5×5', requiredLevel: 1, cost: 0, blockCount: 25, description: 'A compact meadow with a five-tile path cross.' },
+  { name: 'Chunk Expansion 7×7', requiredLevel: 3, cost: 1, blockCount: 49, description: 'Add a new perimeter ring around the starting settlement.' },
+  { name: 'Chunk Expansion 9×9', requiredLevel: 6, cost: 2, blockCount: 81, description: 'Open another perimeter ring for the growing village.' },
 ] as const;
 
 export type SettlementStageId = 'dwelling' | 'hamlet' | 'village' | 'small-town' | 'town' | 'city' | 'large-city' | 'endless';
@@ -185,6 +198,7 @@ export const SETTLEMENT_STAGES: readonly SettlementStageDefinition[] = [
 const SETTLEMENT_PROGRESS_BY_CONSTRUCTION: Record<ConstructionKind, number> = {
   'adjacent-cell': 100,
   'surface-3x3': 400,
+  'chunk-upgrade': 400,
 };
 
 const AUTO_STRIKE_NODE_ID = 'automation-auto-strike';
@@ -282,7 +296,7 @@ export function getMineFootprint(x: number, z: number, direction: WorldDirection
   return Array.from({ length: 4 }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
 }
 
-function getPlacementFootprint(placement: Pick<WorldPlacement, 'x' | 'z' | 'width' | 'depth' | 'direction'>): Array<{ x: number; z: number }> {
+export function getPlacementFootprint(placement: Pick<WorldPlacement, 'x' | 'z' | 'width' | 'depth' | 'direction'>): Array<{ x: number; z: number }> {
   const horizontal = placement.direction === 'east' || placement.direction === 'west';
   const width = horizontal ? placement.depth : placement.width;
   const depth = horizontal ? placement.width : placement.depth;
@@ -305,6 +319,58 @@ function areAdjacentToPath(state: Pick<GameState, 'pathCells'>, footprint: reado
           : [-1, 0];
     return isPathCell(state, cell.x + offset[0], cell.z + offset[1]);
   }));
+}
+
+export function createWorldPlacement(
+  kind: WorldPlacementKind,
+  id: string,
+  x: number,
+  z: number,
+  direction: WorldDirection = 'south',
+): WorldPlacement {
+  const definition = WORLD_PLACEMENT_DEFINITIONS[kind];
+  return { id, kind, x, z, width: definition.width, depth: definition.depth, direction };
+}
+
+export function canPlaceWorldPlacement(
+  state: Pick<GameState, 'worldCells' | 'pathCells' | 'placements'>,
+  placement: WorldPlacement,
+): boolean {
+  if (!Number.isInteger(placement.x) || !Number.isInteger(placement.z) || placement.width < 1 || placement.depth < 1) return false;
+  const footprint = getPlacementFootprint(placement);
+  const bounds = getChunkBounds(state);
+  if (footprint.some((cell) => cell.x < bounds.minX || cell.x > bounds.maxX || cell.z < bounds.minZ || cell.z > bounds.maxZ)) return false;
+  if (footprint.some((cell) => isPathCell(state, cell.x, cell.z))) return false;
+  const occupied = state.placements
+    .filter((candidate) => candidate.id !== placement.id)
+    .flatMap((candidate) => getPlacementFootprint(candidate));
+  if (occupied.some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z))) return false;
+  const definition = WORLD_PLACEMENT_DEFINITIONS[placement.kind];
+  return !definition.requiresPath || areAdjacentToPath(state, footprint);
+}
+
+export function placeWorldPlacement(state: GameState, placement: WorldPlacement): boolean {
+  if (!canPlaceWorldPlacement(state, placement)) return false;
+  state.placements.push({ ...placement });
+  return true;
+}
+
+export function getNextPathTier(tier: PathTier): PathTier | null {
+  const index = PATH_TIERS.findIndex((entry) => entry.tier === tier);
+  return PATH_TIERS[index + 1]?.tier ?? null;
+}
+
+export function upgradePathCell(state: GameState, x: number, z: number): boolean {
+  const path = getPathCell(state, x, z);
+  if (!path) return false;
+  const nextTier = getNextPathTier(path.tier);
+  if (!nextTier) return false;
+  const definition = PATH_TIERS.find((entry) => entry.tier === nextTier)!;
+  const resource = definition.requiredResource;
+  if (resource && (state.resources[resource] ?? 0) < definition.resourceCost) return false;
+  if (resource) state.resources[resource] -= definition.resourceCost;
+  path.tier = nextTier;
+  return true;
 }
 
 export function canPlaceMine(
@@ -395,6 +461,10 @@ export function getStableBlockType(authoredType: BlockType, savedProgress?: Pick
 }
 
 export function expandToFirstAdjacentCell(state: GameState, direction: WorldDirection = 'north'): void {
+  if (state.chunkSize >= STARTING_CHUNK_SIZE) {
+    expandToNextChunk(state);
+    return;
+  }
   const offsets: Record<WorldDirection, readonly [number, number]> = {
     north: [0, -1],
     east: [1, 0],
@@ -407,10 +477,18 @@ export function expandToFirstAdjacentCell(state: GameState, direction: WorldDire
 }
 
 export function expandToSurface3x3(state: GameState): void {
-  for (let x = -1; x <= 1; x += 1) {
-    for (let z = -1; z <= 1; z += 1) addWorldCell(state, x, z);
-  }
-  state.worldRank = Math.max(state.worldRank, 2);
+  expandToNextChunk(state);
+}
+
+export function expandToNextChunk(state: GameState): void {
+  const nextSize = Math.max(STARTING_CHUNK_SIZE, state.chunkSize + 2);
+  const existingBiomes = new Map(state.worldCells.map((cell) => [worldCellKey(cell.x, cell.z), cell.biome]));
+  state.worldCells = createSquareChunkCells(nextSize).map((cell) => ({
+    ...cell,
+    biome: existingBiomes.get(worldCellKey(cell.x, cell.z)) ?? cell.biome,
+  }));
+  state.chunkSize = nextSize;
+  state.worldRank = Math.max(state.worldRank, Math.floor((nextSize - STARTING_CHUNK_SIZE) / 2));
 }
 
 function createMineSite(now: number, x: number, z: number, direction: WorldDirection): MineSite {
@@ -438,6 +516,7 @@ export function unlockStarterMine(
 ): boolean {
   if (state.mines.length > 0 || !canPlaceMine(state, x, z, direction)) return false;
   state.mines.push(createMineSite(now, x, z, direction));
+  state.placements.push(createWorldPlacement('mine', MINE_ID, x, z, direction));
   state.availableMineSites = Math.max(0, state.availableMineSites - 1);
   return true;
 }
@@ -513,6 +592,7 @@ export function collectOreBonus(state: GameState, resource: string, amount = 1):
 export const CONSTRUCTION_DURATIONS_MS: Record<ConstructionKind, number> = {
   'adjacent-cell': 10_000,
   'surface-3x3': 30_000,
+  'chunk-upgrade': 45_000,
 };
 
 export function queueConstruction(
@@ -538,7 +618,7 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
   while (state.constructionQueue[0] && state.constructionQueue[0].completesAt <= now) {
     const project = state.constructionQueue.shift()!;
     if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
-    if (project.kind === 'surface-3x3') expandToSurface3x3(state);
+    if (project.kind === 'surface-3x3' || project.kind === 'chunk-upgrade') expandToNextChunk(state);
     addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   }
@@ -608,11 +688,7 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (!node) return false;
   const currentRank = getSkillNodeRank(state, node.id);
   if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
-  const constructionKind = node.id === ADJACENT_BLOCK_NODE_ID
-    ? 'adjacent-cell'
-    : node.id === SURFACE_3X3_NODE_ID
-      ? 'surface-3x3'
-      : null;
+  const constructionKind = node.id === SURFACE_3X3_NODE_ID ? 'chunk-upgrade' : null;
   if (constructionKind && state.constructionQueue.some((project) => project.kind === constructionKind)) return false;
 
   state.craftingPoints -= node.cost.craftingPoints;
@@ -624,10 +700,9 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
 
   if (node.id === AUTO_STRIKE_NODE_ID) state.speedRank = Math.min(currentRank + 1, SPEED_RATES.length - 1);
   if (node.id === ADJACENT_BLOCK_NODE_ID) {
-    queueConstruction(state, 'adjacent-cell', now);
     state.worldPower += 1;
   }
-  if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'surface-3x3', now);
+  if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'chunk-upgrade', now);
   if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, currentRank + 1);
   if (node.id === 'world-cave-entrance') unlockStarterMine(state, now);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
@@ -795,16 +870,10 @@ export function buyWorldExpansion(state: GameState, direction: WorldDirection = 
     return false;
   }
 
-  const constructionKind: ConstructionKind = state.worldRank === 0 ? 'adjacent-cell' : 'surface-3x3';
+  const constructionKind: ConstructionKind = 'chunk-upgrade';
   if (!queueConstruction(state, constructionKind, now, direction)) return false;
   state.craftingPoints -= nextWorld.cost;
-  if (constructionKind === 'adjacent-cell') {
-    setSkillNodeRank(state, ADJACENT_BLOCK_NODE_ID, 1);
-    state.worldPower += 1;
-  }
-  if (constructionKind === 'surface-3x3') {
-    setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
-  }
+  setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
   return true;
 }
 
@@ -823,6 +892,12 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const worldCells = parseWorldCells(parsed.worldCells) ?? base.worldCells;
     const pathCells = parsePathCells(parsed.pathCells) ?? base.pathCells;
     const placements = parseWorldPlacements(parsed.placements);
+    const mines = parseMines(parsed.mines, now);
+    mines.forEach((mine) => {
+      if (!placements.some((placement) => placement.id === mine.id)) {
+        placements.push(createWorldPlacement('mine', mine.id, mine.x, mine.z, mine.direction ?? 'south'));
+      }
+    });
     const resources = Object.fromEntries(
       Object.entries(parsed.resources ?? {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Math.max(0, Number(value))]),
     );
@@ -850,7 +925,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         ? Math.max(0, Math.floor(Number(parsed.availableMineSites)))
         : base.availableMineSites,
       undergroundLayer: Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
-      mines: parseMines(parsed.mines, now),
+      mines,
       constructionQueue: parseConstructionQueue(parsed.constructionQueue),
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
@@ -938,7 +1013,7 @@ function parseConstructionQueue(value: unknown): ConstructionProject[] {
   return value.flatMap((candidate): ConstructionProject[] => {
     if (!candidate || typeof candidate !== 'object') return [];
     const entry = candidate as Partial<ConstructionProject>;
-    if (entry.kind !== 'adjacent-cell' && entry.kind !== 'surface-3x3') return [];
+    if (entry.kind !== 'adjacent-cell' && entry.kind !== 'surface-3x3' && entry.kind !== 'chunk-upgrade') return [];
     const startedAt = Number(entry.startedAt);
     const completesAt = Number(entry.completesAt);
     if (!Number.isFinite(startedAt) || !Number.isFinite(completesAt) || completesAt < startedAt) return [];

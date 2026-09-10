@@ -20,9 +20,9 @@ import {
   getWorldSurfaceCells,
   getTool,
   getSkillNodeRank,
+  getStableBlockType,
   getWorldTier,
   getMiningStats,
-  getNextBlockType,
   harvestResource,
   loadState,
   saveState,
@@ -183,6 +183,7 @@ function updateDestroyOverlay(node: BlockNode): void {
 function persistBlockProgress(node: BlockNode): void {
   const progress: BlockMiningProgress = {
     type: node.type,
+    stableType: node.type,
     damage: node.damage,
     replacementAt: node.replacementAt,
   };
@@ -197,7 +198,9 @@ function createBlockNode(
   requiredDirection?: WorldDirection,
 ): BlockNode {
   const savedProgress = state.blockProgress[id];
-  const initialType = savedProgress?.type ?? type;
+  // Older saves stored the temporary Dirt → Grass → Stone progression in
+  // `type`. New saves carry stableType, so authored terrain remains intact.
+  const initialType = getStableBlockType(type, savedProgress);
   const mesh = createBlockMesh(initialType);
   const destroyOverlay = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004), destroyMaterials[0]);
   destroyOverlay.visible = false;
@@ -895,7 +898,9 @@ function breakBlock(node: BlockNode, now: number): void {
   harvestResource(state, brokenType);
   spawnBreakParticles(node);
   audioManager.playMiningSound('break');
-  node.type = getNextBlockType(brokenType);
+  // Harvesting a block must not transform the authored world. The same
+  // terrain material returns after the replacement timer expires.
+  node.type = brokenType;
   node.damage = 0;
   node.lastStrikeAt = 0;
   node.replacementAt = now + REPLACEMENT_DELAY_MS;

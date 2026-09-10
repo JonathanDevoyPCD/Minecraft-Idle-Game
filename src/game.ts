@@ -33,6 +33,7 @@ export interface WorldCell {
 
 export interface BlockMiningProgress {
   type: BlockType;
+  stableType?: BlockType;
   damage: number;
   replacementAt: number | null;
 }
@@ -125,6 +126,10 @@ function addWorldCell(state: GameState, x: number, z: number, biome: BiomeId = '
 
 export function getWorldSurfaceCells(state: GameState): readonly WorldCell[] {
   return state.worldCells;
+}
+
+export function getStableBlockType(authoredType: BlockType, savedProgress?: Pick<BlockMiningProgress, 'stableType'>): BlockType {
+  return savedProgress?.stableType ?? authoredType;
 }
 
 export function expandToFirstAdjacentCell(state: GameState, direction: WorldDirection = 'north'): void {
@@ -470,6 +475,9 @@ function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress>
     const replacementAt = entry.replacementAt === null ? null : Number(entry.replacementAt);
     progress[id] = {
       type: entry.type,
+      ...(entry.stableType && (entry.stableType === 'deepslate' || BLOCK_PROGRESSION.includes(entry.stableType))
+        ? { stableType: entry.stableType }
+        : {}),
       damage: Number.isFinite(damage) ? Math.max(0, damage) : 0,
       replacementAt: replacementAt !== null && Number.isFinite(replacementAt) ? replacementAt : null,
     };

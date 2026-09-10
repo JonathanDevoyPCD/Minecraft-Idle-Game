@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, harvestResource, loadState, xpRequired } from './game';
+import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -69,6 +69,12 @@ describe('IdleCraft progression', () => {
     expect(getNextBlockType('grass')).toBe('stone');
     expect(getNextBlockType('stone')).toBe('stone');
     expect(getNextBlockType('deepslate')).toBe('deepslate');
+  });
+
+  it('keeps authored terrain stable when a harvested block respawns', () => {
+    expect(getStableBlockType('grass')).toBe('grass');
+    expect(getStableBlockType('grass', { stableType: 'grass' })).toBe('grass');
+    expect(getStableBlockType('stone', { stableType: 'deepslate' })).toBe('deepslate');
   });
 
   it('uses harder mining times for cobblestone and improves with a pickaxe', () => {

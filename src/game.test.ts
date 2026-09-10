@@ -68,6 +68,7 @@ describe('IdleCraft progression', () => {
     expect(getNextBlockType('dirt')).toBe('grass');
     expect(getNextBlockType('grass')).toBe('stone');
     expect(getNextBlockType('stone')).toBe('stone');
+    expect(getNextBlockType('deepslate')).toBe('deepslate');
   });
 
   it('uses harder mining times for cobblestone and improves with a pickaxe', () => {
@@ -115,6 +116,23 @@ describe('IdleCraft progression', () => {
     expect(state).toMatchObject({ worldRank: 1, worldPower: 1, craftingPoints: 1 });
     expect(buySkillNode(state, 'world-surface-3x3')).toBe(true);
     expect(state).toMatchObject({ worldRank: 2, worldPower: 0, craftingPoints: 0 });
+  });
+
+  it('opens the deepslate layer through the world-growth node', () => {
+    const state = freshState();
+    state.worldRank = 2;
+    state.worldCells = Array.from({ length: 9 }, (_, index) => ({
+      x: (index % 3) - 1,
+      z: Math.floor(index / 3) - 1,
+      biome: 'meadow' as const,
+    }));
+    state.craftingPoints = 1;
+    state.skillRanks = {
+      'world-surface-3x3': 1,
+      'materials-stone': 1,
+    };
+    expect(buySkillNode(state, 'world-underground-layer')).toBe(true);
+    expect(state.undergroundLayer).toBe(1);
   });
 
   it('migrates prototype upgrade counters into stable tree nodes', () => {

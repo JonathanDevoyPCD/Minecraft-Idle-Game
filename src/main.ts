@@ -119,6 +119,8 @@ const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color:
 const grassSideMaterial = new THREE.MeshStandardMaterial({ map: grassSideTexture, roughness: 1 });
 const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
 const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x858d8f, roughness: 1 });
+const deepslateTexture = loadBlockTexture('deepslate.png');
+const deepslateMaterial = new THREE.MeshStandardMaterial({ map: deepslateTexture, roughness: 1 });
 
 interface BlockCoordinate {
   x: number;
@@ -165,7 +167,9 @@ function getBlockMaterials(type: BlockType): THREE.Material[] {
     ? [grassSideMaterial, grassSideMaterial, grassMaterial, dirtMaterial, grassSideMaterial, grassSideMaterial]
     : type === 'dirt'
       ? [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial]
-      : [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial];
+      : type === 'stone'
+        ? [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial]
+        : [deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial];
 }
 
 function updateDestroyOverlay(node: BlockNode): void {
@@ -274,6 +278,7 @@ function generateWorldLayout(): GeneratedBlock[] {
       cells.push({ type: 'grass', coordinate: { x, y: 0, z }, requiredWorldRank: isCore ? 0 : 1 });
       cells.push({ type: 'dirt', coordinate: { x, y: -1, z }, requiredWorldRank: 2 });
       cells.push({ type: 'stone', coordinate: { x, y: -2, z }, requiredWorldRank: 2 });
+      cells.push({ type: 'deepslate', coordinate: { x, y: -3, z }, requiredWorldRank: 2 });
     }
   }
   WORLD_DIRECTIONS.forEach((direction) => {
@@ -308,6 +313,7 @@ const particleColours: Record<BlockType, readonly number[]> = {
   grass: [0x73502e, 0x8f6735, 0x5a8c39],
   dirt: [0x73502e, 0x8f6735, 0x5a8c39],
   stone: [0x8f999a, 0x697476, 0xabb4b4],
+  deepslate: [0x3c454b, 0x59636a, 0x737d81],
 };
 
 function spawnBreakParticles(node: BlockNode): void {
@@ -383,7 +389,9 @@ function updateWorldScene(): void {
       || state.expansionDirections[directionIndex] === node.requiredDirection;
     const isAuthoredExpansion = node.requiredDirection !== undefined;
     const surfaceCellUnlocked = unlockedSurfaceCells.has(`${node.coordinate.x},${node.coordinate.z}`);
-    const layerUnlocked = node.coordinate.y === 0 || state.worldRank >= 2;
+    const layerUnlocked = node.coordinate.y === 0
+      || (state.worldRank >= 2 && node.coordinate.y >= -2)
+      || (state.worldRank >= 2 && state.undergroundLayer >= 1 && node.coordinate.y === -3);
     node.mesh.visible = isAuthoredExpansion
       ? state.worldRank >= node.requiredWorldRank && directionUnlocked && node.replacementAt === null
       : surfaceCellUnlocked && layerUnlocked && node.replacementAt === null;

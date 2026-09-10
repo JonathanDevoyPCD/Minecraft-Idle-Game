@@ -13,6 +13,8 @@ An isometric idle-clicker game about growing one grass block into a living world
 - Tool power increases XP per strike and offline harvesting efficiency
 - Dirt and cobblestone resources are collected independently by block type
 - First world expansion milestone with dirt and stone neighbors
+- Coordinate-based world growth from one core cell to an adjacent cell and 3×3 surface
+- Skill-tree underground-layer unlock with textured, independently mineable deepslate
 - Crafting Tree overlay groups world, tool, and automation unlocks
 - Isometric Three.js scene with flat-colour materials, lighting, shadows, and block clouds
 - Local autosave and timestamp-based offline gains

@@ -11,6 +11,7 @@ export interface GameState {
   worldPower: number;
   worldSeed: number;
   worldCells: WorldCell[];
+  undergroundLayer: number;
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
   blockProgress: Record<string, BlockMiningProgress>;
@@ -19,7 +20,7 @@ export interface GameState {
 }
 
 export type ToolKind = 'hand' | 'pickaxe' | 'shovel' | 'axe';
-export type BlockType = 'grass' | 'dirt' | 'stone';
+export type BlockType = 'grass' | 'dirt' | 'stone' | 'deepslate';
 export type WorldDirection = 'north' | 'east' | 'south' | 'west';
 export type BiomeId = 'meadow' | 'forest' | 'desert' | 'mountain' | 'snow' | 'swamp' | 'crystal';
 export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
@@ -47,6 +48,7 @@ export const BLOCK_DEFINITIONS = {
   grass: { name: 'Grass Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', hardness: 0.6, description: 'Soft ground ready for planting and expansion.' },
   dirt: { name: 'Dirt Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', hardness: 0.5, description: 'Loose earth gathered from the first meadow.' },
   stone: { name: 'Cobblestone Block', requiredTool: 'pickaxe', resource: 'cobblestone', resourceName: 'Cobblestone', hardness: 1.5, description: 'A sturdy block that rewards a pickaxe.' },
+  deepslate: { name: 'Deepslate Block', requiredTool: 'pickaxe', resource: 'deepslate', resourceName: 'Deepslate', hardness: 3, description: 'Dense deep-earth stone that rewards a strong pickaxe.' },
 } as const;
 
 export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
@@ -72,6 +74,7 @@ const STONE_TOOL_SET_NODE_ID = 'tools-stone-set';
 const IRON_PICKAXE_NODE_ID = 'tools-iron-pickaxe';
 const ADJACENT_BLOCK_NODE_ID = 'world-adjacent-block';
 const SURFACE_3X3_NODE_ID = 'world-surface-3x3';
+const UNDERGROUND_LAYER_NODE_ID = 'world-underground-layer';
 const TOOL_NODE_IDS = [
   'tools-wooden-shovel',
   'tools-wooden-pickaxe',
@@ -102,6 +105,7 @@ export function freshState(now = Date.now()): GameState {
     worldPower: 0,
     worldSeed: 184731,
     worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
+    undergroundLayer: 0,
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
     blockProgress: {},
@@ -199,6 +203,7 @@ export function buySkillNode(state: GameState, nodeId: string): boolean {
     state.worldPower += 1;
   }
   if (node.id === SURFACE_3X3_NODE_ID) expandToSurface3x3(state);
+  if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, 1);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
@@ -302,6 +307,7 @@ export interface MiningStats {
 
 export function getNextBlockType(blockType: BlockType): BlockType {
   const index = BLOCK_PROGRESSION.indexOf(blockType);
+  if (index < 0) return blockType;
   return BLOCK_PROGRESSION[Math.min(index + 1, BLOCK_PROGRESSION.length - 1)];
 }
 
@@ -405,6 +411,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         : Number(parsed.worldRank) > 0 ? 1 : 0,
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
       worldCells,
+      undergroundLayer: Math.min(1, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
         : base.expansionDirections,
@@ -458,7 +465,7 @@ function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress>
   Object.entries(value).forEach(([id, candidate]) => {
     if (!candidate || typeof candidate !== 'object') return;
     const entry = candidate as Partial<BlockMiningProgress>;
-    if (!entry.type || !BLOCK_PROGRESSION.includes(entry.type)) return;
+    if (!entry.type || (entry.type !== 'deepslate' && !BLOCK_PROGRESSION.includes(entry.type))) return;
     const damage = Number(entry.damage);
     const replacementAt = entry.replacementAt === null ? null : Number(entry.replacementAt);
     progress[id] = {

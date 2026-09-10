@@ -12,6 +12,7 @@ export interface GameState {
   worldSeed: number;
   worldCells: WorldCell[];
   undergroundLayer: number;
+  mines: MineSite[];
   constructionQueue: ConstructionProject[];
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
@@ -21,10 +22,29 @@ export interface GameState {
 }
 
 export type ToolKind = 'hand' | 'pickaxe' | 'shovel' | 'axe';
-export type BlockType = 'grass' | 'dirt' | 'stone' | 'deepslate';
+export type BlockType = 'grass' | 'dirt' | 'stone' | 'deepslate' | 'bedrock';
 export type WorldDirection = 'north' | 'east' | 'south' | 'west';
 export type BiomeId = 'meadow' | 'forest' | 'desert' | 'mountain' | 'snow' | 'swamp' | 'crystal';
 export const WORLD_DIRECTIONS: WorldDirection[] = ['north', 'east', 'south', 'west'];
+
+export interface MineSite {
+  id: string;
+  x: number;
+  z: number;
+  cartCount: number;
+  storageCarts: number;
+  railLevel: number;
+  minerCount: number;
+  progressMs: number;
+  lastUpdatedAt: number;
+  completedTrips: number;
+}
+
+export interface MineProductionResult {
+  trips: number;
+  xp: number;
+  resources: Record<string, number>;
+}
 
 export interface WorldCell {
   x: number;
@@ -48,6 +68,14 @@ export interface BlockMiningProgress {
   replacementAt: number | null;
 }
 
+export const MINE_TRIP_DURATION_MS = 8_000;
+export const MINE_LAYER_NAMES = ['Stone Layer', 'Deepstone Layer', 'Bedrock Boundary'] as const;
+const MINE_ID = 'starter-mine';
+const MINE_CART_NODE_ID = 'automation-mine-carts';
+const MINE_STORAGE_CART_NODE_ID = 'automation-chest-minecart';
+const MINE_REDSTONE_NODE_ID = 'automation-redstone-rails';
+const MINE_MINER_NODE_ID = 'automation-miner-helper';
+
 export const TOOL_KIND_PROFILES = {
   hand: { kind: 'hand', name: 'Hand', harvestPower: 1, description: 'Gather simple blocks by hand.' },
   pickaxe: { kind: 'pickaxe', name: 'Pickaxe', harvestPower: 2, description: 'Breaks stone and reveals deeper resources.' },
@@ -60,6 +88,7 @@ export const BLOCK_DEFINITIONS = {
   dirt: { name: 'Dirt Block', requiredTool: 'shovel', resource: 'dirt', resourceName: 'Dirt', hardness: 0.5, description: 'Loose earth gathered from the first meadow.' },
   stone: { name: 'Cobblestone Block', requiredTool: 'pickaxe', resource: 'cobblestone', resourceName: 'Cobblestone', hardness: 1.5, description: 'A sturdy block that rewards a pickaxe.' },
   deepslate: { name: 'Deepslate Block', requiredTool: 'pickaxe', resource: 'deepslate', resourceName: 'Deepslate', hardness: 3, description: 'Dense deep-earth stone that rewards a strong pickaxe.' },
+  bedrock: { name: 'Bedrock Boundary', requiredTool: 'pickaxe', resource: 'bedrock', resourceName: 'Bedrock', hardness: Number.POSITIVE_INFINITY, description: 'A permanent boundary. It cannot be harvested.' },
 } as const;
 
 export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
@@ -117,6 +146,7 @@ export function freshState(now = Date.now()): GameState {
     worldSeed: 184731,
     worldCells: [{ x: 0, z: 0, biome: 'meadow' }],
     undergroundLayer: 0,
+    mines: [],
     constructionQueue: [],
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
@@ -160,6 +190,95 @@ export function expandToSurface3x3(state: GameState): void {
     for (let z = -1; z <= 1; z += 1) addWorldCell(state, x, z);
   }
   state.worldRank = Math.max(state.worldRank, 2);
+}
+
+function createMineSite(now: number): MineSite {
+  return {
+    id: MINE_ID,
+    x: 0,
+    z: 1,
+    cartCount: 1,
+    storageCarts: 0,
+    railLevel: 0,
+    minerCount: 0,
+    progressMs: 0,
+    lastUpdatedAt: now,
+    completedTrips: 0,
+  };
+}
+
+export function unlockStarterMine(state: GameState, now = Date.now()): boolean {
+  if (state.mines.length > 0) return false;
+  state.mines.push(createMineSite(now));
+  return true;
+}
+
+export function getMineLayer(state: GameState): number {
+  return Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
+}
+
+export function getMineCartCount(state: GameState): number {
+  const cartRanks = getSkillNodeRank(state, MINE_CART_NODE_ID);
+  return Math.max(1, 1 + cartRanks);
+}
+
+export function getMineTripDuration(state: GameState): number {
+  const railRanks = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID);
+  return Math.max(2_000, MINE_TRIP_DURATION_MS / (1 + railRanks * 0.25));
+}
+
+function addMineResource(result: MineProductionResult, resource: string, amount: number): void {
+  result.resources[resource] = (result.resources[resource] ?? 0) + amount;
+}
+
+export function advanceMineOperations(state: GameState, now = Date.now()): MineProductionResult {
+  const result: MineProductionResult = { trips: 0, xp: 0, resources: {} };
+  const layer = getMineLayer(state);
+  const tripDuration = getMineTripDuration(state);
+  state.mines.forEach((mine) => {
+    mine.cartCount = getMineCartCount(state);
+    mine.storageCarts = getSkillNodeRank(state, MINE_STORAGE_CART_NODE_ID) > 0 ? 1 : 0;
+    mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID);
+    mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
+    const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
+    const totalProgress = mine.progressMs + elapsed;
+    const completedCycles = Math.floor(totalProgress / tripDuration);
+    mine.progressMs = totalProgress - completedCycles * tripDuration;
+    mine.lastUpdatedAt = now;
+    if (completedCycles <= 0) return;
+
+    const cartTrips = completedCycles * mine.cartCount;
+    mine.completedTrips += cartTrips;
+    result.trips += cartTrips;
+    result.xp += cartTrips * (layer >= 1 ? 3 : 2);
+    addMineResource(result, layer >= 1 ? 'deepslate' : 'cobblestone', cartTrips);
+    if (getSkillNodeRank(state, 'materials-coal') > 0) {
+      addMineResource(result, 'coal', Math.floor(cartTrips / 4));
+    }
+    if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0) {
+      addMineResource(result, 'iron', Math.floor(cartTrips / 5));
+    }
+  });
+  Object.entries(result.resources).forEach(([resource, amount]) => {
+    state.resources[resource] = (state.resources[resource] ?? 0) + amount;
+  });
+  return result;
+}
+
+export function dispatchMineCart(state: GameState, now = Date.now()): MineProductionResult {
+  if (state.mines.length === 0) return { trips: 0, xp: 0, resources: {} };
+  state.mines.forEach((mine) => {
+    mine.lastUpdatedAt = now;
+    mine.progressMs += getMineTripDuration(state);
+  });
+  return advanceMineOperations(state, now);
+}
+
+export function collectOreBonus(state: GameState, resource: string, amount = 1): number {
+  const safeAmount = Math.max(0, Math.floor(amount));
+  if (safeAmount <= 0) return 0;
+  state.resources[resource] = (state.resources[resource] ?? 0) + safeAmount;
+  return safeAmount;
 }
 
 export const CONSTRUCTION_DURATIONS_MS: Record<ConstructionKind, number> = {
@@ -259,7 +378,8 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
     state.worldPower += 1;
   }
   if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'surface-3x3', now);
-  if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, 1);
+  if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, currentRank + 1);
+  if (node.id === 'world-cave-entrance') unlockStarterMine(state, now);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
@@ -465,7 +585,8 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         : Number(parsed.worldRank) > 0 ? 1 : 0,
       worldSeed: Math.max(1, Math.floor(Number(parsed.worldSeed) || base.worldSeed)),
       worldCells,
-      undergroundLayer: Math.min(1, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
+      undergroundLayer: Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
+      mines: parseMines(parsed.mines, now),
       constructionQueue: parseConstructionQueue(parsed.constructionQueue),
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
@@ -478,6 +599,28 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   } catch {
     return freshState(now);
   }
+}
+
+function parseMines(value: unknown, now: number): MineSite[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate): MineSite[] => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const entry = candidate as Partial<MineSite>;
+    if (entry.id !== MINE_ID) return [];
+    const lastUpdatedAt = Number(entry.lastUpdatedAt);
+    return [{
+      id: MINE_ID,
+      x: Number.isFinite(Number(entry.x)) ? Number(entry.x) : 0,
+      z: Number.isFinite(Number(entry.z)) ? Number(entry.z) : 1,
+      cartCount: Math.max(1, Math.floor(Number(entry.cartCount) || 1)),
+      storageCarts: Math.max(0, Math.floor(Number(entry.storageCarts) || 0)),
+      railLevel: Math.max(0, Math.floor(Number(entry.railLevel) || 0)),
+      minerCount: Math.max(0, Math.floor(Number(entry.minerCount) || 0)),
+      progressMs: Math.max(0, Number(entry.progressMs) || 0),
+      lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,
+      completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
+    }];
+  }).slice(0, 1);
 }
 
 function parseConstructionQueue(value: unknown): ConstructionProject[] {
@@ -534,12 +677,12 @@ function parseBlockProgress(value: unknown): Record<string, BlockMiningProgress>
   Object.entries(value).forEach(([id, candidate]) => {
     if (!candidate || typeof candidate !== 'object') return;
     const entry = candidate as Partial<BlockMiningProgress>;
-    if (!entry.type || (entry.type !== 'deepslate' && !BLOCK_PROGRESSION.includes(entry.type))) return;
+    if (!entry.type || !(['bedrock', 'deepslate', ...BLOCK_PROGRESSION] as string[]).includes(entry.type)) return;
     const damage = Number(entry.damage);
     const replacementAt = entry.replacementAt === null ? null : Number(entry.replacementAt);
     progress[id] = {
       type: entry.type,
-      ...(entry.stableType && (entry.stableType === 'deepslate' || BLOCK_PROGRESSION.includes(entry.stableType))
+      ...(entry.stableType && (entry.stableType === 'bedrock' || entry.stableType === 'deepslate' || BLOCK_PROGRESSION.includes(entry.stableType))
         ? { stableType: entry.stableType }
         : {}),
       damage: Number.isFinite(damage) ? Math.max(0, damage) : 0,
@@ -555,6 +698,7 @@ export function saveState(storage: Storage, state: GameState, now = Date.now()):
 }
 
 export function calculateOfflineXp(state: GameState, now = Date.now()): number {
+  if (state.mines.length > 0) return 0;
   const elapsedSeconds = Math.max(0, Math.min(8 * 60 * 60, (now - state.lastSavedAt) / 1000));
   if (elapsedSeconds < 10) return 0;
   return Math.floor(elapsedSeconds * getAutoRate(state) * getHarvestPower(state) * 0.5);

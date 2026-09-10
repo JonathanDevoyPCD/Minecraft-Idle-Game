@@ -93,6 +93,8 @@ button { font: inherit; }
 
 .construction-status { position: absolute; top: 118px; left: 28px; z-index: 2; width: min(230px, calc(100vw - 56px)); padding: 10px 12px; pointer-events: none; }
 .construction-status[hidden] { display: none; }
+.mine-status { position: absolute; top: 226px; left: 28px; z-index: 2; width: min(230px, calc(100vw - 56px)); padding: 10px 12px; pointer-events: none; }
+.mine-status[hidden] { display: none; }
 .construction-status-heading { display: flex; justify-content: space-between; gap: 8px; color: #937a55; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .construction-status-heading small { font-size: 9px; }
 .construction-status-heading span { color: #725f44; white-space: nowrap; }
@@ -254,6 +256,7 @@ button { font: inherit; }
   .topbar-actions { gap: 5px; }
   .skill-tree-button { width: 72px; padding: 0 5px; font-size: 9px; }
   .construction-status { top: 100px; left: 14px; width: min(210px, calc(100vw - 28px)); }
+  .mine-status { top: 204px; left: 14px; width: min(210px, calc(100vw - 28px)); }
   .player-card { min-width: 0; }
   .row strong { display: none; }
   .bottom-hud { gap: 6px; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addXp, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, xpRequired } from './game';
+import { addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getMineCartCount, getMiningStats, getNextBlockType, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, unlockStarterMine, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -210,5 +210,40 @@ describe('IdleCraft progression', () => {
   it('calculates offline gains at half efficiency', () => {
     const state = freshState(0);
     expect(calculateOfflineXp(state, 60_000)).toBe(30);
+  });
+
+  it('runs a permanent mine without changing the world cells', () => {
+    const state = freshState(1000);
+    const originalCells = [...state.worldCells];
+    expect(unlockStarterMine(state, 1000)).toBe(true);
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS - 1)).toMatchObject({ trips: 0, xp: 0 });
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    expect(result).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
+    expect(state.worldCells).toEqual(originalCells);
+    expect(state.mines[0].progressMs).toBe(0);
+  });
+
+  it('loads a saved mine operation', () => {
+    const saved = {
+      ...freshState(1000),
+      worldRank: 2,
+      undergroundLayer: 1,
+      mines: [{ id: 'starter-mine', x: 0, z: 1, cartCount: 1, storageCarts: 0, railLevel: 0, minerCount: 0, progressMs: 2000, lastUpdatedAt: 1000, completedTrips: 0 }],
+    };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    expect(loadState(storage, 2000).mines).toHaveLength(1);
+  });
+
+  it('scales mine production with carts and keeps bonus ore clickable', () => {
+    const state = freshState(1000);
+    state.skillRanks = { 'automation-mine-carts': 2 };
+    expect(getMineCartCount(state)).toBe(3);
+    unlockStarterMine(state, 1000);
+    const result = dispatchMineCart(state, 1000);
+    expect(result.trips).toBe(3);
+    expect(state.resources.cobblestone).toBe(3);
+    expect(collectOreBonus(state, 'diamond')).toBe(1);
+    expect(state.resources.diamond).toBe(1);
+    expect(dispatchMineCart(state, 1000).trips).toBe(3);
   });
 });

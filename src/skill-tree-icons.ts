@@ -49,6 +49,9 @@ const ICONS: Record<string, string> = {
   'materials-bedrock-boundary': 'bedrock.png',
 
   'automation-auto-strike': 'clock_00.png',
+  'automation-mine-carts': 'minecart.png',
+  'automation-chest-minecart': 'chest_minecart.png',
+  'automation-redstone-rails': 'rail.png',
   'automation-target-queue': 'compass_00.png',
   'automation-block-priority': 'target_top.png',
   'automation-tool-selection': 'iron_pickaxe.png',
@@ -65,7 +68,7 @@ const ICONS: Record<string, string> = {
   'world-adjacent-block': 'grass_block_top.png',
   'world-surface-3x3': 'grass_block_top.png',
   'world-underground-layer': 'deepslate.png',
-  'world-cave-entrance': 'pointed_dripstone.png',
+  'world-cave-entrance': 'minecart.png',
   'world-water-tile': 'water_bucket.png',
   'world-forest-patch': 'oak_sapling.png',
   'world-desert-patch': 'sand.png',

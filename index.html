@@ -46,13 +46,22 @@
         <div class="construction-track"><div id="construction-fill"></div></div>
       </section>
 
+      <section id="mine-status" class="mine-status panel" aria-live="polite" hidden>
+        <div class="construction-status-heading">
+          <small>MINE OPERATION</small>
+          <span id="mine-rate">0 trips/min</span>
+        </div>
+        <strong id="mine-label">Mine entrance locked</strong>
+        <div class="construction-track"><div id="mine-fill"></div></div>
+      </section>
+
       <section class="bottom-hud">
         <article class="stat-card panel">
           <span class="stat-icon">✦</span>
           <div><small>TOTAL XP</small><strong id="total-xp">0</strong></div>
         </article>
 
-        <article class="tool-card panel" aria-live="polite" aria-label="Current tool">
+        <article class="tool-card panel" aria-live="polite" aria-label="Current mining operation">
           <span id="tool-icon" class="tool-icon" aria-hidden="true">
             <svg viewBox="0 0 48 48" role="presentation">
               <g data-tool-icon="hand">
@@ -75,17 +84,17 @@
               </g>
             </svg>
           </span>
-          <div><small>CURRENT TOOL</small><strong id="current-tool">Hand</strong><span id="current-tool-hint">Point at a block</span></div>
+          <div><small>MINE OPERATION</small><strong id="current-tool">Mine Cart</strong><span id="current-tool-hint">Unlock a mine entrance</span></div>
         </article>
 
         <button id="mine-button" class="mine-button" type="button">
-          <span class="mine-icon">✊</span>
-          <span><strong>MINE BLOCK</strong><small>Click or press SPACE</small></span>
+          <span class="mine-icon">▰</span>
+          <span><strong>DISPATCH CART</strong><small>Click or press SPACE</small></span>
         </button>
 
         <article class="stat-card panel rate-card">
           <span class="stat-icon">⚡</span>
-          <div><small>AUTO RATE</small><strong><span id="auto-rate">1.0</span>/sec</strong></div>
+          <div><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
         </article>
       </section>
 

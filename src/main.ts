@@ -4,34 +4,25 @@ import { CloudCell, createCloudGeometry } from './cloud-geometry';
 import { AudioManager } from './audio';
 import {
   SAVE_KEY,
-  SPEED_RATES,
-  BLOCK_DEFINITIONS,
-  type BlockMiningProgress,
   addXp,
+  advanceMineOperations,
   buySkillNode,
-  buyWorldExpansion,
-  buySpeedUpgrade,
-  buyToolUpgrade,
   canAffordSkillNode,
   calculateOfflineXp,
   completeConstructionProjects,
-  getAutoRate,
-  getContextTool,
+  collectOreBonus,
+  dispatchMineCart,
   getExpansionChunkOrigin,
+  getMineCartCount,
+  getMineLayer,
+  getMineTripDuration,
   getWorldSurfaceCells,
-  getTool,
   getSkillNodeRank,
-  getStableBlockType,
-  getWorldTier,
-  getMiningStats,
-  harvestResource,
   loadState,
   saveState,
-  TOOL_TIERS,
-  TOOL_KIND_PROFILES,
   WORLD_DIRECTIONS,
-  WORLD_TIERS,
   type BlockType,
+  type MineSite,
   type WorldDirection,
   xpRequired,
 } from './game';
@@ -113,6 +104,15 @@ function loadBlockTexture(fileName: string): THREE.Texture {
   return texture;
 }
 
+function loadAssetTexture(path: string): THREE.Texture {
+  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/${path}`);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
 const grassTexture = loadBlockTexture('grass_block_top.png');
 const grassSideTexture = loadBlockTexture('grass_block_side.png');
 const dirtTexture = loadBlockTexture('dirt.png');
@@ -122,6 +122,19 @@ const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughnes
 const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x858d8f, roughness: 1 });
 const deepslateTexture = loadBlockTexture('deepslate.png');
 const deepslateMaterial = new THREE.MeshStandardMaterial({ map: deepslateTexture, roughness: 1 });
+const bedrockTexture = loadBlockTexture('bedrock.png');
+const bedrockMaterial = new THREE.MeshStandardMaterial({ map: bedrockTexture, roughness: 1 });
+const railTexture = loadBlockTexture('rail.png');
+const poweredRailTexture = loadBlockTexture('powered_rail.png');
+const oakLogTexture = loadBlockTexture('oak_log.png');
+const minecartTexture = loadAssetTexture('items/minecart.png');
+const chestMinecartTexture = loadAssetTexture('items/chest_minecart.png');
+const oreTextures = {
+  coal: loadBlockTexture('coal_ore.png'),
+  iron: loadBlockTexture('iron_ore.png'),
+  gold: loadBlockTexture('gold_ore.png'),
+  diamond: loadBlockTexture('diamond_ore.png'),
+} as const;
 
 interface BlockCoordinate {
   x: number;
@@ -136,24 +149,7 @@ interface BlockNode {
   requiredWorldRank: number;
   requiredDirection?: WorldDirection;
   mesh: THREE.Mesh;
-  hoverOutline: THREE.LineSegments;
-  destroyOverlay: THREE.Mesh;
-  pulse: number;
-  damage: number;
-  lastStrikeAt: number;
-  replacementAt: number | null;
 }
-
-const REPLACEMENT_DELAY_MS = 10_000;
-const DESTROY_STAGE_COUNT = 10;
-const destroyTextures = Array.from({ length: DESTROY_STAGE_COUNT }, (_, stage) => loadBlockTexture(`destroy_stage_${stage}.png`));
-const destroyMaterials = destroyTextures.map((texture) => Array.from({ length: 6 }, () => new THREE.MeshBasicMaterial({
-  map: texture,
-  transparent: true,
-  opacity: 0.95,
-  depthWrite: false,
-  side: THREE.FrontSide,
-})));
 
 function createBlockMesh(type: BlockType): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), getBlockMaterials(type));
@@ -170,25 +166,9 @@ function getBlockMaterials(type: BlockType): THREE.Material[] {
       ? [dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial, dirtMaterial]
       : type === 'stone'
         ? [stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial, stoneMaterial]
-        : [deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial];
-}
-
-function updateDestroyOverlay(node: BlockNode): void {
-  const stats = getMiningStats(state, node.type);
-  const progress = stats.maxDamage > 0 ? node.damage / stats.maxDamage : 0;
-  const stage = Math.min(DESTROY_STAGE_COUNT - 1, Math.floor(progress * DESTROY_STAGE_COUNT));
-  node.destroyOverlay.material = destroyMaterials[stage];
-  node.destroyOverlay.visible = node.mesh.visible && node.damage > 0 && node.replacementAt === null;
-}
-
-function persistBlockProgress(node: BlockNode): void {
-  const progress: BlockMiningProgress = {
-    type: node.type,
-    stableType: node.type,
-    damage: node.damage,
-    replacementAt: node.replacementAt,
-  };
-  state.blockProgress[node.id] = progress;
+        : type === 'deepslate'
+          ? [deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial, deepslateMaterial]
+          : [bedrockMaterial, bedrockMaterial, bedrockMaterial, bedrockMaterial, bedrockMaterial, bedrockMaterial];
 }
 
 function createBlockNode(
@@ -198,42 +178,15 @@ function createBlockNode(
   requiredWorldRank: number,
   requiredDirection?: WorldDirection,
 ): BlockNode {
-  const savedProgress = state.blockProgress[id];
-  // Older saves stored the temporary Dirt → Grass → Stone progression in
-  // `type`. New saves carry stableType, so authored terrain remains intact.
-  const initialType = getStableBlockType(type, savedProgress);
-  const mesh = createBlockMesh(initialType);
-  const destroyOverlay = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004, BLOCK_SIZE * 1.004), destroyMaterials[0]);
-  destroyOverlay.visible = false;
-  destroyOverlay.renderOrder = 11;
-  mesh.add(destroyOverlay);
+  const mesh = createBlockMesh(type);
   const node = {
     id,
-    type: initialType,
+    type,
     coordinate,
     requiredWorldRank,
     requiredDirection,
     mesh,
-    hoverOutline: new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.1,
-        depthTest: false,
-        depthWrite: false,
-      }),
-    ),
-    destroyOverlay,
-    pulse: 0,
-    damage: Math.max(0, savedProgress?.damage ?? 0),
-    lastStrikeAt: savedProgress?.damage ? Date.now() : 0,
-    replacementAt: savedProgress?.replacementAt ?? null,
   } satisfies BlockNode;
-  node.hoverOutline.visible = false;
-  node.hoverOutline.scale.setScalar(1.02);
-  node.hoverOutline.renderOrder = 10;
-  node.mesh.add(node.hoverOutline);
   node.mesh.position.set(
     coordinate.x * BLOCK_SIZE,
     coordinate.y * BLOCK_SIZE,
@@ -262,7 +215,7 @@ function generateMeadowChunk(
       const x = origin.x + localX;
       const z = origin.z + localZ;
       if (skipOriginColumn && x === 0 && z === 0) continue;
-      for (const [y, type] of [[0, 'grass'], [-1, 'dirt'], [-2, 'stone']] as const) {
+      for (const [y, type] of [[0, 'grass'], [-1, 'dirt'], [-2, 'stone'], [-3, 'deepslate'], [-4, 'deepslate'], [-5, 'bedrock']] as const) {
         const surfaceNoise = Math.abs(Math.sin(seed * 0.001 + x * 12.9898 + z * 78.233));
         const surfaceType = y === 0 && requiredWorldRank > 1 && surfaceNoise > 0.93 ? 'dirt' : type;
         cells.push({ type: surfaceType, coordinate: { x, y, z }, requiredWorldRank, requiredDirection });
@@ -283,6 +236,8 @@ function generateWorldLayout(): GeneratedBlock[] {
       cells.push({ type: 'dirt', coordinate: { x, y: -1, z }, requiredWorldRank: 2 });
       cells.push({ type: 'stone', coordinate: { x, y: -2, z }, requiredWorldRank: 2 });
       cells.push({ type: 'deepslate', coordinate: { x, y: -3, z }, requiredWorldRank: 2 });
+      cells.push({ type: 'deepslate', coordinate: { x, y: -4, z }, requiredWorldRank: 2 });
+      cells.push({ type: 'bedrock', coordinate: { x, y: -5, z }, requiredWorldRank: 2 });
     }
   }
   WORLD_DIRECTIONS.forEach((direction) => {
@@ -301,70 +256,38 @@ const blockNodes: BlockNode[] = generateWorldLayout().map(({ type, coordinate, r
   const { x, y, z } = coordinate;
   return createBlockNode(`block-${x}-${y}-${z}-${requiredDirection ?? 'core'}`, type, coordinate, requiredWorldRank, requiredDirection);
 });
-const blockByMesh = new Map<THREE.Object3D, BlockNode>(blockNodes.map((node) => [node.mesh, node]));
-const miningTargets: THREE.Mesh[] = [];
 
-interface BreakParticle {
+interface OreNode {
+  id: string;
+  resource: 'coal' | 'iron' | 'gold' | 'diamond';
+  requiredLayer: number;
+  requiredSkill: string;
   mesh: THREE.Mesh;
-  velocity: THREE.Vector3;
-  life: number;
-  maxLife: number;
+  basePosition: THREE.Vector3;
+  pulse: number;
 }
 
-const breakParticles: BreakParticle[] = [];
-const particleGeometry = new THREE.BoxGeometry(0.07, 0.07, 0.07);
-const particleColours: Record<BlockType, readonly number[]> = {
-  grass: [0x73502e, 0x8f6735, 0x5a8c39],
-  dirt: [0x73502e, 0x8f6735, 0x5a8c39],
-  stone: [0x8f999a, 0x697476, 0xabb4b4],
-  deepslate: [0x3c454b, 0x59636a, 0x737d81],
-};
+const oreNodeDefinitions: ReadonlyArray<Pick<OreNode, 'id' | 'resource' | 'requiredLayer' | 'requiredSkill'> & { position: [number, number, number] }> = [
+  { id: 'ore-coal-0', resource: 'coal', requiredLayer: 1, requiredSkill: 'materials-coal', position: [-0.26, -1.9, 0.47] },
+  { id: 'ore-iron-0', resource: 'iron', requiredLayer: 1, requiredSkill: 'materials-iron', position: [0.24, -2.2, 0.47] },
+  { id: 'ore-gold-0', resource: 'gold', requiredLayer: 2, requiredSkill: 'materials-gold', position: [-0.25, -2.83, 0.47] },
+  { id: 'ore-diamond-0', resource: 'diamond', requiredLayer: 2, requiredSkill: 'materials-diamond', position: [0.27, -3.16, 0.47] },
+];
 
-function spawnBreakParticles(node: BlockNode): void {
-  const origin = node.mesh.getWorldPosition(new THREE.Vector3());
-  const colours = particleColours[node.type];
-  for (let index = 0; index < 8; index += 1) {
-    const material = new THREE.MeshBasicMaterial({
-      color: colours[index % colours.length],
-      transparent: true,
-      depthWrite: false,
-    });
-    const particle = new THREE.Mesh(particleGeometry, material);
-    particle.position.copy(origin).add(new THREE.Vector3(
-      (Math.random() - 0.5) * BLOCK_SIZE * 0.7,
-      (Math.random() - 0.25) * BLOCK_SIZE * 0.45,
-      (Math.random() - 0.5) * BLOCK_SIZE * 0.7,
-    ));
-    scene.add(particle);
-    breakParticles.push({
-      mesh: particle,
-      velocity: new THREE.Vector3(
-        (Math.random() - 0.5) * 0.9,
-        1.1 + Math.random() * 0.9,
-        (Math.random() - 0.5) * 0.9,
-      ),
-      life: 0.8 + Math.random() * 0.35,
-      maxLife: 1.15,
-    });
-  }
-}
-
-function updateBreakParticles(delta: number): void {
-  for (let index = breakParticles.length - 1; index >= 0; index -= 1) {
-    const particle = breakParticles[index];
-    particle.life -= delta;
-    if (particle.life <= 0) {
-      scene.remove(particle.mesh);
-      (particle.mesh.material as THREE.Material).dispose();
-      breakParticles.splice(index, 1);
-      continue;
-    }
-    particle.velocity.y -= 3.2 * delta;
-    particle.mesh.position.addScaledVector(particle.velocity, delta);
-    particle.mesh.scale.setScalar(Math.max(0.01, particle.life / particle.maxLife));
-    (particle.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, particle.life * 2.5);
-  }
-}
+const oreNodes: OreNode[] = oreNodeDefinitions.map((definition) => {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(BLOCK_SIZE * 0.18, BLOCK_SIZE * 0.18, BLOCK_SIZE * 0.08),
+    new THREE.MeshStandardMaterial({ map: oreTextures[definition.resource], roughness: 1 }),
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  world.add(mesh);
+  const basePosition = new THREE.Vector3(...definition.position).multiplyScalar(BLOCK_SIZE);
+  mesh.position.copy(basePosition);
+  return { ...definition, mesh, basePosition, pulse: 0 };
+});
+const oreByMesh = new Map<THREE.Object3D, OreNode>(oreNodes.map((node) => [node.mesh, node]));
+const oreTargets: THREE.Mesh[] = [];
 
 function updateWorldFloor(): void {
   const visibleNodes = blockNodes.filter((node) => node.mesh.visible);
@@ -395,17 +318,105 @@ function updateWorldScene(): void {
     const surfaceCellUnlocked = unlockedSurfaceCells.has(`${node.coordinate.x},${node.coordinate.z}`);
     const layerUnlocked = node.coordinate.y === 0
       || (state.worldRank >= 2 && node.coordinate.y >= -2)
-      || (state.worldRank >= 2 && state.undergroundLayer >= 1 && node.coordinate.y === -3);
+      || (state.worldRank >= 2 && state.undergroundLayer >= 1 && node.coordinate.y === -3)
+      || (state.worldRank >= 2 && state.undergroundLayer >= 2 && node.coordinate.y <= -4);
     node.mesh.visible = isAuthoredExpansion
-      ? state.worldRank >= node.requiredWorldRank && directionUnlocked && node.replacementAt === null
-      : surfaceCellUnlocked && layerUnlocked && node.replacementAt === null;
-    updateDestroyOverlay(node);
+      ? state.worldRank >= node.requiredWorldRank && directionUnlocked
+      : surfaceCellUnlocked && layerUnlocked;
   });
-  miningTargets.length = 0;
-  blockNodes.forEach((node) => {
-    if (node.mesh.visible) miningTargets.push(node.mesh);
+  oreTargets.length = 0;
+  oreNodes.forEach((node) => {
+    const visible = state.mines.length > 0
+      && state.worldRank >= 2
+      && state.undergroundLayer >= node.requiredLayer
+      && getSkillNodeRank(state, node.requiredSkill) > 0;
+    node.mesh.visible = visible;
+    if (visible) oreTargets.push(node.mesh);
   });
   updateWorldFloor();
+}
+
+interface MineVisual {
+  group: THREE.Group;
+  carts: THREE.Mesh[];
+}
+
+const mineVisual: MineVisual = { group: new THREE.Group(), carts: [] };
+world.add(mineVisual.group);
+
+function createMineVisual(): void {
+  const opening = new THREE.Mesh(
+    new THREE.BoxGeometry(BLOCK_SIZE * 1.55, BLOCK_SIZE * 1.45, BLOCK_SIZE * 0.14),
+    new THREE.MeshBasicMaterial({ color: 0x182329 }),
+  );
+  opening.position.set(0, BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.82);
+  mineVisual.group.add(opening);
+
+  const woodMaterial = new THREE.MeshStandardMaterial({ map: oakLogTexture, roughness: 1 });
+  const postGeometry = new THREE.BoxGeometry(BLOCK_SIZE * 0.2, BLOCK_SIZE * 1.25, BLOCK_SIZE * 0.2);
+  [-0.72, 0.72].forEach((x) => {
+    const post = new THREE.Mesh(postGeometry, woodMaterial);
+    post.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 1.05, BLOCK_SIZE * 0.72);
+    post.castShadow = true;
+    mineVisual.group.add(post);
+  });
+  const header = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 1.85, BLOCK_SIZE * 0.2, BLOCK_SIZE * 0.22), woodMaterial);
+  header.position.set(0, BLOCK_SIZE * 1.7, BLOCK_SIZE * 0.72);
+  header.castShadow = true;
+  mineVisual.group.add(header);
+
+  const sleeperMaterial = new THREE.MeshStandardMaterial({ color: 0x855235, roughness: 1 });
+  const railMaterial = new THREE.MeshStandardMaterial({ map: railTexture, roughness: 0.85 });
+  const poweredMaterial = new THREE.MeshStandardMaterial({ map: poweredRailTexture, roughness: 0.85 });
+  [-0.2, 0.2].forEach((x) => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 0.08, BLOCK_SIZE * 0.045, BLOCK_SIZE * 3.1), railMaterial);
+    rail.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 0.51, BLOCK_SIZE * 2.05);
+    mineVisual.group.add(rail);
+  });
+  for (let index = 0; index < 5; index += 1) {
+    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(BLOCK_SIZE * 0.78, BLOCK_SIZE * 0.05, BLOCK_SIZE * 0.12), index === 2 ? poweredMaterial : sleeperMaterial);
+    sleeper.position.set(0, BLOCK_SIZE * 0.49, BLOCK_SIZE * (0.95 + index * 0.55));
+    mineVisual.group.add(sleeper);
+  }
+  mineVisual.group.position.set(0, 0, 0);
+  mineVisual.group.visible = false;
+}
+
+createMineVisual();
+
+function syncMineCartMeshes(cartCount: number, storageCarts: number): void {
+  const wanted = Math.max(1, cartCount) + storageCarts;
+  while (mineVisual.carts.length < wanted) {
+    const isStorage = mineVisual.carts.length >= cartCount;
+    const cart = new THREE.Mesh(
+      new THREE.BoxGeometry(BLOCK_SIZE * 0.48, BLOCK_SIZE * 0.26, BLOCK_SIZE * 0.42),
+      new THREE.MeshStandardMaterial({ map: isStorage ? chestMinecartTexture : minecartTexture, roughness: 1 }),
+    );
+    cart.castShadow = true;
+    mineVisual.group.add(cart);
+    mineVisual.carts.push(cart);
+  }
+  mineVisual.carts.forEach((cart, index) => {
+    cart.visible = index < wanted;
+  });
+}
+
+function updateMineVisual(): void {
+  const mine: MineSite | undefined = state.mines[0];
+  mineVisual.group.visible = Boolean(mine);
+  if (!mine) return;
+  syncMineCartMeshes(mine.cartCount, mine.storageCarts);
+  const tripDuration = getMineTripDuration(state);
+  const baseProgress = mine.progressMs / tripDuration;
+  const startZ = BLOCK_SIZE * 1.05;
+  const endZ = BLOCK_SIZE * 2.85;
+  mineVisual.carts.forEach((cart, index) => {
+    if (!cart.visible) return;
+    const phase = (baseProgress + index * 0.27) % 1;
+    const travel = phase < 0.5 ? phase * 2 : 2 - phase * 2;
+    cart.position.set((index % 2 === 0 ? -0.2 : 0.2) * BLOCK_SIZE, BLOCK_SIZE * 0.68, startZ + (endZ - startZ) * travel);
+    cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
+  });
 }
 
 const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
@@ -455,8 +466,8 @@ const PAN_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown'
 let isOrbiting = false;
 let lastOrbitX = 0;
 let lastOrbitY = 0;
-let lastAutoHit = performance.now();
-const offlineXp = calculateOfflineXp(state);
+const initialMineResult = advanceMineOperations(state, Date.now());
+const offlineXp = initialMineResult.trips > 0 ? initialMineResult.xp : calculateOfflineXp(state);
 updateWorldScene();
 
 const levelEl = document.querySelector('#level')!;
@@ -465,19 +476,6 @@ const xpFillEl = document.querySelector<HTMLElement>('#xp-fill')!;
 const totalXpEl = document.querySelector('#total-xp')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
 const pointsEl = document.querySelector('#upgrade-points')!;
-const speedButton = document.querySelector<HTMLButtonElement>('#speed-upgrade')!;
-const toolNameEl = document.querySelector('#tool-name')!;
-const toolRankEl = document.querySelector('#tool-rank')!;
-const toolDescriptionEl = document.querySelector('#tool-description')!;
-const toolButton = document.querySelector<HTMLButtonElement>('#tool-upgrade')!;
-const worldNameEl = document.querySelector('#world-name')!;
-const worldRankEl = document.querySelector('#world-rank')!;
-const worldDescriptionEl = document.querySelector('#world-description')!;
-const expansionDirectionsEl = document.querySelector<HTMLElement>('#expansion-directions')!;
-const directionButtons = document.querySelectorAll<HTMLButtonElement>('[data-expansion-direction]');
-const worldButton = document.querySelector<HTMLButtonElement>('#world-upgrade')!;
-const currentRateEl = document.querySelector('#current-rate')!;
-const nextRateEl = document.querySelector('#next-rate')!;
 const totalXpCard = totalXpEl.closest<HTMLElement>('.stat-card')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
@@ -487,8 +485,13 @@ const constructionStatusEl = document.querySelector<HTMLElement>('#construction-
 const constructionLabelEl = document.querySelector<HTMLElement>('#construction-label')!;
 const constructionTimeEl = document.querySelector<HTMLElement>('#construction-time')!;
 const constructionFillEl = document.querySelector<HTMLElement>('#construction-fill')!;
+const mineStatusEl = document.querySelector<HTMLElement>('#mine-status')!;
+const mineLabelEl = document.querySelector<HTMLElement>('#mine-label')!;
+const mineRateEl = document.querySelector<HTMLElement>('#mine-rate')!;
+const mineFillEl = document.querySelector<HTMLElement>('#mine-fill')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
+const mineButton = document.querySelector<HTMLButtonElement>('#mine-button')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
 const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
 const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-slider')!;
@@ -516,9 +519,8 @@ const skillTreeZoomOutButton = document.querySelector<HTMLButtonElement>('#skill
 const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-tree-zoom-in')!;
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
-let hoveredNode: BlockNode | null = null;
+let hoveredOre: OreNode | null = null;
 let xpFlashTimeout = 0;
-let selectedExpansionDirection: WorldDirection = 'north';
 const SKILL_TREE_STAGE_SIZE = 1600;
 const SKILL_TREE_CENTER = SKILL_TREE_STAGE_SIZE / 2;
 const SKILL_TREE_MIN_ZOOM = 0.18;
@@ -539,14 +541,18 @@ if (offlineXp > 0) {
 }
 
 function updateCurrentTool(): void {
-  const profile = hoveredNode ? getContextTool(state, hoveredNode.type) : TOOL_KIND_PROFILES.hand;
-  currentToolEl.textContent = profile.name;
-  currentToolHintEl.textContent = hoveredNode
-    ? `${BLOCK_DEFINITIONS[hoveredNode.type].resourceName} · ${Math.round(hoveredNode.damage / getMiningStats(state, hoveredNode.type).maxDamage * 100)}%`
-    : 'Point at a block';
-  toolIconGroups.forEach((group) => {
-    group.style.display = group.dataset.toolIcon === profile.kind ? '' : 'none';
-  });
+  if (hoveredOre) {
+    currentToolEl.textContent = 'Bonus Ore';
+    currentToolHintEl.textContent = `Click for +1 ${hoveredOre.resource}`;
+  } else if (state.mines.length > 0) {
+    const mine = state.mines[0];
+    currentToolEl.textContent = `${mine.cartCount} Mine Cart${mine.cartCount === 1 ? '' : 's'}`;
+    currentToolHintEl.textContent = `${getMineLayer(state) === 0 ? 'Stone' : 'Deepstone'} layer · passive mining`;
+  } else {
+    currentToolEl.textContent = 'Mine Cart';
+    currentToolHintEl.textContent = 'Unlock a mine entrance';
+  }
+  toolIconGroups.forEach((group) => { group.style.display = 'none'; });
 }
 
 function updateAudioUi(): void {
@@ -828,6 +834,24 @@ function updateConstructionUi(now = Date.now()): void {
   constructionStatusEl.hidden = false;
 }
 
+function updateMineUi(): void {
+  const mine = state.mines[0];
+  if (!mine) {
+    mineStatusEl.hidden = true;
+    mineButton.disabled = true;
+    return;
+  }
+  const tripDuration = getMineTripDuration(state);
+  const cartCount = getMineCartCount(state);
+  const tripsPerMinute = cartCount * 60_000 / tripDuration;
+  mineStatusEl.hidden = false;
+  mineLabelEl.textContent = `${cartCount} cart${cartCount === 1 ? '' : 's'} · ${getMineLayer(state) === 0 ? 'Stone Layer' : 'Deepstone Layer'}`;
+  mineRateEl.textContent = `${tripsPerMinute.toFixed(1)} trips/min`;
+  mineFillEl.style.width = `${Math.min(100, mine.progressMs / tripDuration * 100)}%`;
+  mineButton.disabled = false;
+  updateMineVisual();
+}
+
 function purchaseSelectedSkillNode(): void {
   if (!selectedSkillNodeId) return;
   const node = SKILL_TREE_NODES.find((entry) => entry.id === selectedSkillNodeId);
@@ -842,66 +866,16 @@ function purchaseSelectedSkillNode(): void {
 
 function updateUi(): void {
   const required = xpRequired(state.level);
-  const rate = getAutoRate(state);
+  const rate = state.mines.length > 0 ? getMineCartCount(state) * 1000 / getMineTripDuration(state) : 0;
   levelEl.textContent = String(state.level);
   xpLabelEl.textContent = `${state.xp.toLocaleString()} / ${required.toLocaleString()} XP`;
   xpFillEl.style.width = `${Math.min(100, state.xp / required * 100)}%`;
   totalXpEl.textContent = state.totalXp.toLocaleString();
-  autoRateEl.textContent = rate.toFixed(1);
+  autoRateEl.textContent = rate.toFixed(2);
   pointsEl.textContent = `${state.craftingPoints} CP`;
-  currentRateEl.textContent = rate.toFixed(1);
-  const maxed = state.speedRank >= SPEED_RATES.length - 1;
-  nextRateEl.textContent = maxed ? 'MAX' : SPEED_RATES[state.speedRank + 1].toFixed(1);
-  speedButton.disabled = state.level < 2 || state.craftingPoints < 1 || maxed;
-  speedButton.textContent = maxed
-    ? 'Maximum speed reached'
-    : state.level < 2
-      ? 'Unlock at Level 2 · Costs 1 CP'
-      : state.craftingPoints < 1
-        ? 'Requires 1 Crafting Point'
-        : 'Upgrade Auto Rate · Costs 1 CP';
-  const tool = getTool(state);
-  const nextTool = TOOL_TIERS[state.toolRank + 1];
-  const toolMaxed = !nextTool;
-  toolNameEl.textContent = tool.name;
-  toolRankEl.textContent = `TIER ${state.toolRank}`;
-  toolDescriptionEl.textContent = tool.description;
-  toolButton.disabled = toolMaxed || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost;
-  toolButton.textContent = toolMaxed
-    ? 'All available tools unlocked'
-    : state.level < nextTool.requiredLevel
-      ? `Unlock at Level ${nextTool.requiredLevel} · Costs ${nextTool.cost} CP`
-      : state.craftingPoints < nextTool.cost
-        ? `Requires ${nextTool.cost} Crafting Point${nextTool.cost === 1 ? '' : 's'}`
-        : `Unlock ${nextTool.name} · Costs ${nextTool.cost} CP`;
-  const worldTier = getWorldTier(state);
-  const nextWorld = WORLD_TIERS[state.worldRank + 1];
-  const worldMaxed = !nextWorld;
-  worldNameEl.textContent = worldTier.name;
-  worldRankEl.textContent = `TIER ${state.worldRank}`;
-  worldDescriptionEl.textContent = worldTier.description;
-  worldButton.disabled = worldMaxed || state.level < nextWorld.requiredLevel || state.craftingPoints < nextWorld.cost;
-  worldButton.textContent = worldMaxed
-    ? 'All available expansions unlocked'
-    : state.level < nextWorld.requiredLevel
-      ? `Unlock at Level ${nextWorld.requiredLevel} · Costs ${nextWorld.cost} CP`
-      : state.craftingPoints < nextWorld.cost
-        ? `Requires ${nextWorld.cost} Crafting Point${nextWorld.cost === 1 ? '' : 's'}`
-        : `Expand to ${nextWorld.name} · Costs ${nextWorld.cost} CP`;
-  const canChooseDirection = state.worldRank >= 1 && !worldMaxed;
-  const availableDirections = WORLD_DIRECTIONS.filter((direction) => !state.expansionDirections.includes(direction));
-  if (!availableDirections.includes(selectedExpansionDirection)) {
-    selectedExpansionDirection = availableDirections[0] ?? 'north';
-  }
-  expansionDirectionsEl.hidden = !canChooseDirection;
-  directionButtons.forEach((button) => {
-    const direction = button.dataset.expansionDirection as WorldDirection;
-    const used = state.expansionDirections.includes(direction);
-    button.disabled = !canChooseDirection || used;
-    button.setAttribute('aria-pressed', String(canChooseDirection && !used && direction === selectedExpansionDirection));
-  });
   updateCurrentTool();
   updateConstructionUi();
+  updateMineUi();
 }
 
 function updateConstructionState(now: number): void {
@@ -912,6 +886,7 @@ function updateConstructionState(now: number): void {
     saveState(localStorage, state);
   }
   updateConstructionUi(now);
+  updateMineUi();
 }
 
 function flashXpCard(): void {
@@ -922,43 +897,28 @@ function flashXpCard(): void {
   xpFlashTimeout = window.setTimeout(() => totalXpCard.classList.remove('is-gaining'), 480);
 }
 
-function getActiveMiningNode(): BlockNode | null {
-  if (hoveredNode?.mesh.visible && hoveredNode.replacementAt === null) return hoveredNode;
-  return blockNodes.find((node) => node.mesh.visible && node.replacementAt === null) ?? null;
+function getOreAtPointer(event: PointerEvent): OreNode | null {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(oreTargets, false)[0];
+  return hit ? oreByMesh.get(hit.object) ?? null : null;
 }
 
-function breakBlock(node: BlockNode, now: number): void {
-  const brokenType = node.type;
-  harvestResource(state, brokenType);
-  spawnBreakParticles(node);
-  audioManager.playMiningSound('break');
-  // Harvesting a block must not transform the authored world. The same
-  // terrain material returns after the replacement timer expires.
-  node.type = brokenType;
-  node.damage = 0;
-  node.lastStrikeAt = 0;
-  node.replacementAt = now + REPLACEMENT_DELAY_MS;
-  node.mesh.visible = false;
-  node.destroyOverlay.visible = false;
-  persistBlockProgress(node);
-  if (hoveredNode === node) setHoveredNode(null);
-  updateWorldScene();
+function setHoveredOre(nextOre: OreNode | null): void {
+  if (nextOre === hoveredOre) return;
+  hoveredOre = nextOre;
+  updateCurrentTool();
 }
 
-function mine(node: BlockNode | null): void {
-  if (!node || !node.mesh.visible || node.replacementAt !== null) return;
-  const now = Date.now();
-  if (node.lastStrikeAt > 0 && now - node.lastStrikeAt > 1000) node.damage = 0;
-  node.lastStrikeAt = now;
-  const stats = getMiningStats(state, node.type);
-  const levelUps = addXp(state, stats.strikeDamage);
-  node.damage = Math.min(stats.maxDamage, node.damage + stats.strikeDamage);
+function collectOreNode(node: OreNode): void {
+  if (!node.mesh.visible) return;
+  collectOreBonus(state, node.resource);
   node.pulse = 1;
-  if (node.damage < stats.maxDamage) audioManager.playMiningSound(node.type === 'stone' ? 'stone' : 'grass');
-  updateDestroyOverlay(node);
-  persistBlockProgress(node);
+  audioManager.playMiningSound('stone');
   flashXpCard();
-  if (node.damage >= stats.maxDamage) breakBlock(node, now);
+  const levelUps = addXp(state, 1);
   if (levelUps > 0) {
     document.body.classList.add('level-up');
     window.setTimeout(() => document.body.classList.remove('level-up'), 900);
@@ -967,55 +927,14 @@ function mine(node: BlockNode | null): void {
   saveState(localStorage, state);
 }
 
-function updateBlockReplacements(now: number): void {
-  let didReplace = false;
-  blockNodes.forEach((node) => {
-    if (node.replacementAt === null || now < node.replacementAt) return;
-    node.replacementAt = null;
-    node.damage = 0;
-    node.lastStrikeAt = 0;
-    node.mesh.material = getBlockMaterials(node.type);
-    persistBlockProgress(node);
-    didReplace = true;
-  });
-  if (didReplace) {
-    updateWorldScene();
-    updateUi();
-    saveState(localStorage, state);
-  }
-}
-
-function resetStaleBlockDamage(now: number): void {
-  let didReset = false;
-  blockNodes.forEach((node) => {
-    if (node.damage <= 0 || node.lastStrikeAt <= 0 || now - node.lastStrikeAt <= 1000) return;
-    node.damage = 0;
-    node.lastStrikeAt = 0;
-    updateDestroyOverlay(node);
-    persistBlockProgress(node);
-    didReset = true;
-  });
-  if (didReset) {
-    updateUi();
-    saveState(localStorage, state);
-  }
-}
-
-function getBlockAtPointer(event: PointerEvent): BlockNode | null {
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObjects(miningTargets, false)[0];
-  return hit ? blockByMesh.get(hit.object) ?? null : null;
-}
-
-function setHoveredNode(nextNode: BlockNode | null): void {
-  if (nextNode === hoveredNode) return;
-  if (hoveredNode) hoveredNode.hoverOutline.visible = false;
-  hoveredNode = nextNode;
-  if (hoveredNode) hoveredNode.hoverOutline.visible = true;
-  updateCurrentTool();
+function dispatchCart(): void {
+  const result = dispatchMineCart(state);
+  if (result.trips <= 0) return;
+  addXp(state, result.xp);
+  flashXpCard();
+  audioManager.playMiningSound('stone');
+  updateUi();
+  saveState(localStorage, state);
 }
 
 function beginOrbit(event: PointerEvent): void {
@@ -1032,17 +951,15 @@ function beginOrbit(event: PointerEvent): void {
 }
 
 function updateHoverTarget(event: PointerEvent): void {
-  setHoveredNode(getBlockAtPointer(event));
+  setHoveredOre(getOreAtPointer(event));
 }
 
 canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
-    // The hover raycast is the source of truth for left-click handoff. This
-    // keeps a visible block hover from falling back to camera orbit on press.
-    const node = hoveredNode ?? getBlockAtPointer(event);
-    if (node) {
-      setHoveredNode(node);
-      mine(node);
+    const ore = hoveredOre ?? getOreAtPointer(event);
+    if (ore) {
+      setHoveredOre(ore);
+      collectOreNode(ore);
     } else {
       beginOrbit(event);
     }
@@ -1065,7 +982,7 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerenter', updateHoverTarget);
 canvas.addEventListener('pointerleave', () => {
-  setHoveredNode(null);
+  setHoveredOre(null);
 });
 function endOrbit(event: PointerEvent): void {
   if (!isOrbiting) return;
@@ -1141,16 +1058,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
 });
 
-directionButtons.forEach((button) => {
-  button.addEventListener('click', () => {
-    const direction = button.dataset.expansionDirection as WorldDirection;
-    if (!WORLD_DIRECTIONS.includes(direction)) return;
-    selectedExpansionDirection = direction;
-    updateUi();
-  });
-});
-
-document.querySelector('#mine-button')!.addEventListener('click', () => mine(getActiveMiningNode()));
+mineButton.addEventListener('click', dispatchCart);
 musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));
 sfxVolumeSlider.addEventListener('input', () => audioManager.setSfxVolume(Number(sfxVolumeSlider.value) / 100));
 musicToggle.addEventListener('click', () => {
@@ -1164,7 +1072,7 @@ sfxToggle.addEventListener('click', () => {
 document.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && !event.repeat) {
     event.preventDefault();
-    mine(getActiveMiningNode());
+    dispatchCart();
   }
   if (PAN_KEYS.has(event.code)) {
     event.preventDefault();
@@ -1173,29 +1081,6 @@ document.addEventListener('keydown', (event) => {
 });
 document.addEventListener('keyup', (event) => heldCameraKeys.delete(event.code));
 window.addEventListener('blur', () => heldCameraKeys.clear());
-
-speedButton.addEventListener('click', () => {
-  if (buySpeedUpgrade(state)) {
-    lastAutoHit = performance.now();
-    updateUi();
-    saveState(localStorage, state);
-  }
-});
-
-toolButton.addEventListener('click', () => {
-  if (buyToolUpgrade(state)) {
-    updateUi();
-    saveState(localStorage, state);
-  }
-});
-
-worldButton.addEventListener('click', () => {
-  if (buyWorldExpansion(state, selectedExpansionDirection)) {
-    updateWorldScene();
-    updateUi();
-    saveState(localStorage, state);
-  }
-});
 
 document.querySelector('#offline-close')!.addEventListener('click', () => {
   offlineModal.hidden = true;
@@ -1268,33 +1153,28 @@ function updateCameraPan(delta: number): void {
   updateCameraTransform();
 }
 
-function render(now: number): void {
+function render(_now: number): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   updateCameraPan(delta);
   const wallClockNow = Date.now();
   updateConstructionState(wallClockNow);
-  resetStaleBlockDamage(wallClockNow);
-  updateBlockReplacements(wallClockNow);
-  const interval = 1000 / getAutoRate(state);
-  if (now - lastAutoHit >= interval) {
-    const hits = Math.min(5, Math.floor((now - lastAutoHit) / interval));
-    for (let i = 0; i < hits; i += 1) mine(getActiveMiningNode());
-    lastAutoHit += hits * interval;
+  const mineResult = advanceMineOperations(state, wallClockNow);
+  if (mineResult.trips > 0) {
+    addXp(state, mineResult.xp);
+    flashXpCard();
+    audioManager.playMiningSound('stone');
+    updateUi();
+    saveState(localStorage, state);
   }
-
-  blockNodes.forEach((node) => {
-    node.pulse = Math.max(0, node.pulse - delta * 3.8);
+  oreNodes.forEach((node) => {
+    node.pulse = Math.max(0, node.pulse - delta * 4);
     const pulse = Math.sin(node.pulse * Math.PI);
-    const squash = pulse * 0.095;
-    node.mesh.scale.set(1 + squash, 1 - squash * 0.7, 1 + squash);
-    node.mesh.position.y = node.coordinate.y * BLOCK_SIZE - pulse * 0.035;
+    node.mesh.scale.setScalar(1 + pulse * 0.28);
   });
   clouds.forEach((cloud, index) => {
     cloud.position.x += delta * (0.045 + index * 0.012);
     if (cloud.position.x > 6) cloud.position.x = -6;
   });
-  updateBreakParticles(delta);
-
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }

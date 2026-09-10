@@ -6,15 +6,15 @@ This guide is the working contract for moving IdleCraft from a mining prototype 
 
 ## Design goal
 
-IdleCraft should feel like a world that grows over a long period of play. Mining gathers materials from the world; it does not permanently turn the world into stone. Building, expansion, settlement progression, and automation are separate but connected systems.
+IdleCraft should feel like a world that grows over a long period of play. Mining is a permanent underground operation that gathers materials without destroying the visible world. Surface and underground layers remain stable, while mine entrances, rails, carts, structures, settlement progression, and automation expand around them.
 
 ## Fixed phases
 
-### Step 1 — Reframe mining as stable terrain harvesting
+### Step 1 — Preserve authored terrain and retire destructive mining
 
 - Keep each visible terrain block's identity stable: grass stays grass, dirt stays dirt, stone stays stone, and deepslate stays deepslate.
-- Mining damages a block, awards its resource and XP, then respawns that same terrain block after the existing replacement timer.
-- Preserve independent damage, replacement timers, tool suitability, particles, destroy-stage overlays, and saves.
+- Preserve old block-progress fields and migrate prototype saves safely, but do not use them to destroy or replace terrain during ordinary play.
+- Keep legacy tool and mining helpers available for save/API compatibility until their callers are fully retired.
 - Migrate old prototype saves so transformed Dirt → Grass → Stone blocks return to their authored terrain role instead of permanently polluting the world with stone.
 - Do not add new biomes, structures, villagers, or settlement rules in this step.
 
@@ -26,39 +26,49 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 - Make `Add Adjacent Block` create one connected plot, then make `Expand to a 3×3 Surface` fill the authored meadow footprint.
 - Keep every new cell at the existing block scale and preserve camera zoom, pan, rotation, and floor placement.
 
-### Step 3 — Add long-term village progression
+### Step 3 — Replace block breaking with permanent mine operations
+
+- Stop terrain blocks from breaking, disappearing, or transforming during ordinary play.
+- Add a permanent mine entrance using the existing block scale and a four-block rail footprint.
+- Run minecarts as the primary idle mining loop; cart count, miners, storage carts, and powered rails improve production.
+- Keep underground strata persistent: surface, stone, deepstone, and the eventual bedrock boundary unlock layer by layer.
+- Scatter small, layer-appropriate ore deposits as optional clickable bonus targets. They award extra resources and XP but never break or alter terrain.
+- Route mine output into the existing resource, XP, save, and skill-tree systems.
+- Keep the existing construction queue separate: mining gathers materials; construction uses them to grow the world.
+
+### Step 4 — Add long-term village progression
 
 - Replace the misleading World Seed display with a settlement/world-growth progress bar while keeping player XP separate.
 - Add the progression stages: Dwelling, Hamlet, Village, Small Town, Town, City, Large City, and Endless Mode.
 - Make each stage require a long-term combination of settlement progress, structures, population, food/storage, resources, and skill-tree unlocks.
 - Use increasing thresholds and construction requirements so progression is deliberately slow.
 
-### Step 4 — Author the first living meadow
+### Step 5 — Author the first living meadow
 
 - Use the available Bare Bones textures for terrain and authored world details.
 - Add grid-aligned water, trees, paths, crops, a well, and the first dwelling.
-- Keep terrain blocks mineable while structures are construction objects with their own state.
+- Keep terrain blocks visually stable while structures are construction objects with their own state; mining output comes from the permanent underground operation.
 - Use deterministic placement from the world seed so the same world remains stable across saves.
 
-### Step 5 — Add life and settlement entities
+### Step 6 — Add life and settlement entities
 
 - Add villagers, animals, farming, housing, storage, and settlement jobs.
 - Keep villagers and animals as world entities rather than mineable blocks.
 - Unlock these through the existing Life and Settlement skill-tree branch.
 
-### Step 6 — Add automation for harvesting and building
+### Step 7 — Add automation for harvesting and building
 
 - Add workers, target queues, tool assignment, storage, workshop production, and construction assistance.
 - Automation may gather resources and reduce build time, but must not bypass costs or settlement requirements.
 - Keep offline progress bounded and deterministic.
 
-### Step 7 — Expand materials, biomes, and deep-world content
+### Step 8 — Expand materials, biomes, and deep-world content
 
 - Add sand, gravel, clay, logs, leaves, ores, water, desert, forest, mountain, snow, swamp, and rare crystal content.
 - Apply the matching Bare Bones textures and tool requirements through data-driven material definitions.
 - Add caves, rare ore veins, and bedrock boundaries only when their prerequisite world layers exist.
 
-### Step 8 — Balance, performance, and release hardening
+### Step 9 — Balance, performance, and release hardening
 
 - Tune long-term thresholds, resource yields, build timers, automation, and offline gains.
 - Verify large-world camera performance, save migration, reset behavior, responsive HUD, and accessibility.
@@ -76,6 +86,7 @@ IdleCraft should feel like a world that grows over a long period of play. Mining
 ## Current status
 
 - Previous skill-tree and mining prototype work: complete.
-- Step 1: **complete** — stable terrain harvesting and legacy-save migration are implemented and verified.
+- Step 1: **complete** — authored terrain is preserved and legacy-save migration is implemented and verified.
 - Step 2: **complete** — coordinate cells now grow through a persisted construction queue with visible build progress.
-- Steps 3–8: queued.
+- Step 3: **complete** — permanent mine operations, layered terrain, and optional non-destructive ore clicks are implemented and verified.
+- Steps 4–9: queued.

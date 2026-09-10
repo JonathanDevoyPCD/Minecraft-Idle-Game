@@ -1,0 +1,26 @@
+# IdleCraft mine material library
+
+newmtl stone
+Kd 0.604 0.643 0.639
+Ks 0.08 0.08 0.08
+Ns 16
+
+newmtl stone-accent
+Kd 0.412 0.459 0.471
+Ks 0.06 0.06 0.06
+Ns 12
+
+newmtl timber
+Kd 0.549 0.357 0.212
+Ks 0.04 0.04 0.04
+Ns 8
+
+newmtl mine-darkness
+Kd 0.063 0.098 0.114
+Ks 0 0 0
+Ns 1
+
+newmtl dark-beam
+Kd 0.373 0.243 0.165
+Ks 0.03 0.03 0.03
+Ns 6

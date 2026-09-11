@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -142,6 +142,21 @@ describe('IdleCraft progression', () => {
     expect(state.resources.cobblestone).toBe(0);
     expect(upgradePathCell(state, 0, 2)).toBe(false);
     expect(upgradePathCell(state, 0, -1)).toBe(false);
+  });
+
+  it('builds connected dirt paths one tile at a time without occupying structures', () => {
+    const state = freshState();
+    state.resources.dirt = DIRT_PATH_BUILD_COST;
+    expect(canBuildPathCell(state, 0, 1)).toBe(true);
+    expect(canBuildPathCell(state, -2, -2)).toBe(false);
+    expect(buildPathCell(state, 0, 1)).toBe(true);
+    expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 1)?.tier).toBe('dirt');
+    expect(state.resources.dirt).toBe(0);
+    expect(buildPathCell(state, -1, 1)).toBe(false);
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 0, 'south');
+    expect(placeWorldPlacement(state, dwelling)).toBe(true);
+    state.resources.dirt = DIRT_PATH_BUILD_COST;
+    expect(canBuildPathCell(state, 1, 0)).toBe(false);
   });
 
   it('expands the world after the first growth milestone', () => {

@@ -157,6 +157,7 @@ export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; r
   { tier: 'cobblestone', requiredResource: 'cobblestone', resourceCost: 8, description: 'A durable route that improves settlement traffic.' },
   { tier: 'stone', requiredResource: 'cobblestone', resourceCost: 16, description: 'A finished route prepared for a larger settlement.' },
 ];
+export const DIRT_PATH_BUILD_COST = 2;
 export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { width: number; depth: number; requiresPath: boolean }>> = {
   mine: { width: 1, depth: 4, requiresPath: true },
   dwelling: { width: 2, depth: 2, requiresPath: true },
@@ -384,6 +385,31 @@ export function canPlaceWorldPlacement(
 export function placeWorldPlacement(state: GameState, placement: WorldPlacement): boolean {
   if (!canPlaceWorldPlacement(state, placement)) return false;
   state.placements.push({ ...placement });
+  return true;
+}
+
+/** A new route must grow from the existing connected path network. */
+export function canBuildPathCell(
+  state: Pick<GameState, 'worldCells' | 'pathCells' | 'placements'>,
+  x: number,
+  z: number,
+): boolean {
+  if (!Number.isInteger(x) || !Number.isInteger(z)) return false;
+  if (!state.worldCells.some((cell) => cell.x === x && cell.z === z)) return false;
+  if (isPathCell(state, x, z)) return false;
+  const occupied = state.placements.flatMap((placement) => getPlacementFootprint(placement));
+  if (occupied.some((cell) => cell.x === x && cell.z === z)) return false;
+  return WORLD_DIRECTIONS.some((direction) => {
+    const offset = getWorldDirectionOffset(direction);
+    return isPathCell(state, x + offset.x, z + offset.z);
+  });
+}
+
+export function buildPathCell(state: GameState, x: number, z: number): boolean {
+  if (!canBuildPathCell(state, x, z)) return false;
+  if ((state.resources.dirt ?? 0) < DIRT_PATH_BUILD_COST) return false;
+  state.resources.dirt -= DIRT_PATH_BUILD_COST;
+  state.pathCells.push({ x, z, tier: 'dirt' });
   return true;
 }
 

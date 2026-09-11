@@ -97,6 +97,18 @@ button { font: inherit; }
 .construction-status[hidden] { display: none; }
 .mine-status { position: absolute; top: 226px; left: 28px; z-index: 2; width: min(230px, calc(100vw - 56px)); padding: 10px 12px; pointer-events: none; }
 .mine-status[hidden] { display: none; }
+.build-palette { position: absolute; top: 334px; left: 28px; z-index: 2; width: min(252px, calc(100vw - 56px)); padding: 10px 12px; }
+.build-palette-heading { display: grid; gap: 3px; margin-bottom: 8px; }
+.build-palette-heading > span { color: #937a55; font-size: 9px; font-weight: 900; letter-spacing: .08em; }
+.build-palette-heading small { min-height: 22px; color: #725f44; font-size: 10px; font-weight: 800; line-height: 1.15; }
+.build-palette-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.build-palette-actions button { min-height: 42px; padding: 6px 8px; color: #17394a; cursor: pointer; border: 2px solid rgba(89, 51, 26, .3); border-radius: 9px; background: #fff4c9; box-shadow: 0 3px 0 rgba(89,51,26,.16); font: inherit; }
+.build-palette-actions button:hover, .build-palette-actions button:focus-visible { background: #ffe7a2; outline: none; }
+.build-palette-actions button.is-placement-mode { color: white; border-color: #41682f; background: linear-gradient(#83b953, #558e3a); box-shadow: 0 3px 0 #365c2b; }
+.build-palette-actions strong, .build-palette-actions small { display: block; }
+.build-palette-actions strong { font-size: 11px; letter-spacing: .05em; }
+.build-palette-actions small { margin-top: 2px; color: #806f54; font-size: 9px; font-weight: 800; }
+.build-palette-actions button.is-placement-mode small { color: #efffd7; }
 .construction-status-heading { display: flex; justify-content: space-between; gap: 8px; color: #937a55; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .construction-status-heading small { font-size: 9px; }
 .construction-status-heading span { color: #725f44; white-space: nowrap; }
@@ -261,6 +273,7 @@ button { font: inherit; }
   .skill-tree-button { width: 72px; padding: 0 5px; font-size: 9px; }
   .construction-status { top: 100px; left: 14px; width: min(210px, calc(100vw - 28px)); }
   .mine-status { top: 204px; left: 14px; width: min(210px, calc(100vw - 28px)); }
+  .build-palette { top: 308px; left: 14px; width: min(220px, calc(100vw - 28px)); }
   .player-card { min-width: 0; }
   .row strong { display: none; }
   .bottom-hud { gap: 6px; }

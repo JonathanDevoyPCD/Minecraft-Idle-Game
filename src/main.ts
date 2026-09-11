@@ -5,10 +5,13 @@ import { AudioManager } from './audio';
 import {
   SAVE_KEY,
   DEFAULT_MINE_RAIL_LENGTH,
+  DIRT_PATH_BUILD_COST,
   MINE_RAIL_LENGTHS,
   addXp,
   advanceMineOperations,
+  buildPathCell,
   buySkillNode,
+  canBuildPathCell,
   canPlaceMine,
   canAffordSkillNode,
   calculateOfflineXp,
@@ -25,13 +28,16 @@ import {
   getLivingEntityPlan,
   getMineCargoKind,
   getMeadowFeaturePlan,
+  getNextPathTier,
   getNextSettlementStage,
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
   loadState,
   saveState,
+  PATH_TIERS,
   unlockStarterMine,
+  upgradePathCell,
   WORLD_DIRECTIONS,
   type BlockType,
   type LivingEntityPlan,
@@ -436,6 +442,13 @@ interface PathVisual {
   surface: THREE.Mesh;
 }
 
+interface PathPlacementPreview {
+  x: number;
+  z: number;
+  valid: boolean;
+  upgrade: boolean;
+}
+
 function getPathMaterial(tier: PathCell['tier']): THREE.Material {
   return tier === 'cobblestone' ? cobblestoneMaterial : tier === 'stone' ? stoneMaterial : pathMaterial;
 }
@@ -449,12 +462,42 @@ function createPathVisual(cell: PathCell): PathVisual {
 }
 
 const pathVisuals = state.pathCells.map(createPathVisual);
+const pathGhostGroup = new THREE.Group();
+const pathGhostMaterial = new THREE.MeshStandardMaterial({
+  color: 0x78c56d,
+  transparent: true,
+  opacity: 0.58,
+  depthWrite: false,
+  emissive: 0x315b39,
+  emissiveIntensity: 0.4,
+});
+addFeatureCube(pathGhostGroup, pathGhostMaterial, [0.88, 0.06, 0.88], [0, 0.52, 0]);
+pathGhostGroup.visible = false;
+meadowFeatureRoot.add(pathGhostGroup);
+
+function ensurePathVisual(cell: PathCell): void {
+  if (pathVisuals.some((visual) => visual.cell.x === cell.x && visual.cell.z === cell.z)) return;
+  pathVisuals.push(createPathVisual(cell));
+}
+
+function updatePathGhostVisual(preview: PathPlacementPreview | null): void {
+  const visible = (buildMode === 'path' || buildMode === 'path-upgrade') && Boolean(preview);
+  pathGhostGroup.visible = visible;
+  if (!visible || !preview) return;
+  pathGhostGroup.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
+  const colour = preview.valid
+    ? preview.upgrade ? 0x8fb7df : 0x78c56d
+    : 0xd56256;
+  pathGhostMaterial.color.setHex(colour);
+  pathGhostMaterial.emissive.setHex(preview.valid ? preview.upgrade ? 0x274861 : 0x315b39 : 0x5f2020);
+}
 
 function updateMeadowScene(): void {
   // The old authored 3×3 feature layout is intentionally retired. Structures,
   // farms, wells, and entities will return through the placement model so they
   // cannot silently overlap one another or clip across chunk boundaries.
   meadowFeatureVisuals.forEach((visual) => { visual.group.visible = false; });
+  state.pathCells.forEach(ensurePathVisual);
   const visibleSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
   pathVisuals.forEach((visual) => {
     visual.surface.material = getPathMaterial(visual.cell.tier);
@@ -1073,7 +1116,7 @@ function updateMineVisual(): void {
 }
 
 function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
-  const visible = placingMine && state.mines.length === 0 && Boolean(preview);
+  const visible = buildMode === 'mine' && state.mines.length === 0 && Boolean(preview);
   mineGhostVisual.group.visible = visible;
   if (!visible || !preview) return;
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
@@ -1167,6 +1210,9 @@ const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const mineButton = document.querySelector<HTMLButtonElement>('#mine-button')!;
 const mineActionTitleEl = document.querySelector<HTMLElement>('#mine-action-title')!;
 const mineActionHintEl = document.querySelector<HTMLElement>('#mine-action-hint')!;
+const pathButton = document.querySelector<HTMLButtonElement>('#path-button')!;
+const pathUpgradeButton = document.querySelector<HTMLButtonElement>('#path-upgrade-button')!;
+const buildStatusEl = document.querySelector<HTMLElement>('#build-status')!;
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
 const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
 const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-slider')!;
@@ -1195,8 +1241,10 @@ const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
-let placingMine = false;
+type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
+let buildMode: BuildMode = null;
 let minePlacementPreview: MinePlacementPreview | null = null;
+let pathPlacementPreview: PathPlacementPreview | null = null;
 let selectedMineRailLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH;
 let xpFlashTimeout = 0;
 const SKILL_TREE_STAGE_SIZE = 1600;
@@ -1518,6 +1566,7 @@ function updateConstructionUi(now = Date.now()): void {
 
 function updateMineUi(): void {
   const mine = state.mines[0];
+  const placingMine = buildMode === 'mine';
   if (!mine) {
     const available = state.availableMineSites > 0;
     mineStatusEl.hidden = !available && state.mines.length === 0;
@@ -1544,8 +1593,41 @@ function updateMineUi(): void {
   mineButton.disabled = false;
   mineActionTitleEl.textContent = 'DISPATCH CART';
   mineActionHintEl.textContent = 'Click or press SPACE';
-  mineButton.classList.remove('is-placement-mode');
-  updateMineVisual();
+    mineButton.classList.remove('is-placement-mode');
+    updateMineVisual();
+}
+
+function updateBuildUi(): void {
+  const dirt = state.resources.dirt ?? 0;
+  pathButton.classList.toggle('is-placement-mode', buildMode === 'path');
+  pathUpgradeButton.classList.toggle('is-placement-mode', buildMode === 'path-upgrade');
+  pathButton.setAttribute('aria-pressed', String(buildMode === 'path'));
+  pathUpgradeButton.setAttribute('aria-pressed', String(buildMode === 'path-upgrade'));
+  if (buildMode === 'path') {
+    buildStatusEl.textContent = dirt >= DIRT_PATH_BUILD_COST
+      ? `Place connected path · ${DIRT_PATH_BUILD_COST} dirt each · Esc cancels`
+      : `Need ${DIRT_PATH_BUILD_COST} dirt per path · Esc cancels`;
+    return;
+  }
+  if (buildMode === 'path-upgrade') {
+    buildStatusEl.textContent = 'Select a path tile to upgrade · Esc cancels';
+    return;
+  }
+  if (buildMode === 'mine') {
+    buildStatusEl.textContent = 'Place mine rail endpoint directly against a path · R changes rail length';
+    return;
+  }
+  buildStatusEl.textContent = `Build connected paths · ${DIRT_PATH_BUILD_COST} dirt each`;
+}
+
+function setBuildMode(nextMode: BuildMode): void {
+  buildMode = nextMode;
+  minePlacementPreview = null;
+  pathPlacementPreview = null;
+  updateMineGhostVisual(null);
+  updatePathGhostVisual(null);
+  canvas.classList.toggle('is-building', buildMode !== null);
+  updateUi();
 }
 
 function purchaseSelectedSkillNode(): void {
@@ -1581,6 +1663,7 @@ function updateUi(): void {
   updateCurrentTool();
   updateConstructionUi();
   updateMineUi();
+  updateBuildUi();
 }
 
 function updateConstructionState(now: number): void {
@@ -1611,7 +1694,7 @@ function getOreAtPointer(event: PointerEvent): OreNode | null {
   return hit ? oreByMesh.get(hit.object) ?? null : null;
 }
 
-function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | null {
+function getSurfaceCellAtPointer(event: PointerEvent): { x: number; z: number } | null {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1619,8 +1702,16 @@ function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | 
   const surfaceMeshes = blockNodes.filter((node) => node.mesh.visible && node.coordinate.y === 0).map((node) => node.mesh);
   const hit = raycaster.intersectObjects(surfaceMeshes, false)[0];
   if (!hit) return null;
-  const x = Math.round(hit.point.x / BLOCK_SIZE);
-  const z = Math.round(hit.point.z / BLOCK_SIZE);
+  return {
+    x: Math.round(hit.point.x / BLOCK_SIZE),
+    z: Math.round(hit.point.z / BLOCK_SIZE),
+  };
+}
+
+function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | null {
+  const cell = getSurfaceCellAtPointer(event);
+  if (!cell) return null;
+  const { x, z } = cell;
   const directions: WorldDirection[] = ['south', 'east', 'north', 'west'];
   const validDirection = directions.find((candidate) => canPlaceMine(state, x, z, candidate, selectedMineRailLength));
   const fallbackDirection = directions.find((candidate) => getMineFootprint(x, z, candidate, selectedMineRailLength).every((cell) => {
@@ -1636,10 +1727,40 @@ function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | 
   };
 }
 
-function updateMinePlacementPreview(event: PointerEvent): void {
-  if (!placingMine || state.mines.length > 0) return;
-  minePlacementPreview = getMinePlacementAtPointer(event);
-  updateMineGhostVisual(minePlacementPreview);
+function getPathPlacementAtPointer(event: PointerEvent): PathPlacementPreview | null {
+  const cell = getSurfaceCellAtPointer(event);
+  if (!cell) return null;
+  return {
+    ...cell,
+    valid: canBuildPathCell(state, cell.x, cell.z) && (state.resources.dirt ?? 0) >= DIRT_PATH_BUILD_COST,
+    upgrade: false,
+  };
+}
+
+function getPathUpgradeAtPointer(event: PointerEvent): PathPlacementPreview | null {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(pathVisuals.map((visual) => visual.surface), false)[0];
+  const visual = hit ? pathVisuals.find((candidate) => candidate.surface === hit.object) : null;
+  if (!visual) return null;
+  const nextTier = getNextPathTier(visual.cell.tier);
+  const definition = nextTier ? PATH_TIERS.find((entry) => entry.tier === nextTier) : null;
+  const valid = Boolean(nextTier && (!definition?.requiredResource || (state.resources[definition.requiredResource] ?? 0) >= definition.resourceCost));
+  return { x: visual.cell.x, z: visual.cell.z, valid, upgrade: true };
+}
+
+function updateBuildPlacementPreview(event: PointerEvent): void {
+  if (buildMode === 'mine') {
+    minePlacementPreview = state.mines.length === 0 ? getMinePlacementAtPointer(event) : null;
+    updateMineGhostVisual(minePlacementPreview);
+    return;
+  }
+  if (buildMode === 'path') pathPlacementPreview = getPathPlacementAtPointer(event);
+  else if (buildMode === 'path-upgrade') pathPlacementPreview = getPathUpgradeAtPointer(event);
+  else return;
+  updatePathGhostVisual(pathPlacementPreview);
 }
 
 function setHoveredOre(nextOre: OreNode | null): void {
@@ -1689,13 +1810,31 @@ function updateHoverTarget(event: PointerEvent): void {
 
 canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
-    if (placingMine) {
+    if (buildMode === 'mine') {
       const placement = getMinePlacementAtPointer(event);
       if (placement?.valid && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction, placement.railLength)) {
-        placingMine = false;
-        minePlacementPreview = null;
-        canvas.classList.remove('is-placing-mine');
-        updateMineGhostVisual(null);
+        setBuildMode(null);
+        updateWorldScene();
+        updateUi();
+        saveState(localStorage, state);
+      }
+      return;
+    }
+    if (buildMode === 'path') {
+      const placement = getPathPlacementAtPointer(event);
+      if (placement?.valid && buildPathCell(state, placement.x, placement.z)) {
+        ensurePathVisual(state.pathCells[state.pathCells.length - 1]);
+        audioManager.playMiningSound('grass');
+        updateWorldScene();
+        updateUi();
+        saveState(localStorage, state);
+      }
+      return;
+    }
+    if (buildMode === 'path-upgrade') {
+      const placement = getPathUpgradeAtPointer(event);
+      if (placement?.valid && upgradePathCell(state, placement.x, placement.z)) {
+        audioManager.playMiningSound('stone');
         updateWorldScene();
         updateUi();
         saveState(localStorage, state);
@@ -1715,7 +1854,7 @@ canvas.addEventListener('pointerdown', (event) => {
 });
 canvas.addEventListener('pointermove', (event) => {
   if (!isOrbiting) {
-    if (placingMine) updateMinePlacementPreview(event);
+    if (buildMode !== null) updateBuildPlacementPreview(event);
     else updateHoverTarget(event);
     return;
   }
@@ -1728,13 +1867,15 @@ canvas.addEventListener('pointermove', (event) => {
   updateCameraTransform();
 });
 canvas.addEventListener('pointerenter', (event) => {
-  if (placingMine) updateMinePlacementPreview(event);
+  if (buildMode !== null) updateBuildPlacementPreview(event);
   else updateHoverTarget(event);
 });
 canvas.addEventListener('pointerleave', () => {
   setHoveredOre(null);
   minePlacementPreview = null;
+  pathPlacementPreview = null;
   updateMineGhostVisual(null);
+  updatePathGhostVisual(null);
 });
 function endOrbit(event: PointerEvent): void {
   if (!isOrbiting) return;
@@ -1745,7 +1886,7 @@ function endOrbit(event: PointerEvent): void {
     // See the pointerdown note above.
   }
   canvas.classList.remove('is-orbiting');
-  if (placingMine) updateMinePlacementPreview(event);
+  if (buildMode !== null) updateBuildPlacementPreview(event);
   else updateHoverTarget(event);
 }
 canvas.addEventListener('pointerup', endOrbit);
@@ -1809,7 +1950,8 @@ skillTreeViewport.addEventListener('pointerup', endSkillTreePan);
 skillTreeViewport.addEventListener('pointercancel', endSkillTreePan);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
-  if (event.key.toLowerCase() !== 'r' || !placingMine || event.repeat) return;
+  if (event.key === 'Escape' && buildMode !== null) setBuildMode(null);
+  if (event.key.toLowerCase() !== 'r' || buildMode !== 'mine' || event.repeat) return;
   const currentIndex = MINE_RAIL_LENGTHS.indexOf(selectedMineRailLength);
   selectedMineRailLength = MINE_RAIL_LENGTHS[(currentIndex + 1) % MINE_RAIL_LENGTHS.length];
   minePlacementPreview = null;
@@ -1819,17 +1961,13 @@ document.addEventListener('keydown', (event) => {
 
 mineButton.addEventListener('click', () => {
   if (state.mines.length === 0 && state.availableMineSites > 0) {
-    placingMine = !placingMine;
-    if (!placingMine) {
-      minePlacementPreview = null;
-      updateMineGhostVisual(null);
-    }
-    canvas.classList.toggle('is-placing-mine', placingMine);
-    updateUi();
+    setBuildMode(buildMode === 'mine' ? null : 'mine');
     return;
   }
   dispatchCart();
 });
+pathButton.addEventListener('click', () => setBuildMode(buildMode === 'path' ? null : 'path'));
+pathUpgradeButton.addEventListener('click', () => setBuildMode(buildMode === 'path-upgrade' ? null : 'path-upgrade'));
 musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));
 sfxVolumeSlider.addEventListener('input', () => audioManager.setSfxVolume(Number(sfxVolumeSlider.value) / 100));
 musicToggle.addEventListener('click', () => {
@@ -1841,7 +1979,7 @@ sfxToggle.addEventListener('click', () => {
   updateAudioUi();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.code === 'Space' && !event.repeat) {
+  if (event.code === 'Space' && !event.repeat && buildMode === null) {
     event.preventDefault();
     dispatchCart();
   }

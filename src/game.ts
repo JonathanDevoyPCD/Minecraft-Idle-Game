@@ -60,6 +60,7 @@ export interface MineSite {
   cartCount: number;
   storageCarts: number;
   railLevel: number;
+  railLength: MineRailLength;
   minerCount: number;
   progressMs: number;
   lastUpdatedAt: number;
@@ -67,6 +68,7 @@ export interface MineSite {
 }
 
 export type MineCargoKind = 'stone' | 'coal' | 'iron' | 'gold' | 'diamond';
+export type MineRailLength = 2 | 3 | 4;
 
 export interface MineProductionResult {
   trips: number;
@@ -116,6 +118,8 @@ export interface BlockMiningProgress {
 }
 
 export const MINE_TRIP_DURATION_MS = 8_000;
+export const MINE_RAIL_LENGTHS: readonly MineRailLength[] = [4, 3, 2];
+export const DEFAULT_MINE_RAIL_LENGTH: MineRailLength = 4;
 export const MINE_LAYER_NAMES = ['Stone Layer', 'Deepstone Layer', 'Bedrock Boundary'] as const;
 const MINE_ID = 'starter-mine';
 const MINE_CART_NODE_ID = 'automation-mine-carts';
@@ -285,9 +289,14 @@ export function isPathCell(state: Pick<GameState, 'pathCells'>, x: number, z: nu
   return Boolean(getPathCell(state, x, z));
 }
 
-export function getMineFootprint(x: number, z: number, direction: WorldDirection = 'south'): Array<{ x: number; z: number }> {
+export function getMineFootprint(
+  x: number,
+  z: number,
+  direction: WorldDirection = 'south',
+  railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
+): Array<{ x: number; z: number }> {
   const offset = getWorldDirectionOffset(direction);
-  return Array.from({ length: 4 }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
+  return Array.from({ length: railLength }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
 }
 
 function getWorldDirectionOffset(direction: WorldDirection): { x: number; z: number } {
@@ -305,8 +314,9 @@ export function getMineRailPathConnection(
   x: number,
   z: number,
   direction: WorldDirection = 'south',
+  railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): { railIndex: number; pathX: number; pathZ: number } | null {
-  const footprint = getMineFootprint(x, z, direction);
+  const footprint = getMineFootprint(x, z, direction, railLength);
   const railIndex = footprint.length - 1;
   const terminal = footprint[railIndex];
   const offset = getWorldDirectionOffset(direction);
@@ -340,9 +350,18 @@ export function createWorldPlacement(
   x: number,
   z: number,
   direction: WorldDirection = 'south',
+  railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): WorldPlacement {
   const definition = WORLD_PLACEMENT_DEFINITIONS[kind];
-  return { id, kind, x, z, width: definition.width, depth: definition.depth, direction };
+  return {
+    id,
+    kind,
+    x,
+    z,
+    width: definition.width,
+    depth: kind === 'mine' ? railLength : definition.depth,
+    direction,
+  };
 }
 
 export function canPlaceWorldPlacement(
@@ -391,16 +410,17 @@ export function canPlaceMine(
   x: number,
   z: number,
   direction: WorldDirection = 'south',
+  railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): boolean {
   if (state.availableMineSites <= 0 || !Number.isInteger(x) || !Number.isInteger(z)) return false;
-  const footprint = getMineFootprint(x, z, direction);
+  const footprint = getMineFootprint(x, z, direction, railLength);
   const bounds = getChunkBounds(state);
   if (footprint.some((cell) => cell.x < bounds.minX || cell.x > bounds.maxX || cell.z < bounds.minZ || cell.z > bounds.maxZ)) return false;
   if (footprint.some((cell) => isPathCell(state, cell.x, cell.z))) return false;
   const occupied = state.placements.flatMap((placement) => getPlacementFootprint(placement));
   if (occupied.some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z))) return false;
-  if (state.mines.some((mine) => getMineFootprint(mine.x, mine.z, mine.direction).some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z)))) return false;
-  return Boolean(getMineRailPathConnection(state, x, z, direction));
+  if (state.mines.some((mine) => getMineFootprint(mine.x, mine.z, mine.direction, mine.railLength).some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z)))) return false;
+  return Boolean(getMineRailPathConnection(state, x, z, direction, railLength));
 }
 
 function worldCellKey(x: number, z: number): string {
@@ -504,7 +524,13 @@ export function expandToNextChunk(state: GameState): void {
   state.worldRank = Math.max(state.worldRank, Math.floor((nextSize - STARTING_CHUNK_SIZE) / 2));
 }
 
-function createMineSite(now: number, x: number, z: number, direction: WorldDirection): MineSite {
+function createMineSite(
+  now: number,
+  x: number,
+  z: number,
+  direction: WorldDirection,
+  railLength: MineRailLength,
+): MineSite {
   return {
     id: MINE_ID,
     x,
@@ -513,6 +539,7 @@ function createMineSite(now: number, x: number, z: number, direction: WorldDirec
     cartCount: 1,
     storageCarts: 0,
     railLevel: 0,
+    railLength,
     minerCount: 0,
     progressMs: 0,
     lastUpdatedAt: now,
@@ -526,10 +553,11 @@ export function unlockStarterMine(
   x = 0,
   z = -2,
   direction: WorldDirection = 'south',
+  railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): boolean {
-  if (state.mines.length > 0 || !canPlaceMine(state, x, z, direction)) return false;
-  state.mines.push(createMineSite(now, x, z, direction));
-  state.placements.push(createWorldPlacement('mine', MINE_ID, x, z, direction));
+  if (state.mines.length > 0 || !canPlaceMine(state, x, z, direction, railLength)) return false;
+  state.mines.push(createMineSite(now, x, z, direction, railLength));
+  state.placements.push(createWorldPlacement('mine', MINE_ID, x, z, direction, railLength));
   state.availableMineSites = Math.max(0, state.availableMineSites - 1);
   return true;
 }
@@ -572,12 +600,16 @@ export function advanceMineOperations(state: GameState, now = Date.now()): MineP
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
     const totalProgress = mine.progressMs + elapsed;
-    const completedCycles = Math.floor(totalProgress / tripDuration);
-    mine.progressMs = totalProgress - completedCycles * tripDuration;
+    const endpointOffset = tripDuration / 2;
+    // The cart starts at the mine, reaches the path at half-cycle, then returns.
+    // Reward exactly the outward path-end arrivals, never its return to the mine.
+    const completedArrivals = Math.floor((totalProgress + endpointOffset) / tripDuration)
+      - Math.floor((mine.progressMs + endpointOffset) / tripDuration);
+    mine.progressMs = totalProgress % tripDuration;
     mine.lastUpdatedAt = now;
-    if (completedCycles <= 0) return;
+    if (completedArrivals <= 0) return;
 
-    const cartTrips = completedCycles * mine.cartCount;
+    const cartTrips = completedArrivals * mine.cartCount;
     mine.completedTrips += cartTrips;
     result.trips += cartTrips;
     result.xp += cartTrips * (layer >= 1 ? 3 : 2);
@@ -605,9 +637,9 @@ export function dispatchMineCart(state: GameState, now = Date.now()): MineProduc
   if (state.mines.length === 0) return { trips: 0, xp: 0, resources: {} };
   state.mines.forEach((mine) => {
     mine.lastUpdatedAt = now;
-    mine.progressMs += getMineTripDuration(state);
+    mine.progressMs = 0;
   });
-  return advanceMineOperations(state, now);
+  return { trips: 0, xp: 0, resources: {} };
 }
 
 export function collectOreBonus(state: GameState, resource: string, amount = 1): number {
@@ -923,7 +955,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const mines = parseMines(parsed.mines, now);
     mines.forEach((mine) => {
       if (!placements.some((placement) => placement.id === mine.id)) {
-        placements.push(createWorldPlacement('mine', mine.id, mine.x, mine.z, mine.direction ?? 'south'));
+        placements.push(createWorldPlacement('mine', mine.id, mine.x, mine.z, mine.direction ?? 'south', mine.railLength));
       }
     });
     const resources = Object.fromEntries(
@@ -983,6 +1015,9 @@ function parseMines(value: unknown, now: number): MineSite[] {
       cartCount: Math.max(1, Math.floor(Number(entry.cartCount) || 1)),
       storageCarts: Math.max(0, Math.floor(Number(entry.storageCarts) || 0)),
       railLevel: Math.max(0, Math.floor(Number(entry.railLevel) || 0)),
+      railLength: MINE_RAIL_LENGTHS.includes(Number(entry.railLength) as MineRailLength)
+        ? Number(entry.railLength) as MineRailLength
+        : DEFAULT_MINE_RAIL_LENGTH,
       minerCount: Math.max(0, Math.floor(Number(entry.minerCount) || 0)),
       progressMs: Math.max(0, Number(entry.progressMs) || 0),
       lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,

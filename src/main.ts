@@ -4,6 +4,8 @@ import { CloudCell, createCloudGeometry } from './cloud-geometry';
 import { AudioManager } from './audio';
 import {
   SAVE_KEY,
+  DEFAULT_MINE_RAIL_LENGTH,
+  MINE_RAIL_LENGTHS,
   addXp,
   advanceMineOperations,
   buySkillNode,
@@ -34,6 +36,7 @@ import {
   type BlockType,
   type LivingEntityPlan,
   type MineCargoKind,
+  type MineRailLength,
   type MeadowFeature,
   type MineSite,
   type PathCell,
@@ -676,6 +679,7 @@ interface MinePlacementPreview {
   x: number;
   z: number;
   direction: WorldDirection;
+  railLength: MineRailLength;
   valid: boolean;
 }
 
@@ -986,13 +990,24 @@ function setMineRotation(group: THREE.Group, direction: WorldDirection): void {
         : 0;
 }
 
-function getMinePathConnection(x: number, z: number, direction: WorldDirection): { index: number } | null {
-  const connection = getMineRailPathConnection(state, x, z, direction);
+function getMinePathConnection(
+  x: number,
+  z: number,
+  direction: WorldDirection,
+  railLength: MineRailLength,
+): { index: number } | null {
+  const connection = getMineRailPathConnection(state, x, z, direction, railLength);
   return connection ? { index: connection.railIndex } : null;
 }
 
-function updateMinePathConnector(visual: MineVisual, x: number, z: number, direction: WorldDirection): void {
-  const connection = getMinePathConnection(x, z, direction);
+function updateMinePathConnector(
+  visual: MineVisual,
+  x: number,
+  z: number,
+  direction: WorldDirection,
+  railLength: MineRailLength,
+): void {
+  const connection = getMinePathConnection(x, z, direction, railLength);
   visual.pathConnector.visible = Boolean(connection);
   if (!connection) return;
   const terminalZ = getMineRailCenterZ(connection.index);
@@ -1004,11 +1019,17 @@ function updateMinePathConnector(visual: MineVisual, x: number, z: number, direc
   visual.pathConnector.rotation.y = 0;
 }
 
-function updateMineRailLength(visual: MineVisual, x: number, z: number, direction: WorldDirection): number {
-  const connection = getMinePathConnection(x, z, direction);
-  const connectionIndex = connection?.index ?? visual.railSegments.length - 1;
+function updateMineRailLength(
+  visual: MineVisual,
+  x: number,
+  z: number,
+  direction: WorldDirection,
+  railLength: MineRailLength,
+): number {
+  const connection = getMinePathConnection(x, z, direction, railLength);
+  const connectionIndex = connection?.index ?? railLength - 1;
   visual.railSegments.forEach((segment, index) => {
-    segment.visible = index <= connectionIndex;
+    segment.visible = index < railLength && index <= connectionIndex;
   });
   return connectionIndex;
 }
@@ -1023,10 +1044,11 @@ function updateMineVisual(): void {
   mineVisual.group.visible = Boolean(mine);
   if (!mine) return;
   const direction = mine.direction ?? 'south';
+  const railLength = mine.railLength ?? DEFAULT_MINE_RAIL_LENGTH;
   mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
   setMineRotation(mineVisual.group, direction);
-  updateMinePathConnector(mineVisual, mine.x, mine.z, direction);
-  const connectionIndex = updateMineRailLength(mineVisual, mine.x, mine.z, direction);
+  updateMinePathConnector(mineVisual, mine.x, mine.z, direction, railLength);
+  const connectionIndex = updateMineRailLength(mineVisual, mine.x, mine.z, direction, railLength);
   syncMineCartMeshes(mineVisual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
@@ -1043,7 +1065,7 @@ function updateMineVisual(): void {
       startZ + (endZ - startZ) * travel,
     );
     cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
-    setMineCartCargoVisible(cart, phase < 0.5);
+    setMineCartCargoVisible(cart, phase >= 0.5);
   });
 }
 
@@ -1053,8 +1075,8 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   if (!visible || !preview) return;
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
   setMineRotation(mineGhostVisual.group, preview.direction);
-  updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction);
-  const connectionIndex = updateMineRailLength(mineGhostVisual, preview.x, preview.z, preview.direction);
+  updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction, preview.railLength);
+  const connectionIndex = updateMineRailLength(mineGhostVisual, preview.x, preview.z, preview.direction, preview.railLength);
   syncMineCartMeshes(mineGhostVisual, 1, 0);
   mineGhostVisual.carts[0].position.set(
     0,
@@ -1172,6 +1194,7 @@ const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-b
 let hoveredOre: OreNode | null = null;
 let placingMine = false;
 let minePlacementPreview: MinePlacementPreview | null = null;
+let selectedMineRailLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH;
 let xpFlashTimeout = 0;
 const SKILL_TREE_STAGE_SIZE = 1600;
 const SKILL_TREE_CENTER = SKILL_TREE_STAGE_SIZE / 2;
@@ -1496,13 +1519,14 @@ function updateMineUi(): void {
     const available = state.availableMineSites > 0;
     mineStatusEl.hidden = !available && state.mines.length === 0;
     mineLabelEl.textContent = available ? 'Free mine blueprint ready' : 'Mine entrance locked';
-    mineRateEl.textContent = placingMine ? 'Green preview = straight path connection' : available ? 'Attach rail end to a path' : 'Unlock another mine';
+    const railLabel = selectedMineRailLength === 4 ? 'Long' : selectedMineRailLength === 3 ? 'Medium' : 'Short';
+    mineRateEl.textContent = placingMine ? `Green preview = ${railLabel.toLowerCase()} straight path connection` : available ? 'Attach rail end to a path' : 'Unlock another mine';
     mineFillEl.style.width = '0%';
     mineButton.disabled = !available;
     mineActionTitleEl.textContent = placingMine ? 'CHOOSE MINE SITE' : 'PLACE FREE MINE';
-    mineActionHintEl.textContent = placingMine ? 'Click a plot facing the path end' : 'Click to choose a location';
+    mineActionHintEl.textContent = placingMine ? `${railLabel} rail · R changes length` : 'Click to choose a location';
     mineButton.classList.toggle('is-placement-mode', placingMine);
-    currentToolHintEl.textContent = placingMine ? 'Preview a straight four-block rail run' : available ? 'Place your free mine rail directly into a path' : 'Unlock a mine entrance';
+    currentToolHintEl.textContent = placingMine ? `Preview a ${railLabel.toLowerCase()} rail run · press R to cycle` : available ? 'Place your free mine rail directly into a path' : 'Unlock a mine entrance';
     updateMineVisual();
     return;
   }
@@ -1510,7 +1534,8 @@ function updateMineUi(): void {
   const cartCount = getMineCartCount(state);
   const tripsPerMinute = cartCount * 60_000 / tripDuration;
   mineStatusEl.hidden = false;
-  mineLabelEl.textContent = `${cartCount} cart${cartCount === 1 ? '' : 's'} · ${getMineLayer(state) === 0 ? 'Stone Layer' : 'Deepstone Layer'}`;
+  const railLabel = mine.railLength === 4 ? 'Long' : mine.railLength === 3 ? 'Medium' : 'Short';
+  mineLabelEl.textContent = `${cartCount} cart${cartCount === 1 ? '' : 's'} · ${railLabel} rail`;
   mineRateEl.textContent = `${tripsPerMinute.toFixed(1)} trips/min`;
   mineFillEl.style.width = `${Math.min(100, mine.progressMs / tripDuration * 100)}%`;
   mineButton.disabled = false;
@@ -1594,12 +1619,18 @@ function getMinePlacementAtPointer(event: PointerEvent): MinePlacementPreview | 
   const x = Math.round(hit.point.x / BLOCK_SIZE);
   const z = Math.round(hit.point.z / BLOCK_SIZE);
   const directions: WorldDirection[] = ['south', 'east', 'north', 'west'];
-  const validDirection = directions.find((candidate) => canPlaceMine(state, x, z, candidate));
-  const fallbackDirection = directions.find((candidate) => getMineFootprint(x, z, candidate).every((cell) => {
+  const validDirection = directions.find((candidate) => canPlaceMine(state, x, z, candidate, selectedMineRailLength));
+  const fallbackDirection = directions.find((candidate) => getMineFootprint(x, z, candidate, selectedMineRailLength).every((cell) => {
     const bounds = getChunkBounds(state);
     return cell.x >= bounds.minX && cell.x <= bounds.maxX && cell.z >= bounds.minZ && cell.z <= bounds.maxZ;
   })) ?? 'south';
-  return { x, z, direction: validDirection ?? fallbackDirection, valid: Boolean(validDirection) };
+  return {
+    x,
+    z,
+    direction: validDirection ?? fallbackDirection,
+    railLength: selectedMineRailLength,
+    valid: Boolean(validDirection),
+  };
 }
 
 function updateMinePlacementPreview(event: PointerEvent): void {
@@ -1630,10 +1661,7 @@ function collectOreNode(node: OreNode): void {
 }
 
 function dispatchCart(): void {
-  const result = dispatchMineCart(state);
-  if (result.trips <= 0) return;
-  addXp(state, result.xp);
-  flashXpCard();
+  dispatchMineCart(state);
   audioManager.playMiningSound('stone');
   updateUi();
   saveState(localStorage, state);
@@ -1660,7 +1688,7 @@ canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
     if (placingMine) {
       const placement = getMinePlacementAtPointer(event);
-      if (placement?.valid && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction)) {
+      if (placement?.valid && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction, placement.railLength)) {
         placingMine = false;
         minePlacementPreview = null;
         canvas.classList.remove('is-placing-mine');
@@ -1778,6 +1806,12 @@ skillTreeViewport.addEventListener('pointerup', endSkillTreePan);
 skillTreeViewport.addEventListener('pointercancel', endSkillTreePan);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
+  if (event.key.toLowerCase() !== 'r' || !placingMine || event.repeat) return;
+  const currentIndex = MINE_RAIL_LENGTHS.indexOf(selectedMineRailLength);
+  selectedMineRailLength = MINE_RAIL_LENGTHS[(currentIndex + 1) % MINE_RAIL_LENGTHS.length];
+  minePlacementPreview = null;
+  updateMineGhostVisual(null);
+  updateUi();
 });
 
 mineButton.addEventListener('click', () => {

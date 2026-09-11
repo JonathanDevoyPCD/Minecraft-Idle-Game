@@ -115,6 +115,16 @@ describe('IdleCraft progression', () => {
     expect(unlockStarterMine(state, 1000, 1, -2, 'west')).toBe(false);
   });
 
+  it('supports short, medium, and long rails when their terminal faces a path', () => {
+    const state = freshState();
+    expect(canPlaceMine(state, 0, 0, 'south', 2)).toBe(true);
+    expect(canPlaceMine(state, 0, -1, 'south', 3)).toBe(true);
+    expect(canPlaceMine(state, 0, -2, 'south', 4)).toBe(true);
+    expect(unlockStarterMine(state, 1000, 0, 0, 'south', 2)).toBe(true);
+    expect(state.mines[0].railLength).toBe(2);
+    expect(state.placements.find((placement) => placement.id === 'starter-mine')?.depth).toBe(2);
+  });
+
   it('uses one collision rule for path-facing structures', () => {
     const state = freshState();
     const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 0, 'south');
@@ -305,9 +315,10 @@ describe('IdleCraft progression', () => {
     const state = freshState(1000);
     const originalCells = [...state.worldCells];
     expect(unlockStarterMine(state, 1000)).toBe(true);
-    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS - 1)).toMatchObject({ trips: 0, xp: 0 });
-    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2 - 1)).toMatchObject({ trips: 0, xp: 0 });
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2);
     expect(result).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS)).toMatchObject({ trips: 0, xp: 0 });
     expect(state.worldCells).toEqual(originalCells);
     expect(state.mines[0].progressMs).toBe(0);
   });
@@ -328,12 +339,13 @@ describe('IdleCraft progression', () => {
     state.skillRanks = { 'automation-mine-carts': 2 };
     expect(getMineCartCount(state)).toBe(3);
     unlockStarterMine(state, 1000);
-    const result = dispatchMineCart(state, 1000);
+    expect(dispatchMineCart(state, 1000)).toMatchObject({ trips: 0, xp: 0 });
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2);
     expect(result.trips).toBe(3);
     expect(state.resources.cobblestone).toBe(3);
     expect(collectOreBonus(state, 'diamond')).toBe(1);
     expect(state.resources.diamond).toBe(1);
-    expect(dispatchMineCart(state, 1000).trips).toBe(3);
+    expect(dispatchMineCart(state, 1000).trips).toBe(0);
   });
 
   it('shows the deepest unlocked material in returning minecart cargo', () => {

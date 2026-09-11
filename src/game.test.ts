@@ -315,10 +315,10 @@ describe('IdleCraft progression', () => {
     const state = freshState(1000);
     const originalCells = [...state.worldCells];
     expect(unlockStarterMine(state, 1000)).toBe(true);
-    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2 - 1)).toMatchObject({ trips: 0, xp: 0 });
-    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2);
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2)).toMatchObject({ trips: 0, xp: 0 });
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS - 1)).toMatchObject({ trips: 0, xp: 0 });
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
     expect(result).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
-    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS)).toMatchObject({ trips: 0, xp: 0 });
     expect(state.worldCells).toEqual(originalCells);
     expect(state.mines[0].progressMs).toBe(0);
   });
@@ -340,7 +340,7 @@ describe('IdleCraft progression', () => {
     expect(getMineCartCount(state)).toBe(3);
     unlockStarterMine(state, 1000);
     expect(dispatchMineCart(state, 1000)).toMatchObject({ trips: 0, xp: 0 });
-    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2);
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
     expect(result.trips).toBe(3);
     expect(state.resources.cobblestone).toBe(3);
     expect(collectOreBonus(state, 'diamond')).toBe(1);

@@ -600,12 +600,11 @@ export function advanceMineOperations(state: GameState, now = Date.now()): MineP
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
     const totalProgress = mine.progressMs + elapsed;
-    const endpointOffset = tripDuration / 2;
-    // The cart starts at the mine, reaches the path at half-cycle, then returns.
-    // Reward exactly the outward path-end arrivals, never its return to the mine.
-    const completedArrivals = Math.floor((totalProgress + endpointOffset) / tripDuration)
-      - Math.floor((mine.progressMs + endpointOffset) / tripDuration);
-    mine.progressMs = totalProgress % tripDuration;
+    // The loop begins at the path: an empty cart travels to the mine, loads,
+    // then delivers the ore back to the rail end. Credit the delivery only when
+    // that full loop reaches the path-facing terminal.
+    const completedArrivals = Math.floor(totalProgress / tripDuration);
+    mine.progressMs = totalProgress - completedArrivals * tripDuration;
     mine.lastUpdatedAt = now;
     if (completedArrivals <= 0) return;
 

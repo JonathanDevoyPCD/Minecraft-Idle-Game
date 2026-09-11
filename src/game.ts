@@ -141,14 +141,12 @@ export const BLOCK_DEFINITIONS = {
 export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
 
 export const SAVE_KEY = 'idlecraft-save-v2';
-export const SAVE_SCHEMA_VERSION = 2;
+export const SAVE_SCHEMA_VERSION = 3;
 export const STARTING_CHUNK_SIZE = 5;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
-  { x: 0, z: 0, tier: 'dirt' },
-  { x: 0, z: -1, tier: 'dirt' },
-  { x: 1, z: 0, tier: 'dirt' },
-  { x: 0, z: 1, tier: 'dirt' },
-  { x: -1, z: 0, tier: 'dirt' },
+  { x: 0, z: 2, tier: 'dirt' },
+  { x: 1, z: 2, tier: 'dirt' },
+  { x: 2, z: 2, tier: 'dirt' },
 ];
 export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; resourceCost: number; description: string }[] = [
   { tier: 'dirt', resourceCost: 0, description: 'A simple route that keeps villagers moving.' },
@@ -171,7 +169,7 @@ export const TOOL_TIERS = [
   { kind: 'pickaxe', material: 'Iron', name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
 ] as const;
 export const WORLD_TIERS = [
-  { name: 'Starting Chunk 5×5', requiredLevel: 1, cost: 0, blockCount: 25, description: 'A compact meadow with a five-tile path cross.' },
+  { name: 'Starting Chunk 5×5', requiredLevel: 1, cost: 0, blockCount: 25, description: 'A compact meadow with a three-tile starter path.' },
   { name: 'Chunk Expansion 7×7', requiredLevel: 3, cost: 1, blockCount: 49, description: 'Add a new perimeter ring around the starting settlement.' },
   { name: 'Chunk Expansion 9×9', requiredLevel: 6, cost: 2, blockCount: 81, description: 'Open another perimeter ring for the growing village.' },
 ] as const;
@@ -288,14 +286,40 @@ export function isPathCell(state: Pick<GameState, 'pathCells'>, x: number, z: nu
 }
 
 export function getMineFootprint(x: number, z: number, direction: WorldDirection = 'south'): Array<{ x: number; z: number }> {
-  const offset = direction === 'north'
+  const offset = getWorldDirectionOffset(direction);
+  return Array.from({ length: 4 }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
+}
+
+function getWorldDirectionOffset(direction: WorldDirection): { x: number; z: number } {
+  return direction === 'north'
     ? { x: 0, z: -1 }
     : direction === 'east'
       ? { x: 1, z: 0 }
       : direction === 'west'
         ? { x: -1, z: 0 }
         : { x: 0, z: 1 };
-  return Array.from({ length: 4 }, (_, index) => ({ x: x + offset.x * index, z: z + offset.z * index }));
+}
+
+export function getMineRailPathConnection(
+  state: Pick<GameState, 'pathCells'>,
+  x: number,
+  z: number,
+  direction: WorldDirection = 'south',
+): { railIndex: number; pathX: number; pathZ: number } | null {
+  const footprint = getMineFootprint(x, z, direction);
+  const railIndex = footprint.length - 1;
+  const terminal = footprint[railIndex];
+  const offset = getWorldDirectionOffset(direction);
+  const pathX = terminal.x + offset.x;
+  const pathZ = terminal.z + offset.z;
+  return isPathCell(state, pathX, pathZ) ? { railIndex, pathX, pathZ } : null;
+}
+
+function areAdjacentToPath(state: Pick<GameState, 'pathCells'>, footprint: readonly { x: number; z: number }[]): boolean {
+  return footprint.some((cell) => WORLD_DIRECTIONS.some((direction) => {
+    const offset = getWorldDirectionOffset(direction);
+    return isPathCell(state, cell.x + offset.x, cell.z + offset.z);
+  }));
 }
 
 export function getPlacementFootprint(placement: Pick<WorldPlacement, 'x' | 'z' | 'width' | 'depth' | 'direction'>): Array<{ x: number; z: number }> {
@@ -307,19 +331,6 @@ export function getPlacementFootprint(placement: Pick<WorldPlacement, 'x' | 'z' 
   return Array.from({ length: width * depth }, (_, index) => ({
     x: placement.x + (horizontal ? stepX * Math.floor(index / depth) : index % width),
     z: placement.z + (horizontal ? index % depth : stepZ * Math.floor(index / width)),
-  }));
-}
-
-function areAdjacentToPath(state: Pick<GameState, 'pathCells'>, footprint: readonly { x: number; z: number }[]): boolean {
-  return footprint.some((cell) => WORLD_DIRECTIONS.some((direction) => {
-    const offset = direction === 'north'
-      ? [0, -1]
-      : direction === 'east'
-        ? [1, 0]
-        : direction === 'south'
-          ? [0, 1]
-          : [-1, 0];
-    return isPathCell(state, cell.x + offset[0], cell.z + offset[1]);
   }));
 }
 
@@ -389,7 +400,7 @@ export function canPlaceMine(
   const occupied = state.placements.flatMap((placement) => getPlacementFootprint(placement));
   if (occupied.some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z))) return false;
   if (state.mines.some((mine) => getMineFootprint(mine.x, mine.z, mine.direction).some((cell) => footprint.some((candidate) => candidate.x === cell.x && candidate.z === cell.z)))) return false;
-  return areAdjacentToPath(state, footprint);
+  return Boolean(getMineRailPathConnection(state, x, z, direction));
 }
 
 function worldCellKey(x: number, z: number): string {
@@ -512,7 +523,7 @@ function createMineSite(now: number, x: number, z: number, direction: WorldDirec
 export function unlockStarterMine(
   state: GameState,
   now = Date.now(),
-  x = 2,
+  x = 0,
   z = -2,
   direction: WorldDirection = 'south',
 ): boolean {

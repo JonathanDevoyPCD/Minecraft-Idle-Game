@@ -95,41 +95,42 @@ describe('IdleCraft progression', () => {
     expect(loadState(storage, 2000).blockProgress['block-0-0-0-core']).toEqual(saved.blockProgress['block-0-0-0-core']);
   });
 
-  it('starts on a procedural 5×5 chunk with a five-tile path cross and one free mine site', () => {
+  it('starts on a procedural 5×5 chunk with a three-tile path line and one free mine site', () => {
     const state = freshState();
-    expect(state.schemaVersion).toBe(2);
+    expect(state.schemaVersion).toBe(3);
     expect(state.chunkSize).toBe(STARTING_CHUNK_SIZE);
     expect(state.worldCells).toHaveLength(25);
-    expect(state.pathCells.map((cell) => `${cell.x},${cell.z}`)).toEqual(['0,0', '0,-1', '1,0', '0,1', '-1,0']);
+    expect(state.pathCells.map((cell) => `${cell.x},${cell.z}`)).toEqual(['0,2', '1,2', '2,2']);
     expect(state.availableMineSites).toBe(1);
   });
 
-  it('requires a mine footprint to stay inside the chunk and beside the path', () => {
+  it('requires a mine footprint to stay inside the chunk and point its rail end directly at a path', () => {
     const state = freshState();
-    expect(canPlaceMine(state, 2, -2, 'south')).toBe(true);
+    expect(canPlaceMine(state, 0, -2, 'south')).toBe(true);
+    expect(canPlaceMine(state, -2, 1, 'east')).toBe(false);
     expect(canPlaceMine(state, 0, 0, 'south')).toBe(false);
     expect(canPlaceMine(state, -2, -2, 'north')).toBe(false);
-    expect(unlockStarterMine(state, 1000, 2, -2, 'south')).toBe(true);
+    expect(unlockStarterMine(state, 1000, 0, -2, 'south')).toBe(true);
     expect(state.availableMineSites).toBe(0);
     expect(unlockStarterMine(state, 1000, 1, -2, 'west')).toBe(false);
   });
 
   it('uses one collision rule for path-facing structures', () => {
     const state = freshState();
-    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 0, 'south');
     expect(canPlaceWorldPlacement(state, dwelling)).toBe(true);
     expect(placeWorldPlacement(state, dwelling)).toBe(true);
-    expect(canPlaceWorldPlacement(state, createWorldPlacement('well', 'well-1', 1, 1, 'south'))).toBe(false);
-    expect(canPlaceWorldPlacement(state, createWorldPlacement('dwelling', 'dwelling-2', 0, 0, 'south'))).toBe(false);
+    expect(canPlaceWorldPlacement(state, createWorldPlacement('well', 'well-1', 1, 0, 'south'))).toBe(false);
+    expect(canPlaceWorldPlacement(state, createWorldPlacement('dwelling', 'dwelling-2', 1, 1, 'south'))).toBe(false);
   });
 
   it('upgrades path tiles independently', () => {
     const state = freshState();
     state.resources.cobblestone = 8;
-    expect(upgradePathCell(state, 0, 0)).toBe(true);
-    expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 0)?.tier).toBe('cobblestone');
+    expect(upgradePathCell(state, 0, 2)).toBe(true);
+    expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 2)?.tier).toBe('cobblestone');
     expect(state.resources.cobblestone).toBe(0);
-    expect(upgradePathCell(state, 0, 0)).toBe(false);
+    expect(upgradePathCell(state, 0, 2)).toBe(false);
     expect(upgradePathCell(state, 0, -1)).toBe(false);
   });
 
@@ -244,7 +245,7 @@ describe('IdleCraft progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state).toMatchObject({ schemaVersion: 2, worldRank: 0, worldPower: 0, chunkSize: 5 });
+    expect(state).toMatchObject({ schemaVersion: 3, worldRank: 0, worldPower: 0, chunkSize: 5 });
     expect(state.skillRanks).toEqual({});
   });
 

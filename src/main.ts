@@ -16,6 +16,7 @@ import {
   getExpansionChunkOrigin,
   getChunkBounds,
   getMineFootprint,
+  getMineRailPathConnection,
   getMineCartCount,
   getMineLayer,
   getMineTripDuration,
@@ -927,12 +928,7 @@ function createMineVisual(visual: MineVisual): void {
   addMinePart(forwardConnector, railMaterial, [0.07, 0.05, 0.9], [-0.2, 0, 0]);
   addMinePart(forwardConnector, railMaterial, [0.07, 0.05, 0.9], [0.2, 0, 0]);
   addMinePart(forwardConnector, sleeperMaterial, [0.78, 0.06, 0.12], [0, -0.03, 0]);
-  const sideConnector = new THREE.Group();
-  sideConnector.userData.connectorDirection = 'side';
-  addMinePart(sideConnector, railMaterial, [0.9, 0.05, 0.07], [0, 0, -0.2]);
-  addMinePart(sideConnector, railMaterial, [0.9, 0.05, 0.07], [0, 0, 0.2]);
-  addMinePart(sideConnector, sleeperMaterial, [0.12, 0.06, 0.78], [0, -0.03, 0]);
-  visual.pathConnector.add(forwardConnector, sideConnector);
+  visual.pathConnector.add(forwardConnector);
   visual.group.add(visual.pathConnector);
   visual.pathConnector.visible = false;
   visual.group.position.set(0, 0, 0);
@@ -990,42 +986,20 @@ function setMineRotation(group: THREE.Group, direction: WorldDirection): void {
         : 0;
 }
 
-function getMinePathConnection(x: number, z: number, direction: WorldDirection): { index: number; localX: number; localZ: number } | null {
-  const footprint = getMineFootprint(x, z, direction);
-  let best: { index: number; localX: number; localZ: number } | null = null;
-  footprint.forEach((cell, index) => {
-    state.pathCells.forEach((path) => {
-      const dx = path.x - cell.x;
-      const dz = path.z - cell.z;
-      if (Math.abs(dx) + Math.abs(dz) !== 1) return;
-      const local = direction === 'south'
-        ? { localX: dx, localZ: dz }
-        : direction === 'north'
-          ? { localX: -dx, localZ: -dz }
-          : direction === 'east'
-            ? { localX: -dz, localZ: dx }
-            : { localX: dz, localZ: -dx };
-      if (!best || index > best.index) best = { index, ...local };
-    });
-  });
-  return best;
+function getMinePathConnection(x: number, z: number, direction: WorldDirection): { index: number } | null {
+  const connection = getMineRailPathConnection(state, x, z, direction);
+  return connection ? { index: connection.railIndex } : null;
 }
 
 function updateMinePathConnector(visual: MineVisual, x: number, z: number, direction: WorldDirection): void {
   const connection = getMinePathConnection(x, z, direction);
   visual.pathConnector.visible = Boolean(connection);
   if (!connection) return;
-  const isSideConnection = Math.abs(connection.localX) === 1;
-  visual.pathConnector.children.forEach((child) => {
-    child.visible = child.userData.connectorDirection === (isSideConnection ? 'side' : 'forward');
-  });
   const terminalZ = getMineRailCenterZ(connection.index);
   visual.pathConnector.position.set(
-    isSideConnection ? connection.localX * 0.55 * BLOCK_SIZE : 0,
+    0,
     BLOCK_SIZE * 0.52,
-    isSideConnection
-      ? terminalZ * BLOCK_SIZE
-      : (terminalZ + connection.localZ * 0.48) * BLOCK_SIZE,
+    (terminalZ + 0.48) * BLOCK_SIZE,
   );
   visual.pathConnector.rotation.y = 0;
 }
@@ -1052,30 +1026,23 @@ function updateMineVisual(): void {
   mineVisual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
   setMineRotation(mineVisual.group, direction);
   updateMinePathConnector(mineVisual, mine.x, mine.z, direction);
-  const connection = getMinePathConnection(mine.x, mine.z, direction);
   const connectionIndex = updateMineRailLength(mineVisual, mine.x, mine.z, direction);
   syncMineCartMeshes(mineVisual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
   const startZ = BLOCK_SIZE * 0.5;
   const endZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
-  const turnsOntoPath = Boolean(connection && Math.abs(connection.localX) === 1);
-  const endX = turnsOntoPath ? connection!.localX * 0.55 * BLOCK_SIZE : 0;
   mineVisual.carts.forEach((cart, index) => {
     if (!cart.visible) return;
     const phase = (baseProgress + index * 0.27) % 1;
     const travel = phase < 0.5 ? phase * 2 : 2 - phase * 2;
     const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
-    const turnProgress = turnsOntoPath ? THREE.MathUtils.clamp((travel - 0.78) / 0.22, 0, 1) : 0;
-    const railTravel = turnsOntoPath ? Math.min(1, travel / 0.78) : travel;
     cart.position.set(
-      lane * BLOCK_SIZE + endX * turnProgress,
+      lane * BLOCK_SIZE,
       0,
-      startZ + (endZ - startZ) * railTravel,
+      startZ + (endZ - startZ) * travel,
     );
-    cart.rotation.y = turnProgress > 0
-      ? connection!.localX < 0 ? -Math.PI / 2 : Math.PI / 2
-      : phase < 0.5 ? 0 : Math.PI;
+    cart.rotation.y = phase < 0.5 ? 0 : Math.PI;
     setMineCartCargoVisible(cart, phase < 0.5);
   });
 }
@@ -1087,18 +1054,14 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
   setMineRotation(mineGhostVisual.group, preview.direction);
   updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction);
-  const connection = getMinePathConnection(preview.x, preview.z, preview.direction);
   const connectionIndex = updateMineRailLength(mineGhostVisual, preview.x, preview.z, preview.direction);
   syncMineCartMeshes(mineGhostVisual, 1, 0);
-  const ghostTurnsOntoPath = Boolean(connection && Math.abs(connection.localX) === 1);
   mineGhostVisual.carts[0].position.set(
-    ghostTurnsOntoPath ? connection!.localX * 0.55 * BLOCK_SIZE : 0,
+    0,
     0,
     BLOCK_SIZE * getMineRailCenterZ(connectionIndex),
   );
-  mineGhostVisual.carts[0].rotation.y = ghostTurnsOntoPath
-    ? connection!.localX < 0 ? -Math.PI / 2 : Math.PI / 2
-    : 0;
+  mineGhostVisual.carts[0].rotation.y = 0;
   setMineCartCargoVisible(mineGhostVisual.carts[0], false);
   setMineGhostValid(preview.valid);
 }
@@ -1533,13 +1496,13 @@ function updateMineUi(): void {
     const available = state.availableMineSites > 0;
     mineStatusEl.hidden = !available && state.mines.length === 0;
     mineLabelEl.textContent = available ? 'Free mine blueprint ready' : 'Mine entrance locked';
-    mineRateEl.textContent = placingMine ? 'Green preview = valid site' : available ? 'Place beside a path' : 'Unlock another mine';
+    mineRateEl.textContent = placingMine ? 'Green preview = straight path connection' : available ? 'Attach rail end to a path' : 'Unlock another mine';
     mineFillEl.style.width = '0%';
     mineButton.disabled = !available;
     mineActionTitleEl.textContent = placingMine ? 'CHOOSE MINE SITE' : 'PLACE FREE MINE';
-    mineActionHintEl.textContent = placingMine ? 'Click a path-side plot' : 'Click to choose a location';
+    mineActionHintEl.textContent = placingMine ? 'Click a plot facing the path end' : 'Click to choose a location';
     mineButton.classList.toggle('is-placement-mode', placingMine);
-    currentToolHintEl.textContent = placingMine ? 'Preview a four-block rail footprint' : available ? 'Place your free mine beside a path' : 'Unlock a mine entrance';
+    currentToolHintEl.textContent = placingMine ? 'Preview a straight four-block rail run' : available ? 'Place your free mine rail directly into a path' : 'Unlock a mine entrance';
     updateMineVisual();
     return;
   }

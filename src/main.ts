@@ -457,7 +457,7 @@ function createPathVisual(cell: PathCell): PathVisual {
   const group = new THREE.Group();
   group.position.set(cell.x * BLOCK_SIZE, 0, cell.z * BLOCK_SIZE);
   meadowFeatureRoot.add(group);
-  const surface = addFeatureCube(group, getPathMaterial(cell.tier), [0.88, 0.05, 0.88], [0, 0.49, 0]);
+  const surface = addFeatureCube(group, getPathMaterial(cell.tier), [1, 0.05, 1], [0, 0.49, 0]);
   return { cell, group, surface };
 }
 
@@ -471,7 +471,7 @@ const pathGhostMaterial = new THREE.MeshStandardMaterial({
   emissive: 0x315b39,
   emissiveIntensity: 0.4,
 });
-addFeatureCube(pathGhostGroup, pathGhostMaterial, [0.88, 0.06, 0.88], [0, 0.52, 0]);
+addFeatureCube(pathGhostGroup, pathGhostMaterial, [1, 0.06, 1], [0, 0.52, 0]);
 pathGhostGroup.visible = false;
 meadowFeatureRoot.add(pathGhostGroup);
 

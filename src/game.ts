@@ -144,13 +144,14 @@ export const BLOCK_DEFINITIONS = {
 
 export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'];
 
-export const SAVE_KEY = 'idlecraft-save-v2';
-export const SAVE_SCHEMA_VERSION = 3;
-export const STARTING_CHUNK_SIZE = 5;
+const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
+export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
+export const SAVE_SCHEMA_VERSION = 4;
+export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
-  { x: 0, z: 2, tier: 'dirt' },
-  { x: 1, z: 2, tier: 'dirt' },
-  { x: 2, z: 2, tier: 'dirt' },
+  { x: 0, z: 3, tier: 'dirt' },
+  { x: 1, z: 3, tier: 'dirt' },
+  { x: 2, z: 3, tier: 'dirt' },
 ];
 export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; resourceCost: number; description: string }[] = [
   { tier: 'dirt', resourceCost: 0, description: 'A simple route that keeps villagers moving.' },
@@ -174,9 +175,9 @@ export const TOOL_TIERS = [
   { kind: 'pickaxe', material: 'Iron', name: 'Iron Pickaxe', requiredLevel: 6, cost: 3, harvestPower: 4, description: 'Harvests 4 XP per strike and prepares the world for rare ores.' },
 ] as const;
 export const WORLD_TIERS = [
-  { name: 'Starting Chunk 5×5', requiredLevel: 1, cost: 0, blockCount: 25, description: 'A compact meadow with a three-tile starter path.' },
-  { name: 'Chunk Expansion 7×7', requiredLevel: 3, cost: 1, blockCount: 49, description: 'Add a new perimeter ring around the starting settlement.' },
-  { name: 'Chunk Expansion 9×9', requiredLevel: 6, cost: 2, blockCount: 81, description: 'Open another perimeter ring for the growing village.' },
+  { name: 'Starting Chunk 7×7', requiredLevel: 1, cost: 0, blockCount: 49, description: 'A roomy meadow with a three-tile starter path.' },
+  { name: 'Chunk Expansion 9×9', requiredLevel: 3, cost: 1, blockCount: 81, description: 'Add a new perimeter ring around the starting settlement.' },
+  { name: 'Chunk Expansion 11×11', requiredLevel: 6, cost: 2, blockCount: 121, description: 'Open another perimeter ring for the growing village.' },
 ] as const;
 
 export type SettlementStageId = 'dwelling' | 'hamlet' | 'village' | 'small-town' | 'town' | 'city' | 'large-city' | 'endless';
@@ -577,7 +578,7 @@ export function unlockStarterMine(
   state: GameState,
   now = Date.now(),
   x = 0,
-  z = -2,
+  z = -1,
   direction: WorldDirection = 'south',
   railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): boolean {

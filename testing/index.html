@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#65c6e6" />
+    <meta name="description" content="Grow one tiny block into a living world in IdleCraft." />
+    <title>IdleCraft Staging — One Block. Endless World.</title>
+  </head>
+  <body data-surface="testing">
+    <main id="app">
+      <div class="staging-banner" role="status">STAGING WORLD · SAVES STAY SEPARATE</div>
+      <canvas id="world" aria-label="An isometric grass block floating in the sky"></canvas>
+
+      <header class="topbar">
+        <section class="player-card panel" aria-label="Player progress">
+          <div class="level-badge"><span>LVL</span><strong id="level">1</strong></div>
+          <div class="progress-copy">
+            <div class="row"><strong>Settlement</strong><span id="settlement-stage">Dwelling</span></div>
+            <div class="row settlement-progress-row"><small id="settlement-progress-label">0 / 500 Growth</small></div>
+            <div class="xp-track"><div id="settlement-fill" class="xp-fill"></div></div>
+          </div>
+        </section>
+
+        <div class="brand" aria-label="IdleCraft">
+          <span class="brand-cube" aria-hidden="true"></span>
+          <div><strong>IDLECRAFT</strong><small>ONE BLOCK. ENDLESS WORLD.</small></div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="skill-tree-button" class="skill-tree-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay">SKILL TREE</button>
+          <button id="reset-button" class="icon-button panel" type="button" title="Reset saved game" aria-label="Reset saved game">↻</button>
+        </div>
+      </header>
+
+      <div class="view-controls panel" aria-label="World view controls">
+        <button id="zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+        <span id="zoom-level" aria-live="polite">50%</span>
+        <button id="zoom-in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+      </div>
+
+      <section id="construction-status" class="construction-status panel" aria-live="polite" hidden>
+        <div class="construction-status-heading">
+          <small>WORLD BUILD</small>
+          <span id="construction-time">Preparing...</span>
+        </div>
+        <strong id="construction-label">Building world</strong>
+        <div class="construction-track"><div id="construction-fill"></div></div>
+      </section>
+
+      <section id="mine-status" class="mine-status panel" aria-live="polite" hidden>
+        <div class="construction-status-heading">
+          <small>MINE OPERATION</small>
+          <span id="mine-rate">0 trips/min</span>
+        </div>
+        <strong id="mine-label">Mine entrance locked</strong>
+        <div class="construction-track"><div id="mine-fill"></div></div>
+      </section>
+
+      <section class="build-palette panel" aria-label="Build menu">
+        <div class="build-palette-heading"><span>BUILD</span><small id="build-status" aria-live="polite">Build connected paths</small></div>
+        <div class="build-palette-actions">
+          <button id="path-button" type="button" aria-pressed="false"><strong>PATH</strong><small>2 dirt</small></button>
+          <button id="path-upgrade-button" type="button" aria-pressed="false"><strong>UPGRADE</strong><small>Tile by tile</small></button>
+        </div>
+      </section>
+
+      <section class="bottom-hud">
+        <article class="stat-card panel">
+          <span class="stat-icon">✦</span>
+          <div><small>TOTAL XP</small><strong id="total-xp">0</strong></div>
+        </article>
+
+        <article class="tool-card panel" aria-live="polite" aria-label="Current mining operation">
+          <span id="tool-icon" class="tool-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="presentation">
+              <g data-tool-icon="hand">
+                <path d="M11 24V13h5v-6h5v11h3V4h5v14h3V8h5v14h3v10l-9 10H19l-8-8Z" fill="#e6a36c" stroke="#8a4d2d" stroke-width="3" stroke-linejoin="round" />
+                <path d="M16 29h17" fill="none" stroke="#fff1c5" stroke-width="2" opacity=".75" />
+              </g>
+              <g data-tool-icon="pickaxe">
+                <path d="M21 12h6v31h-6z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M7 8h34v6H7z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
+                <path d="M10 14h8l4-6h5l4 6h7" fill="none" stroke="#46545a" stroke-width="3" />
+              </g>
+              <g data-tool-icon="shovel">
+                <path d="M22 10h5v30h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M18 7h13v6H18z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
+                <path d="M13 34h23l-4 9H17Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
+              </g>
+              <g data-tool-icon="axe">
+                <path d="M22 9h5v34h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
+                <path d="M25 8h13v6H31v11h-6Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
+              </g>
+            </svg>
+          </span>
+          <div><small>MINE OPERATION</small><strong id="current-tool">Mine Cart</strong><span id="current-tool-hint">Unlock a mine entrance</span></div>
+        </article>
+
+        <button id="mine-button" class="mine-button" type="button">
+          <span class="mine-icon">▰</span>
+          <span><strong id="mine-action-title">DISPATCH CART</strong><small id="mine-action-hint">Click or press SPACE</small></span>
+        </button>
+
+        <article class="stat-card panel rate-card">
+          <span class="stat-icon">⚡</span>
+          <div><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
+        </article>
+      </section>
+
+      <section class="audio-controls panel" aria-label="Audio controls">
+        <label class="volume-control" for="music-volume-slider" title="Music volume">
+          <span aria-hidden="true">♫</span>
+          <input id="music-volume-slider" type="range" min="0" max="100" value="45" aria-label="Music volume">
+        </label>
+        <label class="volume-control" for="sfx-volume-slider" title="Sound effects volume">
+          <span aria-hidden="true">✦</span>
+          <input id="sfx-volume-slider" type="range" min="0" max="100" value="45" aria-label="Sound effects volume">
+        </label>
+        <button id="music-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute music" title="Mute music">♫</button>
+        <button id="sfx-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute sound effects" title="Mute sound effects">✦</button>
+      </section>
+
+      <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>
+        <div class="skill-tree-modal panel" role="dialog" aria-modal="true" aria-labelledby="skill-tree-title">
+          <header class="skill-tree-header">
+            <div>
+              <p class="eyebrow">CRAFTING TREE</p>
+              <h2 id="skill-tree-title">Shape your world</h2>
+              <p>Spend Crafting Points to unlock tools, automation, and new ground.</p>
+            </div>
+            <button id="skill-tree-close" class="skill-tree-close" type="button" aria-label="Close skill tree">×</button>
+          </header>
+
+          <div class="skill-tree-meta">
+            <p id="skill-tree-summary" class="skill-tree-summary" aria-live="polite"></p>
+            <span>Drag to explore · Scroll or use − / + to zoom</span>
+          </div>
+
+          <div id="skill-tree-viewport" class="skill-tree-viewport">
+            <div id="skill-tree-graph" class="skill-tree-graph" aria-live="polite"></div>
+            <aside id="skill-tree-inspector" class="skill-tree-inspector panel" aria-live="polite" hidden>
+              <div class="skill-tree-inspector-heading">
+                <div class="skill-tree-inspector-icon"><img id="skill-tree-inspector-image" alt=""></div>
+                <div>
+                  <small id="skill-tree-inspector-branch">SELECTED NODE</small>
+                  <h3 id="skill-tree-inspector-title">Select an unlock</h3>
+                </div>
+                <button id="skill-tree-inspector-close" type="button" aria-label="Close node details">×</button>
+              </div>
+              <p id="skill-tree-inspector-description"></p>
+              <div class="skill-tree-inspector-effect">
+                <span>EFFECT</span>
+                <strong id="skill-tree-inspector-effect"></strong>
+              </div>
+              <p id="skill-tree-inspector-consequence" class="skill-tree-inspector-consequence"></p>
+              <small id="skill-tree-inspector-prerequisites" class="skill-tree-inspector-prerequisites"></small>
+              <div class="skill-tree-inspector-footer">
+                <span id="skill-tree-inspector-state"></span>
+                <span id="skill-tree-inspector-cost"></span>
+              </div>
+              <button id="skill-tree-purchase" class="skill-tree-purchase" type="button">Unlock Node</button>
+            </aside>
+            <div class="skill-tree-zoom-controls panel" aria-label="Skill tree zoom controls">
+              <button id="skill-tree-zoom-out" type="button" aria-label="Zoom out">−</button>
+              <span id="skill-tree-zoom-level">34%</span>
+              <button id="skill-tree-zoom-in" type="button" aria-label="Zoom in">+</button>
+            </div>
+            <nav id="skill-tree-branch-legend" class="skill-tree-branch-legend" aria-label="Skill tree branches"></nav>
+          </div>
+
+          <div class="legacy-upgrade-state" hidden aria-hidden="true">
+            <span id="world-rank">TIER 0</span>
+            <span id="world-name">One Block</span>
+            <span id="world-description">A humble starting point for your world.</span>
+            <div id="expansion-directions">
+              <button type="button" data-expansion-direction="north">↑</button>
+              <button type="button" data-expansion-direction="east">→</button>
+              <button type="button" data-expansion-direction="south">↓</button>
+              <button type="button" data-expansion-direction="west">←</button>
+            </div>
+            <button id="world-upgrade" type="button" disabled>Unlock expansion</button>
+            <span id="tool-rank">TIER 0</span>
+            <span id="tool-name">Bare Hands</span>
+            <span id="tool-description">Harvest basic blocks by hand.</span>
+            <button id="tool-upgrade" type="button" disabled>Unlock tool</button>
+            <span id="upgrade-points">0 CP</span>
+            <span id="current-rate">1.0</span>
+            <span id="next-rate">1.5</span>
+            <button id="speed-upgrade" type="button" disabled>Upgrade speed</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="offline-modal" class="modal" hidden>
+        <div class="modal-card panel">
+          <span class="modal-icon">☀</span>
+          <p class="eyebrow">WELCOME BACK</p>
+          <h2>Your block kept working</h2>
+          <p>You earned <strong id="offline-xp">0 XP</strong> while you were away.</p>
+          <button id="offline-close" type="button">Collect</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

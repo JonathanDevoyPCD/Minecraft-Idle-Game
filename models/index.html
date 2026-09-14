@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#43add0" />
+    <meta name="description" content="IdleCraft asset scale and footprint gallery." />
+    <title>IdleCraft Models — Scale Lab</title>
+  </head>
+  <body>
+    <main class="models-app">
+      <canvas id="model-world" aria-label="A grid of IdleCraft model scale tests"></canvas>
+      <header class="models-topbar">
+        <a class="models-home" href="../" aria-label="Return to IdleCraft">← GAME</a>
+        <div>
+          <p>ASSET LAB</p>
+          <h1>Model Scale &amp; Footprints</h1>
+        </div>
+        <a class="models-staging" href="../testing/">OPEN STAGING →</a>
+      </header>
+
+      <aside class="models-controls panel" aria-label="Model scale controls">
+        <label for="model-scale">Shared scale <output id="model-scale-value">100%</output></label>
+        <input id="model-scale" type="range" min="70" max="140" value="100" />
+        <p>Drag the scene to orbit. Each base platform marks its intended occupied footprint.</p>
+        <button id="reset-model-view" type="button">Reset view</button>
+      </aside>
+
+      <section class="models-legend panel" aria-label="Footprint legend">
+        <strong>GRID KEY</strong>
+        <span><i data-size="1"></i>1×1 actor</span>
+        <span><i data-size="2"></i>2×2 actor</span>
+        <small id="model-load-status" aria-live="polite">Loading model assets…</small>
+      </section>
+
+      <section id="model-cards" class="model-cards" aria-label="Loaded model list"></section>
+    </main>
+    <script type="module" src="/src/models.ts"></script>
+  </body>
+</html>

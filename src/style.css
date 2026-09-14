@@ -163,6 +163,7 @@ button { font: inherit; }
 .mine-button strong, .mine-button small { display: block; }
 .mine-button small { color: #fff2c6; letter-spacing: .02em; }
 .mine-icon { font-size: 28px; }
+.staging-banner { position: absolute; top: 8px; left: 50%; z-index: 4; padding: 5px 10px; transform: translateX(-50%); color: #fff8dd; border: 2px solid #8f4e2b; border-radius: 999px; background: #b7602d; box-shadow: 0 3px 0 rgba(89,51,26,.2); font-size: 9px; font-weight: 900; letter-spacing: .08em; pointer-events: none; }
 
 .skill-tree-overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 2.5vh 2.5vw; background: rgba(23, 57, 74, .62); backdrop-filter: blur(9px); }
 .skill-tree-overlay[hidden] { display: none; }

@@ -1219,11 +1219,12 @@ const mineFillEl = document.querySelector<HTMLElement>('#mine-fill')!;
 const currentToolEl = document.querySelector('#current-tool')!;
 const currentToolHintEl = document.querySelector('#current-tool-hint')!;
 const mineButton = document.querySelector<HTMLButtonElement>('#mine-button')!;
-const mineActionTitleEl = document.querySelector<HTMLElement>('#mine-action-title')!;
-const mineActionHintEl = document.querySelector<HTMLElement>('#mine-action-hint')!;
 const pathButton = document.querySelector<HTMLButtonElement>('#path-button')!;
 const pathUpgradeButton = document.querySelector<HTMLButtonElement>('#path-upgrade-button')!;
 const buildStatusEl = document.querySelector<HTMLElement>('#build-status')!;
+const buildDrawer = document.querySelector<HTMLElement>('#build-drawer')!;
+const buildBackButton = document.querySelector<HTMLButtonElement>('#build-back-button')!;
+const buildCategoryButtons = document.querySelectorAll<HTMLButtonElement>('[data-build-category]');
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
 const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
 const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-slider')!;
@@ -1265,7 +1266,9 @@ const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
 type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
+type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
 let buildMode: BuildMode = null;
+let buildDrawerCategory: BuildDrawerCategory = 'root';
 let minePlacementPreview: MinePlacementPreview | null = null;
 let pathPlacementPreview: PathPlacementPreview | null = null;
 let selectedMineRailLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH;
@@ -1282,7 +1285,7 @@ let isPanningSkillTree = false;
 let lastSkillTreePanX = 0;
 let lastSkillTreePanY = 0;
 let selectedSkillNodeId: string | null = null;
-type DrawerKind = 'build' | 'mining' | null;
+type DrawerKind = 'build' | null;
 let activeDrawer: DrawerKind = null;
 
 if (offlineXp > 0) {
@@ -1600,8 +1603,7 @@ function updateMineUi(): void {
     mineRateEl.textContent = placingMine ? `Green preview = ${railLabel.toLowerCase()} straight path connection` : available ? 'Attach rail end to a path' : 'Unlock another mine';
     mineFillEl.style.width = '0%';
     mineButton.disabled = !available;
-    mineActionTitleEl.textContent = placingMine ? 'CHOOSE MINE SITE' : 'PLACE FREE MINE';
-    mineActionHintEl.textContent = placingMine ? `${railLabel} rail · R changes length` : 'Click to choose a location';
+    mineButton.title = placingMine ? `${railLabel} rail selected · click the world to place` : 'Place free mine';
     mineButton.classList.toggle('is-placement-mode', placingMine);
     currentToolHintEl.textContent = placingMine ? `Preview a ${railLabel.toLowerCase()} rail run · press R to cycle` : available ? 'Place your free mine rail directly into a path' : 'Unlock a mine entrance';
     updateMineVisual();
@@ -1616,10 +1618,9 @@ function updateMineUi(): void {
   mineRateEl.textContent = `${tripsPerMinute.toFixed(1)} trips/min`;
   mineFillEl.style.width = `${Math.min(100, mine.progressMs / tripDuration * 100)}%`;
   mineButton.disabled = false;
-  mineActionTitleEl.textContent = 'DISPATCH CART';
-  mineActionHintEl.textContent = 'Click or press SPACE';
-    mineButton.classList.remove('is-placement-mode');
-    updateMineVisual();
+  mineButton.title = 'Dispatch cart';
+  mineButton.classList.remove('is-placement-mode');
+  updateMineVisual();
 }
 
 function updateBuildUi(): void {
@@ -1630,8 +1631,25 @@ function updateBuildUi(): void {
   const dirt = state.resources.dirt ?? 0;
   pathButton.classList.toggle('is-placement-mode', buildMode === 'path');
   pathUpgradeButton.classList.toggle('is-placement-mode', buildMode === 'path-upgrade');
+  mineButton.classList.toggle('is-placement-mode', buildMode === 'mine');
   pathButton.setAttribute('aria-pressed', String(buildMode === 'path'));
   pathUpgradeButton.setAttribute('aria-pressed', String(buildMode === 'path-upgrade'));
+  mineButton.setAttribute('aria-pressed', String(buildMode === 'mine'));
+  buildDrawer.dataset.category = buildDrawerCategory;
+  buildBackButton.hidden = false;
+  buildCategoryButtons.forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.buildCategory === buildDrawerCategory));
+  });
+  if (buildDrawerCategory === 'root') {
+    buildStatusEl.textContent = 'Choose a build category';
+    return;
+  }
+  if (buildDrawerCategory === 'mining') {
+    buildStatusEl.textContent = buildMode === 'mine'
+      ? 'Place the mine rail endpoint directly against a path · R changes rail length'
+      : state.mines.length > 0 ? 'Select Mine to dispatch a cart' : 'Select Mine to place your free mine';
+    return;
+  }
   if (buildMode === 'path') {
     buildStatusEl.textContent = dirt >= DIRT_PATH_BUILD_COST
       ? `Place connected path · ${DIRT_PATH_BUILD_COST} dirt each · Esc cancels`
@@ -1642,20 +1660,22 @@ function updateBuildUi(): void {
     buildStatusEl.textContent = 'Select a path tile to upgrade · Esc cancels';
     return;
   }
-  if (buildMode === 'mine') {
-    buildStatusEl.textContent = 'Place mine rail endpoint directly against a path · R changes rail length';
-    return;
-  }
   buildStatusEl.textContent = `Build connected paths · ${DIRT_PATH_BUILD_COST} dirt each`;
 }
 
 function setBuildMode(nextMode: BuildMode): void {
   buildMode = nextMode;
-  if (nextMode === 'mine') activeDrawer = 'mining';
-  if (nextMode === 'path' || nextMode === 'path-upgrade') activeDrawer = 'build';
+  if (nextMode === 'mine') {
+    activeDrawer = 'build';
+    buildDrawerCategory = 'mining';
+  }
+  if (nextMode === 'path' || nextMode === 'path-upgrade') {
+    activeDrawer = 'build';
+    buildDrawerCategory = 'paths';
+  }
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
-  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build' && buildDrawerCategory === 'mining'));
   minePlacementPreview = null;
   pathPlacementPreview = null;
   updateMineGhostVisual(null);
@@ -1736,11 +1756,25 @@ function flashXpCard(): void {
 
 function setActiveDrawer(nextDrawer: DrawerKind): void {
   activeDrawer = activeDrawer === nextDrawer ? null : nextDrawer;
-  if (activeDrawer !== 'mining' && buildMode === 'mine') setBuildMode(null);
   if (activeDrawer !== 'build' && (buildMode === 'path' || buildMode === 'path-upgrade')) setBuildMode(null);
+  if (activeDrawer !== 'build' && buildMode === 'mine') setBuildMode(null);
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
-  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build' && buildDrawerCategory === 'mining'));
+}
+
+function showBuildDrawer(category: BuildDrawerCategory): void {
+  if (activeDrawer === 'build' && buildDrawerCategory === category && category === 'root') {
+    setActiveDrawer('build');
+    return;
+  }
+  if (buildMode !== null) setBuildMode(null);
+  activeDrawer = 'build';
+  buildDrawerCategory = category;
+  app.dataset.activeDrawer = 'build';
+  buildModeToggle.setAttribute('aria-pressed', String(category !== 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', String(category === 'mining'));
+  updateUi();
 }
 
 function openWorldModal(id: string): void {
@@ -2041,8 +2075,22 @@ mineButton.addEventListener('click', () => {
 });
 pathButton.addEventListener('click', () => setBuildMode(buildMode === 'path' ? null : 'path'));
 pathUpgradeButton.addEventListener('click', () => setBuildMode(buildMode === 'path-upgrade' ? null : 'path-upgrade'));
-buildModeToggle.addEventListener('click', () => setActiveDrawer('build'));
-miningModeToggle.addEventListener('click', () => setActiveDrawer('mining'));
+buildModeToggle.addEventListener('click', () => showBuildDrawer('root'));
+miningModeToggle.addEventListener('click', () => showBuildDrawer('mining'));
+buildBackButton.addEventListener('click', () => {
+  if (buildDrawerCategory === 'root') {
+    setActiveDrawer('build');
+    return;
+  }
+  if (buildMode !== null) setBuildMode(null);
+  buildDrawerCategory = 'root';
+  activeDrawer = 'build';
+  app.dataset.activeDrawer = 'build';
+  updateUi();
+});
+buildCategoryButtons.forEach((button) => {
+  button.addEventListener('click', () => showBuildDrawer(button.dataset.buildCategory as BuildDrawerCategory));
+});
 document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((button) => {
   button.addEventListener('click', () => {
     if (state.mines.length > 0) return;

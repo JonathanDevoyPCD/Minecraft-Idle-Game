@@ -289,26 +289,40 @@ button { font: inherit; }
 .mine-status { top: auto; bottom: 24px; left: 136px; width: min(260px, calc(100vw - 164px)); }
 .construction-status, .mine-status { display: none !important; }
 
-.build-palette, .mining-drawer { position: absolute; bottom: 24px; left: 128px; z-index: 4; width: min(540px, calc(100vw - 170px)); padding: 12px 14px; opacity: 0; pointer-events: none; transform: translateX(-18px); transition: opacity .18s ease, transform .18s ease; }
-.build-palette { top: auto; }
-.mining-drawer { display: grid; grid-template-columns: minmax(145px, 1fr) minmax(180px, 1.35fr) minmax(130px, .8fr); align-items: center; gap: 12px; }
-#app[data-active-drawer='build'] .build-palette, #app[data-active-drawer='mining'] .mining-drawer { opacity: 1; pointer-events: auto; transform: translateX(0); }
-.build-palette-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 8px; }
-.build-palette-heading small { min-height: 0; text-align: right; }
-.build-palette-actions { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-.mining-drawer .tool-card { width: auto; min-width: 0; padding: 0; box-shadow: none; background: transparent; border: 0; }
-.mining-drawer .mine-button { min-width: 0; padding: 10px 12px; }
-.build-categories { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; font-size: 12px; }
-.build-categories span:first-child { font-weight: 900; color: #41682f; }
-.build-categories span:last-child { color: #725f44; }
-.rail-length-selector { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px; border: 1px solid #b6a584; border-radius: 10px; }
-.rail-length-selector legend { padding: 0 6px; font-size: 12px; font-weight: 900; }
-.rail-length-selector button { flex: 1; min-height: 44px; border: 2px solid #b6a584; border-radius: 8px; background: #fff4c9; color: var(--ink); cursor: pointer; }
+.build-palette { position: fixed; top: auto; right: 0; bottom: 0; left: 0; z-index: 4; display: grid; grid-template-columns: 118px minmax(0, 1fr); width: auto; max-width: none; min-height: 106px; padding: 8px 16px 8px 0; border-width: 4px 4px 0; border-radius: 0 22px 0 0; opacity: 0; pointer-events: none; transform: translateY(24px); transition: opacity .18s ease, transform .18s ease; visibility: hidden; }
+.mining-drawer { display: none !important; }
+#app[data-active-drawer='build'] .build-palette { opacity: 1; pointer-events: auto; transform: translateY(0); visibility: visible; }
+.drawer-ribbon { position: absolute; top: -21px; left: 0; min-width: 108px; padding: 5px 17px; color: #3f392d; border: 4px solid #745039; border-radius: 18px 18px 0 0; background: #eadc39; font-size: 14px; font-weight: 900; text-align: center; }
+.drawer-anchor { display: grid; align-content: center; justify-items: center; gap: 3px; min-width: 118px; color: #183d4a; font-weight: 900; font-size: 13px; }
+.drawer-anchor img { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
+.drawer-tray { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; min-width: 0; }
+.drawer-back-button { width: 42px; height: 42px; padding: 0 0 5px; color: #173b49; border: 2px solid #c7aa78; border-radius: 8px; background: #fff3c9; box-shadow: 0 3px 0 #c2ad87; font-size: 40px; line-height: 28px; cursor: pointer; }
+.drawer-back-button:active { transform: translateY(2px); box-shadow: 0 1px 0 #c2ad87; }
+.build-categories, .build-item-slots { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(82px, 1fr); align-items: center; gap: 12px; min-width: 0; }
+.build-palette:not([data-category='root']) .build-categories { display: none; }
+.build-categories button { min-height: 78px; padding: 8px; color: #173b49; border: 4px solid #715039; border-radius: 22px; background: #fff9dc; box-shadow: 0 7px 0 rgba(66, 51, 34, .18); font: inherit; cursor: pointer; }
+.build-categories button:hover:not(:disabled), .build-categories button:focus-visible { border-color: #41682f; outline: 0; }
+.build-categories button:disabled { color: #827963; cursor: not-allowed; opacity: .64; }
+.build-categories button[aria-pressed='true'] { color: #173b49; border-color: #80613e; background: #f4e242; box-shadow: 0 7px 0 rgba(113, 80, 57, .28), inset 0 2px 0 rgba(255,255,255,.5); }
+.build-item-slots { display: none; }
+.build-palette[data-category='mining'] .build-item-slots, .build-palette[data-category='paths'] .build-item-slots { display: grid; }
+.build-item { display: none; min-height: 78px; padding: 7px; color: #173b49; border: 4px solid #715039; border-radius: 18px; background: #fff9dc; box-shadow: 0 7px 0 rgba(66, 51, 34, .18); font: inherit; font-weight: 900; cursor: pointer; }
+.build-item img { display: block; width: 38px; height: 38px; margin: 0 auto 2px; object-fit: contain; image-rendering: pixelated; }
+.path-item-icon { display: block; color: #6e6048; font-size: 30px; line-height: 31px; }
+.build-item small { display: block; color: #786749; font-size: 10px; }
+.build-item:hover:not(:disabled), .build-item:focus-visible { border-color: #41682f; outline: 0; }
+.build-item[aria-pressed='true'], .build-item.is-placement-mode { border-color: #80613e; background: #f4e242; box-shadow: 0 7px 0 rgba(113, 80, 57, .28), inset 0 2px 0 rgba(255,255,255,.5); }
+.build-palette[data-category='mining'] .mine-item, .build-palette[data-category='paths'] #path-button, .build-palette[data-category='paths'] #path-upgrade-button { display: block; }
+.build-item-slot { min-height: 78px; border: 4px dashed #76513a; border-radius: 16px; opacity: .95; }
+.rail-length-selector { display: none; grid-column: 2; grid-template-columns: repeat(3, minmax(78px, 1fr)); gap: 7px; margin: -2px 0 0; padding: 0; border: 0; }
+.build-palette[data-category='mining'] .rail-length-selector { display: grid; }
+.rail-length-selector legend { grid-column: 1 / -1; padding: 0; color: #725f44; font-size: 10px; font-weight: 900; }
+.rail-length-selector button { min-height: 29px; border: 2px solid #b6a584; border-radius: 7px; background: #fff4c9; color: var(--ink); cursor: pointer; font-size: 11px; }
 .rail-length-selector button[aria-pressed='true'] { background: #f4d85e; border-color: #80613e; }
 .rail-length-selector button:disabled { cursor: default; opacity: .65; }
-.rail-length-selector small { flex-basis: 100%; font-size: 11px; letter-spacing: normal; }
-.build-palette, .mining-drawer { visibility: hidden; }
-#app[data-active-drawer='build'] .build-palette, #app[data-active-drawer='mining'] .mining-drawer { visibility: visible; }
+.rail-length-selector small { display: none; }
+.build-status { grid-column: 2; color: #725f44; font-size: 11px; font-weight: 900; }
+.build-palette[data-category='root'] .build-status { display: none; }
 .mining-rate { padding: 6px 4px; text-align: center; }
 .mining-rate small { display: block; color: #937a55; font-size: 9px; }
 .mining-rate strong { display: block; color: var(--ink); font-size: 17px; }
@@ -362,11 +376,19 @@ button { font: inherit; }
   .topbar-actions { left: calc(50vw + 80px); right: auto; }
   .topbar .icon-button { width: 43px; height: 43px; font-size: 19px; }
   .view-controls { top: 61px; right: 12px; }
-  .build-palette, .mining-drawer { right: 12px; bottom: 12px; left: 82px; width: auto; max-width: none; }
-  .mining-drawer { grid-template-columns: 1fr; gap: 7px; }
-  .mining-drawer .tool-card, .mining-rate { display: none; }
-  .build-palette-heading { align-items: start; flex-direction: column; gap: 3px; }
-  .build-palette-heading small { text-align: left; }
+  .build-palette { right: 0; bottom: 0; left: 0; grid-template-columns: 82px minmax(0, 1fr); min-height: 86px; padding: 6px 8px 6px 0; border-radius: 0 15px 0 0; }
+  .drawer-ribbon { top: -17px; min-width: 78px; padding: 3px 9px; border-width: 3px; font-size: 10px; }
+  .drawer-anchor { min-width: 82px; font-size: 10px; }
+  .drawer-anchor img { width: 30px; height: 30px; }
+  .drawer-tray { gap: 7px; }
+  .drawer-back-button { width: 31px; height: 31px; font-size: 29px; }
+  .build-categories, .build-item-slots { grid-auto-columns: minmax(58px, 1fr); gap: 5px; overflow-x: auto; }
+  .build-categories button, .build-item, .build-item-slot { min-height: 62px; border-width: 2px; border-radius: 12px; font-size: 9px; }
+  .build-item img { width: 30px; height: 30px; }
+  .path-item-icon { font-size: 24px; line-height: 24px; }
+  .rail-length-selector { gap: 4px; }
+  .rail-length-selector button { min-height: 25px; font-size: 9px; }
+  .build-status { font-size: 8px; }
   .construction-status, .mine-status { display: none; }
 }
 
@@ -395,7 +417,7 @@ button { font: inherit; }
   .skill-tree-button { width: 72px; padding: 0 5px; font-size: 9px; }
   .construction-status { top: 100px; left: 14px; width: min(210px, calc(100vw - 28px)); }
   .mine-status { top: 204px; left: 14px; width: min(210px, calc(100vw - 28px)); }
-  .build-palette { top: 308px; left: 14px; width: min(220px, calc(100vw - 28px)); }
+  .build-palette { top: auto; right: 0; bottom: 0; left: 0; width: auto; }
   .player-card { min-width: 0; }
   .row strong { display: none; }
   .bottom-hud { gap: 6px; }

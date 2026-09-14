@@ -71,12 +71,28 @@
         <div class="construction-track"><div id="mine-fill"></div></div>
       </section>
 
-      <section id="build-drawer" class="build-palette panel" aria-label="Build menu">
-        <div class="build-palette-heading"><span>BUILD</span><small id="build-status" aria-live="polite">Build connected paths</small></div>
-        <nav class="build-categories" aria-label="Build categories"><span>Paths</span><span title="Settlement construction is planned">Settlement · Coming later</span></nav>
-        <div class="build-palette-actions">
-          <button id="path-button" type="button" aria-pressed="false"><strong>PATH</strong><small>2 dirt</small></button>
-          <button id="path-upgrade-button" type="button" aria-pressed="false"><strong>UPGRADE</strong><small>Tile by tile</small></button>
+      <section id="build-drawer" class="build-palette panel" aria-label="Build menu" data-category="root">
+        <span class="drawer-ribbon">Upgrades</span>
+        <div class="drawer-anchor" aria-hidden="true"><img src="/assets/ui/Build-Icon.png" alt="" /><span>Build Mode</span></div>
+        <div class="drawer-tray">
+          <button id="build-back-button" class="drawer-back-button" type="button" aria-label="Back to build categories">‹</button>
+          <nav class="build-categories" aria-label="Build categories">
+            <button type="button" data-build-category="mining">Mining</button>
+            <button type="button" data-build-category="paths">Paths</button>
+            <button type="button" data-build-category="farm" disabled>Farm</button>
+            <button type="button" data-build-category="smithing" disabled>Smithing</button>
+            <button type="button" data-build-category="houses" disabled>Houses</button>
+            <button type="button" data-build-category="animals" disabled>Animals</button>
+            <button type="button" data-build-category="science" disabled>Science</button>
+          </nav>
+          <div class="build-item-slots" aria-live="polite">
+            <button id="mine-button" class="build-item mine-item" type="button" aria-pressed="false"><img src="/assets/ui/minethumb.png" alt="" /><span>Mine</span></button>
+            <button id="path-button" class="build-item" type="button" aria-pressed="false"><span class="path-item-icon">▦</span><span>Path</span><small>2 dirt</small></button>
+            <button id="path-upgrade-button" class="build-item" type="button" aria-pressed="false"><span class="path-item-icon">↑</span><span>Upgrade</span><small>Tile</small></button>
+            <span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span>
+          </div>
+          <fieldset class="rail-length-selector"><legend>Rail length</legend><button type="button" data-rail-length="2" aria-pressed="false">Short</button><button type="button" data-rail-length="3" aria-pressed="false">Medium</button><button type="button" data-rail-length="4" aria-pressed="true">Long</button><small>Choose before placement · R cycles lengths</small></fieldset>
+          <small id="build-status" class="build-status" aria-live="polite">Choose a build category</small>
         </div>
       </section>
 
@@ -107,13 +123,7 @@
           <div><small>MINE OPERATION</small><strong id="current-tool">Mine Cart</strong><span id="current-tool-hint">Unlock a mine entrance</span></div>
         </article>
 
-        <button id="mine-button" class="mine-button" type="button">
-          <span class="mine-icon">▰</span>
-          <span><strong id="mine-action-title">DISPATCH CART</strong><small id="mine-action-hint">Click or press SPACE</small></span>
-        </button>
-
         <div class="mining-rate"><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
-        <fieldset class="rail-length-selector"><legend>Rail length</legend><button type="button" data-rail-length="2" aria-pressed="false">Short</button><button type="button" data-rail-length="3" aria-pressed="false">Medium</button><button type="button" data-rail-length="4" aria-pressed="true">Long</button><small>Choose before placement · R cycles lengths</small></fieldset>
       </section>
 
       <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>

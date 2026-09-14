@@ -1623,6 +1623,10 @@ function updateMineUi(): void {
 }
 
 function updateBuildUi(): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((button) => {
+    button.disabled = state.mines.length > 0;
+    button.setAttribute('aria-pressed', String(Number(button.dataset.railLength) === (state.mines[0]?.railLength ?? selectedMineRailLength)));
+  });
   const dirt = state.resources.dirt ?? 0;
   pathButton.classList.toggle('is-placement-mode', buildMode === 'path');
   pathUpgradeButton.classList.toggle('is-placement-mode', buildMode === 'path-upgrade');
@@ -1732,6 +1736,7 @@ function flashXpCard(): void {
 
 function setActiveDrawer(nextDrawer: DrawerKind): void {
   activeDrawer = activeDrawer === nextDrawer ? null : nextDrawer;
+  if (activeDrawer !== 'mining' && buildMode === 'mine') setBuildMode(null);
   if (activeDrawer !== 'build' && (buildMode === 'path' || buildMode === 'path-upgrade')) setBuildMode(null);
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
@@ -2038,6 +2043,15 @@ pathButton.addEventListener('click', () => setBuildMode(buildMode === 'path' ? n
 pathUpgradeButton.addEventListener('click', () => setBuildMode(buildMode === 'path-upgrade' ? null : 'path-upgrade'));
 buildModeToggle.addEventListener('click', () => setActiveDrawer('build'));
 miningModeToggle.addEventListener('click', () => setActiveDrawer('mining'));
+document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((button) => {
+  button.addEventListener('click', () => {
+    if (state.mines.length > 0) return;
+    selectedMineRailLength = Number(button.dataset.railLength) as MineRailLength;
+    minePlacementPreview = null;
+    updateMineGhostVisual(null);
+    updateUi();
+  });
+});
 resourcesButton.addEventListener('click', () => openWorldModal('resources-modal'));
 tradingButton.addEventListener('click', () => openWorldModal('trading-modal'));
 storyButton.addEventListener('click', () => openWorldModal('story-modal'));

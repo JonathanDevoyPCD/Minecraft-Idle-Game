@@ -298,6 +298,17 @@ button { font: inherit; }
 .build-palette-actions { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
 .mining-drawer .tool-card { width: auto; min-width: 0; padding: 0; box-shadow: none; background: transparent; border: 0; }
 .mining-drawer .mine-button { min-width: 0; padding: 10px 12px; }
+.build-categories { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; font-size: 12px; }
+.build-categories span:first-child { font-weight: 900; color: #41682f; }
+.build-categories span:last-child { color: #725f44; }
+.rail-length-selector { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px; border: 1px solid #b6a584; border-radius: 10px; }
+.rail-length-selector legend { padding: 0 6px; font-size: 12px; font-weight: 900; }
+.rail-length-selector button { flex: 1; min-height: 44px; border: 2px solid #b6a584; border-radius: 8px; background: #fff4c9; color: var(--ink); cursor: pointer; }
+.rail-length-selector button[aria-pressed='true'] { background: #f4d85e; border-color: #80613e; }
+.rail-length-selector button:disabled { cursor: default; opacity: .65; }
+.rail-length-selector small { flex-basis: 100%; font-size: 11px; letter-spacing: normal; }
+.build-palette, .mining-drawer { visibility: hidden; }
+#app[data-active-drawer='build'] .build-palette, #app[data-active-drawer='mining'] .mining-drawer { visibility: visible; }
 .mining-rate { padding: 6px 4px; text-align: center; }
 .mining-rate small { display: block; color: #937a55; font-size: 9px; }
 .mining-rate strong { display: block; color: var(--ink); font-size: 17px; }

@@ -1190,9 +1190,16 @@ const settlementStageEl = document.querySelector('#settlement-stage')!;
 const settlementProgressLabelEl = document.querySelector('#settlement-progress-label')!;
 const settlementFillEl = document.querySelector<HTMLElement>('#settlement-fill')!;
 const totalXpEl = document.querySelector('#total-xp')!;
+const resourceEmeraldEl = document.querySelector('#resource-emerald')!;
+const resourceDiamondEl = document.querySelector('#resource-diamond')!;
+const resourceGoldEl = document.querySelector('#resource-gold')!;
+const resourceModalEmeraldEl = document.querySelector('#resource-modal-emerald')!;
+const resourceModalDiamondEl = document.querySelector('#resource-modal-diamond')!;
+const resourceModalGoldEl = document.querySelector('#resource-modal-gold')!;
+const resourceModalCobblestoneEl = document.querySelector('#resource-modal-cobblestone')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
 const pointsEl = document.querySelector('#upgrade-points')!;
-const totalXpCard = totalXpEl.closest<HTMLElement>('.stat-card')!;
+const totalXpCard = totalXpEl.closest<HTMLElement>('.resource-brief')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
 const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in')!;
@@ -1219,6 +1226,18 @@ const sfxVolumeSlider = document.querySelector<HTMLInputElement>('#sfx-volume-sl
 const musicToggle = document.querySelector<HTMLButtonElement>('#music-toggle')!;
 const sfxToggle = document.querySelector<HTMLButtonElement>('#sfx-toggle')!;
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
+const skillTreePointsLabel = document.querySelector<HTMLElement>('#skill-tree-points-label')!;
+const miningMenuRate = document.querySelector<HTMLElement>('#mining-menu-rate')!;
+const app = document.querySelector<HTMLElement>('#app')!;
+const buildModeToggle = document.querySelector<HTMLButtonElement>('#build-mode-toggle')!;
+const miningModeToggle = document.querySelector<HTMLButtonElement>('#mining-mode-toggle')!;
+const resourcesButton = document.querySelector<HTMLButtonElement>('#resources-button')!;
+const tradingButton = document.querySelector<HTMLButtonElement>('#trading-button')!;
+const storyButton = document.querySelector<HTMLButtonElement>('#story-button')!;
+const pauseMenuButton = document.querySelector<HTMLButtonElement>('#pause-menu-button')!;
+const resumeButton = document.querySelector<HTMLButtonElement>('#resume-button')!;
+const storyStageLabel = document.querySelector<HTMLElement>('#story-stage-label')!;
+const worldModals = document.querySelectorAll<HTMLElement>('.world-modal');
 const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
 const skillTreeClose = document.querySelector<HTMLButtonElement>('#skill-tree-close')!;
 const skillTreeViewport = document.querySelector<HTMLElement>('#skill-tree-viewport')!;
@@ -1259,6 +1278,8 @@ let isPanningSkillTree = false;
 let lastSkillTreePanX = 0;
 let lastSkillTreePanY = 0;
 let selectedSkillNodeId: string | null = null;
+type DrawerKind = 'build' | 'mining' | null;
+let activeDrawer: DrawerKind = null;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -1622,6 +1643,11 @@ function updateBuildUi(): void {
 
 function setBuildMode(nextMode: BuildMode): void {
   buildMode = nextMode;
+  if (nextMode === 'mine') activeDrawer = 'mining';
+  if (nextMode === 'path' || nextMode === 'path-upgrade') activeDrawer = 'build';
+  app.dataset.activeDrawer = activeDrawer ?? '';
+  buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
   minePlacementPreview = null;
   pathPlacementPreview = null;
   updateMineGhostVisual(null);
@@ -1659,6 +1685,16 @@ function updateUi(): void {
   }
   totalXpEl.textContent = state.totalXp.toLocaleString();
   autoRateEl.textContent = rate.toFixed(2);
+  resourceEmeraldEl.textContent = (state.resources.emerald ?? 0).toLocaleString();
+  resourceDiamondEl.textContent = (state.resources.diamond ?? 0).toLocaleString();
+  resourceGoldEl.textContent = (state.resources.gold ?? 0).toLocaleString();
+  resourceModalEmeraldEl.textContent = (state.resources.emerald ?? 0).toLocaleString();
+  resourceModalDiamondEl.textContent = (state.resources.diamond ?? 0).toLocaleString();
+  resourceModalGoldEl.textContent = (state.resources.gold ?? 0).toLocaleString();
+  resourceModalCobblestoneEl.textContent = (state.resources.cobblestone ?? 0).toLocaleString();
+  skillTreePointsLabel.textContent = `${state.craftingPoints} CP`;
+  miningMenuRate.textContent = `${rate.toFixed(2)}/s`;
+  storyStageLabel.textContent = settlementStage.name;
   pointsEl.textContent = `${state.craftingPoints} CP`;
   updateCurrentTool();
   updateConstructionUi();
@@ -1683,6 +1719,27 @@ function flashXpCard(): void {
   totalXpCard.classList.add('is-gaining');
   window.clearTimeout(xpFlashTimeout);
   xpFlashTimeout = window.setTimeout(() => totalXpCard.classList.remove('is-gaining'), 480);
+}
+
+function setActiveDrawer(nextDrawer: DrawerKind): void {
+  activeDrawer = activeDrawer === nextDrawer ? null : nextDrawer;
+  if (activeDrawer !== 'build' && (buildMode === 'path' || buildMode === 'path-upgrade')) setBuildMode(null);
+  app.dataset.activeDrawer = activeDrawer ?? '';
+  buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
+}
+
+function openWorldModal(id: string): void {
+  const modal = document.querySelector<HTMLElement>(`#${id}`);
+  if (!modal) return;
+  modal.hidden = false;
+  modal.querySelector<HTMLButtonElement>('.modal-close')?.focus();
+}
+
+function closeWorldModal(id: string): void {
+  const modal = document.querySelector<HTMLElement>(`#${id}`);
+  if (!modal) return;
+  modal.hidden = true;
 }
 
 function getOreAtPointer(event: PointerEvent): OreNode | null {
@@ -1950,6 +2007,8 @@ skillTreeViewport.addEventListener('pointerup', endSkillTreePan);
 skillTreeViewport.addEventListener('pointercancel', endSkillTreePan);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
+  if (event.key === 'Escape') worldModals.forEach((modal) => { modal.hidden = true; });
+  if (event.key === 'Escape' && activeDrawer !== null) setActiveDrawer(activeDrawer);
   if (event.key === 'Escape' && buildMode !== null) setBuildMode(null);
   if (event.key.toLowerCase() !== 'r' || buildMode !== 'mine' || event.repeat) return;
   const currentIndex = MINE_RAIL_LENGTHS.indexOf(selectedMineRailLength);
@@ -1968,6 +2027,21 @@ mineButton.addEventListener('click', () => {
 });
 pathButton.addEventListener('click', () => setBuildMode(buildMode === 'path' ? null : 'path'));
 pathUpgradeButton.addEventListener('click', () => setBuildMode(buildMode === 'path-upgrade' ? null : 'path-upgrade'));
+buildModeToggle.addEventListener('click', () => setActiveDrawer('build'));
+miningModeToggle.addEventListener('click', () => setActiveDrawer('mining'));
+resourcesButton.addEventListener('click', () => openWorldModal('resources-modal'));
+tradingButton.addEventListener('click', () => openWorldModal('trading-modal'));
+storyButton.addEventListener('click', () => openWorldModal('story-modal'));
+pauseMenuButton.addEventListener('click', () => openWorldModal('pause-modal'));
+resumeButton.addEventListener('click', () => closeWorldModal('pause-modal'));
+document.querySelectorAll<HTMLButtonElement>('[data-close-modal]').forEach((button) => {
+  button.addEventListener('click', () => closeWorldModal(button.dataset.closeModal!));
+});
+worldModals.forEach((modal) => {
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) modal.hidden = true;
+  });
+});
 musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));
 sfxVolumeSlider.addEventListener('input', () => audioManager.setSfxVolume(Number(sfxVolumeSlider.value) / 100));
 musicToggle.addEventListener('click', () => {

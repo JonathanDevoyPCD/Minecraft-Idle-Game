@@ -12,6 +12,27 @@
       <div class="staging-banner" role="status">STAGING WORLD · SAVES STAY SEPARATE</div>
       <canvas id="world" aria-label="An isometric grass block floating in the sky"></canvas>
 
+      <section class="resource-dock" aria-label="Resource overview">
+        <button id="resources-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="resources-modal">
+          <img src="/assets/ui/Resources-Icon.png" alt="" />
+          <span>Resources</span>
+        </button>
+        <div class="resource-brief panel" aria-live="polite">
+          <div class="resource-line resource-line--xp"><img src="/assets/ui/experience_bottle.png" alt="" /><strong id="total-xp">0</strong><span>Total XP</span></div>
+          <div class="resource-line"><img src="/assets/ui/emerald.png" alt="" /><strong id="resource-emerald">0</strong><span>Emerald</span></div>
+          <div class="resource-line"><img src="/assets/ui/diamond.png" alt="" /><strong id="resource-diamond">0</strong><span>Diamond</span></div>
+          <div class="resource-line"><img src="/assets/ui/raw_gold.png" alt="" /><strong id="resource-gold">0</strong><span>Gold</span></div>
+        </div>
+      </section>
+
+      <nav class="world-actions" aria-label="World menus">
+        <button id="trading-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="trading-modal"><img src="/assets/ui/TraderTransparentIcon.png" alt="" /><span>Trading</span><small>Later</small></button>
+        <button id="story-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="story-modal"><img src="/assets/ui/Story-Icon.png" alt="" /><span>Story</span><small id="story-stage-label">Dwelling</small></button>
+        <button id="skill-tree-button" class="world-menu-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay"><img src="/assets/ui/experience_bottle.png" alt="" /><span>Skill Tree</span><small id="skill-tree-points-label">0 CP</small></button>
+        <button id="mining-mode-toggle" class="world-menu-button panel" type="button" aria-pressed="false" aria-controls="mining-drawer"><img src="/assets/ui/Mining-Icon.png" alt="" /><span>Mining</span><small id="mining-menu-rate">0.00/s</small></button>
+        <button id="build-mode-toggle" class="world-menu-button panel" type="button" aria-pressed="false" aria-controls="build-drawer"><img src="/assets/ui/Build-Icon.png" alt="" /><span>Build Mode</span><small>Paths</small></button>
+      </nav>
+
       <header class="topbar">
         <section class="player-card panel" aria-label="Player progress">
           <div class="level-badge"><span>LVL</span><strong id="level">1</strong></div>
@@ -21,15 +42,8 @@
             <div class="xp-track"><div id="settlement-fill" class="xp-fill"></div></div>
           </div>
         </section>
-
-        <div class="brand" aria-label="IdleCraft">
-          <span class="brand-cube" aria-hidden="true"></span>
-          <div><strong>IDLECRAFT</strong><small>ONE BLOCK. ENDLESS WORLD.</small></div>
-        </div>
-
         <div class="topbar-actions">
-          <button id="skill-tree-button" class="skill-tree-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay">SKILL TREE</button>
-          <button id="reset-button" class="icon-button panel" type="button" title="Reset saved game" aria-label="Reset saved game">↻</button>
+          <button id="pause-menu-button" class="icon-button panel" type="button" title="Pause and settings" aria-label="Pause and settings">⚙</button>
         </div>
       </header>
 
@@ -57,7 +71,7 @@
         <div class="construction-track"><div id="mine-fill"></div></div>
       </section>
 
-      <section class="build-palette panel" aria-label="Build menu">
+      <section id="build-drawer" class="build-palette panel" aria-label="Build menu">
         <div class="build-palette-heading"><span>BUILD</span><small id="build-status" aria-live="polite">Build connected paths</small></div>
         <div class="build-palette-actions">
           <button id="path-button" type="button" aria-pressed="false"><strong>PATH</strong><small>2 dirt</small></button>
@@ -65,13 +79,8 @@
         </div>
       </section>
 
-      <section class="bottom-hud">
-        <article class="stat-card panel">
-          <span class="stat-icon">✦</span>
-          <div><small>TOTAL XP</small><strong id="total-xp">0</strong></div>
-        </article>
-
-        <article class="tool-card panel" aria-live="polite" aria-label="Current mining operation">
+      <section id="mining-drawer" class="mining-drawer panel" aria-label="Mining menu">
+        <article class="tool-card" aria-live="polite" aria-label="Current mining operation">
           <span id="tool-icon" class="tool-icon" aria-hidden="true">
             <svg viewBox="0 0 48 48" role="presentation">
               <g data-tool-icon="hand">
@@ -102,23 +111,7 @@
           <span><strong id="mine-action-title">DISPATCH CART</strong><small id="mine-action-hint">Click or press SPACE</small></span>
         </button>
 
-        <article class="stat-card panel rate-card">
-          <span class="stat-icon">⚡</span>
-          <div><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
-        </article>
-      </section>
-
-      <section class="audio-controls panel" aria-label="Audio controls">
-        <label class="volume-control" for="music-volume-slider" title="Music volume">
-          <span aria-hidden="true">♫</span>
-          <input id="music-volume-slider" type="range" min="0" max="100" value="45" aria-label="Music volume">
-        </label>
-        <label class="volume-control" for="sfx-volume-slider" title="Sound effects volume">
-          <span aria-hidden="true">✦</span>
-          <input id="sfx-volume-slider" type="range" min="0" max="100" value="45" aria-label="Sound effects volume">
-        </label>
-        <button id="music-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute music" title="Mute music">♫</button>
-        <button id="sfx-toggle" class="audio-toggle" type="button" aria-pressed="false" aria-label="Mute sound effects" title="Mute sound effects">✦</button>
+        <div class="mining-rate"><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
       </section>
 
       <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>
@@ -201,6 +194,57 @@
           <button id="offline-close" type="button">Collect</button>
         </div>
       </div>
+
+      <section id="resources-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="resources-title" hidden>
+        <div class="modal-card panel">
+          <button class="modal-close" type="button" data-close-modal="resources-modal" aria-label="Close resources">×</button>
+          <img class="modal-art" src="/assets/ui/Resources-Icon.png" alt="" />
+          <p class="eyebrow">COLLECTION</p>
+          <h2 id="resources-title">Resources</h2>
+          <p>Mining always grants XP. Rare resources unlock paths, buildings, expansions, and future trades.</p>
+          <dl class="resource-ledger">
+            <div><dt><img src="/assets/ui/emerald.png" alt="" />Emerald</dt><dd id="resource-modal-emerald">0</dd></div>
+            <div><dt><img src="/assets/ui/diamond.png" alt="" />Diamond</dt><dd id="resource-modal-diamond">0</dd></div>
+            <div><dt><img src="/assets/ui/raw_gold.png" alt="" />Gold</dt><dd id="resource-modal-gold">0</dd></div>
+            <div><dt>Cobblestone</dt><dd id="resource-modal-cobblestone">0</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="trading-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="trading-title" hidden>
+        <div class="modal-card panel">
+          <button class="modal-close" type="button" data-close-modal="trading-modal" aria-label="Close trading">×</button>
+          <img class="modal-art modal-art--trader" src="/assets/ui/TraderTransparentIcon.png" alt="" />
+          <p class="eyebrow">WANDERING TRADER</p>
+          <h2 id="trading-title">Trading arrives with your village</h2>
+          <p>Grow your settlement before traders visit. Their offers will convert surplus resources into the materials your next expansion needs.</p>
+        </div>
+      </section>
+
+      <section id="story-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="story-title" hidden>
+        <div class="modal-card panel">
+          <button class="modal-close" type="button" data-close-modal="story-modal" aria-label="Close story">×</button>
+          <img class="modal-art" src="/assets/ui/Story-Icon.png" alt="" />
+          <p class="eyebrow">NEXT CHAPTER</p>
+          <h2 id="story-title">Build a settlement, not an XP machine</h2>
+          <p>Use the story as a clear growth guide: place homes, provide water, assign workers, then expand farming and trade.</p>
+        </div>
+      </section>
+
+      <section id="pause-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden>
+        <div class="modal-card panel pause-card">
+          <button class="modal-close" type="button" data-close-modal="pause-modal" aria-label="Close pause menu">×</button>
+          <p class="eyebrow">PAUSE MENU</p>
+          <h2 id="pause-title">IdleCraft</h2>
+          <button id="resume-button" class="modal-primary" type="button">Resume</button>
+          <div class="settings-group">
+            <label class="volume-control" for="music-volume-slider">Music <input id="music-volume-slider" type="range" min="0" max="100" value="45" aria-label="Music volume"></label>
+            <label class="volume-control" for="sfx-volume-slider">Sound FX <input id="sfx-volume-slider" type="range" min="0" max="100" value="45" aria-label="Sound effects volume"></label>
+            <div class="audio-toggles"><button id="music-toggle" class="audio-toggle" type="button" aria-pressed="false">Mute music</button><button id="sfx-toggle" class="audio-toggle" type="button" aria-pressed="false">Mute sound</button></div>
+          </div>
+          <button id="reset-button" class="clear-world-button" type="button">Clear World</button>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

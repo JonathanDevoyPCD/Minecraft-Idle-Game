@@ -1197,6 +1197,10 @@ const resourceModalEmeraldEl = document.querySelector('#resource-modal-emerald')
 const resourceModalDiamondEl = document.querySelector('#resource-modal-diamond')!;
 const resourceModalGoldEl = document.querySelector('#resource-modal-gold')!;
 const resourceModalCobblestoneEl = document.querySelector('#resource-modal-cobblestone')!;
+const resourceXpFillEl = document.querySelector<HTMLElement>('#resource-xp-fill')!;
+const resourceEmeraldFillEl = document.querySelector<HTMLElement>('#resource-emerald-fill')!;
+const resourceDiamondFillEl = document.querySelector<HTMLElement>('#resource-diamond-fill')!;
+const resourceGoldFillEl = document.querySelector<HTMLElement>('#resource-gold-fill')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
 const pointsEl = document.querySelector('#upgrade-points')!;
 const totalXpCard = totalXpEl.closest<HTMLElement>('.resource-brief')!;
@@ -1692,6 +1696,11 @@ function updateUi(): void {
   resourceModalDiamondEl.textContent = (state.resources.diamond ?? 0).toLocaleString();
   resourceModalGoldEl.textContent = (state.resources.gold ?? 0).toLocaleString();
   resourceModalCobblestoneEl.textContent = (state.resources.cobblestone ?? 0).toLocaleString();
+  const resourceFill = (value: number, milestone: number) => `${Math.min(100, value / milestone * 100)}%`;
+  resourceXpFillEl.style.width = settlementFillEl.style.width;
+  resourceEmeraldFillEl.style.width = resourceFill(state.resources.emerald ?? 0, 100);
+  resourceDiamondFillEl.style.width = resourceFill(state.resources.diamond ?? 0, 100);
+  resourceGoldFillEl.style.width = resourceFill(state.resources.gold ?? 0, 100);
   skillTreePointsLabel.textContent = `${state.craftingPoints} CP`;
   miningMenuRate.textContent = `${rate.toFixed(2)}/s`;
   storyStageLabel.textContent = settlementStage.name;

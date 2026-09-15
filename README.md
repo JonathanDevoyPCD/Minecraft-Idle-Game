@@ -35,6 +35,20 @@ npm test
 npm run build
 ```
 
+## Cloud session saving
+
+IdleCraft keeps its local autosave and also syncs the current save to Supabase
+when a player session is available. The browser uses only the publishable key;
+the secret key and database password must never be placed in the client or in a
+Vite environment variable.
+
+Before testing cloud saves, enable **Authentication → Sign-in / Providers →
+Anonymous Sign-Ins** in the `Villagers-Idle-World-Game` Supabase project. The
+local Vite app and the GitHub Pages build use the same project configuration.
+Optional `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` environment
+variables can override the built-in publishable configuration for another
+environment.
+
 ## Art note
 
 This public build uses original flat-colour materials. External texture packs should only be committed after their licence and redistribution terms have been confirmed.

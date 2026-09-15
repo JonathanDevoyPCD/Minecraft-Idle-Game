@@ -52,7 +52,7 @@ import {
   moveWorldPlacement,
   // debugUnlockFullSkillTree,
   loadState,
-  saveState,
+  saveState as saveLocalState,
   PATH_TIERS,
   unlockStarterMine,
   upgradePathCell,
@@ -77,6 +77,7 @@ import {
   type SkillNodeDefinition,
 } from './skill-tree';
 import { getSkillNodeIconName } from './skill-tree-icons';
+import { playerSaveSync } from './player-save';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -133,9 +134,15 @@ scene.add(shadowBase);
 
 const world = new THREE.Group();
 scene.add(world);
+const hasLocalSave = localStorage.getItem(SAVE_KEY) !== null;
 let state = loadState(localStorage);
 const audioManager = new AudioManager();
 let isResetting = false;
+
+function saveState(storage: Storage, currentState: typeof state, now = Date.now()): void {
+  saveLocalState(storage, currentState, now);
+  if (storage === localStorage && currentState === state) playerSaveSync.queue(currentState);
+}
 
 function loadBlockTexture(fileName: string): THREE.Texture {
   const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}assets/blocks/${fileName}`);
@@ -2975,7 +2982,7 @@ document.querySelector('#reset-button')!.addEventListener('click', () => {
   if (window.confirm('Reset all IdleCraft progress?')) {
     isResetting = true;
     localStorage.removeItem(SAVE_KEY);
-    window.location.reload();
+    void playerSaveSync.clearRemoteSave().finally(() => window.location.reload());
   }
 });
 
@@ -3021,6 +3028,19 @@ window.setInterval(() => saveState(localStorage, state), 5000);
 resize();
 updateUi();
 updateAudioUi();
+
+void playerSaveSync.initialize(state, hasLocalSave).then((remoteState) => {
+  if (!remoteState || isResetting) return;
+  // If the player started working before the first cloud request finished,
+  // keep that local progress instead of replacing it with the remote copy.
+  if (!hasLocalSave && localStorage.getItem(SAVE_KEY) !== null) return;
+  localStorage.setItem(SAVE_KEY, JSON.stringify(remoteState));
+  state = loadState(localStorage);
+  updateWorldScene();
+  updateUi();
+}).catch((error: unknown) => {
+  console.warn('IdleCraft cloud session initialization failed; local saving remains active.', error);
+});
 
 const clock = new THREE.Clock();
 const SIMULATION_INTERVAL_MS = 100;

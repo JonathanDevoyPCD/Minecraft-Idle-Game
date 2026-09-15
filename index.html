@@ -48,6 +48,7 @@
               <button class="mining-drawer-item mining-upgrade-item" type="button" data-mining-panel="storage" data-mining-upgrade="storage-capacity">
                 <span class="mining-item-icon">▣</span><strong>Storage Carts</strong><small id="storage-upgrade-status">Loading...</small>
               </button>
+              <div id="mining-storage-list" class="mining-mine-list" data-mining-panel="storage"></div>
             </div>
           </div>
         </div>
@@ -64,6 +65,10 @@
               <button class="build-category" type="button" data-build-category="smithing">Smithing</button>
               <button class="build-category" type="button" data-build-category="houses">Houses</button>
               <button class="build-category" type="button" data-build-category="animals">Animals</button>
+              <div class="build-action-stack" aria-label="Placed item actions">
+                <button class="build-category build-action-button" type="button" data-build-action="move" aria-pressed="false">Move</button>
+                <button class="build-category build-action-button" type="button" data-build-action="destroy" aria-pressed="false">Destroy</button>
+              </div>
             </div>
             <div class="build-drawer-page build-drawer-page--items" data-build-page="items" aria-hidden="true">
               <button class="build-category-item build-category-item--back" type="button" data-build-item="back" aria-label="Back to build categories">‹</button>
@@ -243,6 +248,19 @@
         </div>
       </section>
 
+      <section id="placement-destroy-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="placement-destroy-title" hidden>
+        <div class="modal-card panel action-confirm-card">
+          <button class="modal-close" type="button" data-close-modal="placement-destroy-modal" aria-label="Cancel destroy">×</button>
+          <p class="eyebrow">BUILD MODE</p>
+          <h2 id="placement-destroy-title">Destroy this item?</h2>
+          <p id="placement-destroy-message">All progress and upgrades on this item will be lost.</p>
+          <div class="action-confirm-buttons">
+            <button id="placement-destroy-cancel" class="modal-secondary" type="button">Cancel</button>
+            <button id="placement-destroy-confirm" class="modal-danger" type="button">Destroy</button>
+          </div>
+        </div>
+      </section>
+
       <section id="pause-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden>
         <div class="modal-card panel pause-card">
           <button class="modal-close" type="button" data-close-modal="pause-modal" aria-label="Close pause menu">×</button>
@@ -254,9 +272,27 @@
             <label class="volume-control" for="sfx-volume-slider">Sound FX <input id="sfx-volume-slider" type="range" min="0" max="100" value="45" aria-label="Sound effects volume"></label>
             <div class="audio-toggles"><button id="music-toggle" class="audio-toggle" type="button" aria-pressed="false">Mute music</button><button id="sfx-toggle" class="audio-toggle" type="button" aria-pressed="false">Mute sound</button></div>
           </div>
+          <!-- Debug Menu temporarily disabled. Keep this markup for later development testing.
+          <button id="debug-menu-button" class="debug-menu-button" type="button">Debug Menu</button>
+          -->
           <button id="reset-button" class="clear-world-button" type="button">Clear World</button>
         </div>
       </section>
+
+      <!-- Debug modal temporarily disabled. Keep this markup for later development testing.
+      <section id="debug-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="debug-title" hidden>
+        <div class="modal-card panel debug-card">
+          <button class="modal-close" type="button" data-close-modal="debug-modal" aria-label="Close debug menu">×</button>
+          <p class="eyebrow">DEVELOPMENT TOOLS</p>
+          <h2 id="debug-title">Debug Menu</h2>
+          <p>Use these shortcuts to test late-game systems without spending resources or Crafting Points.</p>
+          <div class="debug-action">
+            <div><strong>Full Skill Tree</strong><small>Max every skill node and enable its derived gameplay systems.</small></div>
+            <button id="debug-unlock-skill-tree" type="button">Unlock All</button>
+          </div>
+          <small id="debug-status" class="debug-status" aria-live="polite"></small>
+        </div>
+      </section> -->
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

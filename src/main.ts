@@ -10,16 +10,21 @@ import {
   MINE_RAIL_LENGTHS,
   addXp,
   advanceMineOperations,
+  buyMineStorageUpgrade,
   buyMineUpgrade,
   buildPathCell,
   buySkillNode,
   canBuildPathCell,
+  canMovePathCell,
+  canMoveWorldPlacement,
   canPlaceMine,
   canAffordSkillNode,
   calculateOfflineXp,
   completeConstructionProjects,
   collectOreBonus,
   dispatchMineCart,
+  destroyPathCell,
+  destroyWorldPlacement,
   getExpansionChunkOrigin,
   getChunkBounds,
   getMineFootprint,
@@ -31,6 +36,10 @@ import {
   getAvailableMineSites,
   getMineSiteCapacity,
   getMineLayer,
+  getMineStorageCapacity,
+  getMineStorageFillDuration,
+  getMineStorageFillState,
+  getMineStorageUpgradeCost,
   getMineTripDuration,
   getLivingEntityPlan,
   getMineCargoKind,
@@ -40,6 +49,9 @@ import {
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
+  movePathCell,
+  moveWorldPlacement,
+  // debugUnlockFullSkillTree,
   loadState,
   saveState,
   PATH_TIERS,
@@ -50,6 +62,7 @@ import {
   type LivingEntityPlan,
   type MineCargoKind,
   type MineRailLength,
+  type MineStorageFillState,
   type MineUpgradeId,
   type MeadowFeature,
   type MineSite,
@@ -506,8 +519,14 @@ function updateMeadowScene(): void {
   state.pathCells.forEach(ensurePathVisual);
   const visibleSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
   pathVisuals.forEach((visual) => {
-    visual.surface.material = getPathMaterial(visual.cell.tier);
-    visual.group.visible = visibleSurfaceCells.has(`${visual.cell.x},${visual.cell.z}`);
+    const currentCell = state.pathCells.find((cell) => cell.x === visual.cell.x && cell.z === visual.cell.z)
+      ?? state.pathCells.find((cell) => cell === visual.cell);
+    if (currentCell && currentCell !== visual.cell) {
+      visual.cell = currentCell;
+      visual.group.position.set(currentCell.x * BLOCK_SIZE, 0, currentCell.z * BLOCK_SIZE);
+    }
+    visual.surface.material = getPathMaterial(currentCell?.tier ?? visual.cell.tier);
+    visual.group.visible = Boolean(currentCell && visibleSurfaceCells.has(`${currentCell.x},${currentCell.z}`));
   });
 }
 
@@ -720,6 +739,7 @@ interface MineVisual {
   carts: THREE.Group[];
   ghost: boolean;
   pathConnector: THREE.Group;
+  storage: THREE.Group;
   railSegments: THREE.Group[];
   cargoKind: MineCargoKind | null;
 }
@@ -744,6 +764,7 @@ function makeMineVisual(ghost = false): MineVisual {
     carts: [],
     ghost,
     pathConnector: new THREE.Group(),
+    storage: new THREE.Group(),
     railSegments: [],
     cargoKind: null,
   };
@@ -799,6 +820,64 @@ const mineCargoColors: Record<MineCargoKind, number> = {
   gold: 0xf2c14d,
   diamond: 0x71e4f1,
 };
+
+const mineStorageOrePositions: ReadonlyArray<[number, number, number, number]> = [
+  [-0.09, 0.28, -0.1, 0.18],
+  [0.02, 0.29, -0.08, -0.24],
+  [0.09, 0.28, 0.02, 0.12],
+  [-0.03, 0.3, 0.09, 0.36],
+];
+
+function createMineStorageVisual(
+  fillState: MineStorageFillState,
+  cargoKind: MineCargoKind,
+  ghost: boolean,
+): THREE.Group {
+  const storage = new THREE.Group();
+  storage.userData.isGhost = ghost;
+  storage.userData.isMineStorage = true;
+  // Keep the temporary box centered on the Rail End/path block. The authored
+  // Mine Storage model can replace this group later without changing its slot.
+  storage.position.set(0, 0, 0);
+
+  const woodMaterial = createMineMaterial(0x71472c, oakPlanksTexture, ghost);
+  const darkWoodMaterial = createMineMaterial(0x3e281d, darkOakPlanksTexture, ghost);
+  addMinePart(storage, darkWoodMaterial, [0.42, 0.08, 0.34], [0, 0.04, 0]);
+  addMinePart(storage, woodMaterial, [0.06, 0.28, 0.38], [-0.22, 0.16, 0]);
+  addMinePart(storage, woodMaterial, [0.06, 0.28, 0.38], [0.22, 0.16, 0]);
+  addMinePart(storage, woodMaterial, [0.38, 0.28, 0.06], [0, 0.16, -0.16]);
+  addMinePart(storage, woodMaterial, [0.38, 0.28, 0.06], [0, 0.16, 0.16]);
+  addMinePart(storage, darkWoodMaterial, [0.48, 0.06, 0.06], [0, 0.3, -0.19]);
+  addMinePart(storage, darkWoodMaterial, [0.48, 0.06, 0.06], [0, 0.3, 0.19]);
+
+  const oreCount = fillState === 'empty' ? 0 : fillState === 'low' ? 2 : fillState === 'medium' ? 3 : 4;
+  if (oreCount > 0) {
+    const oreMaterial = createMineMaterial(
+      mineCargoColors[cargoKind],
+      cargoKind === 'stone' ? undefined : oreTextures[cargoKind],
+      ghost,
+    );
+    mineStorageOrePositions.slice(0, oreCount).forEach(([x, y, z, rotation]) => {
+      const ore = new THREE.Mesh(new THREE.DodecahedronGeometry(BLOCK_SIZE * 0.055, 0), oreMaterial);
+      ore.position.set(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
+      ore.rotation.set(rotation, rotation * 0.7, rotation * 1.2);
+      ore.castShadow = !ghost;
+      storage.add(ore);
+    });
+  }
+  return storage;
+}
+
+function updateMineStorageVisual(visual: MineVisual, mine: MineSite): void {
+  visual.storage.clear();
+  const capacity = getMineStorageCapacity(mine);
+  const fillState = getMineStorageFillState(mine.storageAmount, capacity);
+  visual.storage.add(createMineStorageVisual(fillState, getMineCargoKind(state), visual.ghost));
+  visual.storage.userData.storageState = fillState;
+  visual.storage.userData.storageAmount = mine.storageAmount;
+  visual.storage.userData.storageCapacity = capacity;
+  visual.storage.visible = !visual.ghost;
+}
 
 function createMineCargoVisual(kind: MineCargoKind, ghost: boolean): THREE.Group {
   const cargo = new THREE.Group();
@@ -1019,6 +1098,8 @@ function createMineVisual(visual: MineVisual): void {
   forwardConnector.userData.connectorDirection = 'forward';
   if (railEndTemplate) installRailEndModel(forwardConnector, visual.ghost);
   visual.pathConnector.add(forwardConnector);
+  visual.storage.userData.isGhost = visual.ghost;
+  visual.pathConnector.add(visual.storage);
   visual.group.add(visual.pathConnector);
   visual.pathConnector.visible = false;
   visual.group.position.set(0, 0, 0);
@@ -1090,8 +1171,10 @@ authoredModelLoader.load(`${authoredModelBase}MineEntrance.glb`, (gltf) => {
   refreshAuthoredMineModels();
 }, undefined, () => console.warn('IdleCraft: MineEntrance.glb could not be loaded.'));
 
-function syncMineCartMeshes(visual: MineVisual, cartCount: number, storageCarts: number): void {
-  const wanted = visual.ghost ? 1 : Math.max(1, cartCount) + storageCarts;
+function syncMineCartMeshes(visual: MineVisual): void {
+  // There is exactly one physical cart per mine. Storage upgrades affect the
+  // box capacity, not the number of carts rendered on the route.
+  const wanted = 1;
   const cargoKind = visual.ghost ? 'stone' : getMineCargoKind(state);
   if (visual.cargoKind !== cargoKind) {
     visual.carts.forEach((cart) => visual.group.remove(cart));
@@ -1099,8 +1182,7 @@ function syncMineCartMeshes(visual: MineVisual, cartCount: number, storageCarts:
     visual.cargoKind = cargoKind;
   }
   while (visual.carts.length < wanted) {
-    const isStorage = !visual.ghost && visual.carts.length >= cartCount;
-    const cart = createMineCartVisual(visual.ghost, isStorage, isStorage ? null : cargoKind);
+    const cart = createMineCartVisual(visual.ghost, false, cargoKind);
     visual.group.add(cart);
     visual.carts.push(cart);
   }
@@ -1191,13 +1273,26 @@ function setMineCartCargoVisible(cart: THREE.Group, visible: boolean): void {
 
 function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
   visual.group.visible = true;
+  visual.group.userData.placementId = mine.id;
+  mine.cartCount = 1;
+  mine.storageCarts = 0;
   const direction = mine.direction ?? 'south';
   const railLength = mine.railLength ?? DEFAULT_MINE_RAIL_LENGTH;
   visual.group.position.set(mine.x * BLOCK_SIZE, 0, mine.z * BLOCK_SIZE);
   setMineRotation(visual.group, direction);
   updateMinePathConnector(visual, mine.x, mine.z, direction, railLength);
+  updateMineStorageVisual(visual, mine);
   const connectionIndex = updateMineRailLength(visual, mine.x, mine.z, direction, railLength);
-  syncMineCartMeshes(visual, mine.cartCount, mine.storageCarts);
+  syncMineCartMeshes(visual);
+  const isMovePreview = selectedMoveItem?.kind === 'mine' && selectedMoveItem.id === mine.id;
+  const isDestroyPreview = pendingDestroyItem?.kind === 'mine' && pendingDestroyItem.id === mine.id;
+  if (isMovePreview && moveHoverCell) {
+    // Keep the selected mine at the last valid placement cell after any
+    // routine UI/model refresh. The underlying state remains at the source
+    // cell until the player confirms the move.
+    visual.group.position.set(moveHoverCell.x * BLOCK_SIZE, 0, moveHoverCell.z * BLOCK_SIZE);
+  }
+  if (isMovePreview || isDestroyPreview) return;
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
   const startZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
@@ -1221,6 +1316,93 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
     cart.rotation.y = travellingToMine ? Math.PI : 0;
     setMineCartCargoVisible(cart, phase >= 0.5);
   });
+}
+
+function restoreActionVisual(mesh: THREE.Mesh): void {
+  const original = mesh.userData.actionOriginalMaterial as THREE.Material | THREE.Material[] | undefined;
+  if (!original) return;
+  const current = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  current.forEach((material) => {
+    if (material !== original && !Array.isArray(original)) material.dispose();
+    if (Array.isArray(original) && !original.includes(material)) material.dispose();
+  });
+  mesh.material = original;
+  delete mesh.userData.actionOriginalMaterial;
+  delete mesh.userData.actionVisualMode;
+}
+
+function setActionVisual(root: THREE.Object3D, mode: ActionVisualMode): void {
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const currentMode = object.userData.actionVisualMode as ActionVisualMode | undefined;
+    if (currentMode === mode) return;
+    restoreActionVisual(object);
+    if (mode === 'none') return;
+
+    const original = object.material;
+    const sourceMaterials = Array.isArray(original) ? original : [original];
+    const ghost = mode === 'move' || mode === 'move-invalid' || mode === 'destroy';
+    const isRedGhost = mode === 'move-invalid' || mode === 'destroy';
+    const colour = isRedGhost ? 0xd85c55 : mode === 'move' ? 0xf0d833 : 0xf4c95d;
+    const opacity = mode === 'hover' ? 0.88 : 0.58;
+    const highlighted = sourceMaterials.map((source) => {
+      const material = source.clone();
+      material.userData.actionClone = true;
+      if ('color' in material && material.color instanceof THREE.Color) material.color.setHex(colour);
+      if (material instanceof THREE.MeshStandardMaterial) {
+        material.emissive.setHex(isRedGhost ? 0x6c1717 : mode === 'move' ? 0x8b7900 : 0x785c12);
+        material.emissiveIntensity = ghost ? 0.32 : 0.16;
+        if (ghost) material.map = null;
+      }
+      material.transparent = true;
+      material.opacity = opacity;
+      material.depthWrite = false;
+      return material;
+    });
+    object.userData.actionOriginalMaterial = original;
+    object.userData.actionVisualMode = mode;
+    object.material = Array.isArray(original) ? highlighted : highlighted[0];
+  });
+}
+
+function samePlacedItem(a: PlacedItemTarget | null, b: PlacedItemTarget | null): boolean {
+  if (!a || !b || a.kind !== b.kind) return false;
+  return a.kind === 'mine'
+    ? a.id === (b as Extract<PlacedItemTarget, { kind: 'mine' }>).id
+    : a.x === (b as Extract<PlacedItemTarget, { kind: 'path' }>).x && a.z === (b as Extract<PlacedItemTarget, { kind: 'path' }>).z;
+}
+
+function syncPlacementActionVisuals(): void {
+  const movePreviewValid = selectedMoveItem && moveHoverCell
+    ? selectedMoveItem.kind === 'mine'
+      ? canMoveWorldPlacement(state, selectedMoveItem.id, moveHoverCell.x, moveHoverCell.z)
+      : canMovePathCell(state, selectedMoveItem.x, selectedMoveItem.z, moveHoverCell.x, moveHoverCell.z)
+    : false;
+  const modeFor = (target: PlacedItemTarget): ActionVisualMode => {
+    if (pendingDestroyItem && samePlacedItem(pendingDestroyItem, target)) return 'destroy';
+    if (selectedMoveItem && samePlacedItem(selectedMoveItem, target)) return movePreviewValid ? 'move' : 'move-invalid';
+    if (hoveredPlacedItem && samePlacedItem(hoveredPlacedItem, target)) return 'hover';
+    return 'none';
+  };
+
+  mineVisuals.forEach((visual, id) => setActionVisual(visual.group, modeFor({ kind: 'mine', id })));
+  pathVisuals.forEach((visual) => {
+    const target = { kind: 'path', x: visual.cell.x, z: visual.cell.z } as const;
+    setActionVisual(visual.surface, modeFor(target));
+    const preview = selectedMoveItem?.kind === 'path' && samePlacedItem(selectedMoveItem, target) ? moveHoverCell : null;
+    const x = preview?.x ?? visual.cell.x;
+    const z = preview?.z ?? visual.cell.z;
+    visual.group.position.set(x * BLOCK_SIZE, 0, z * BLOCK_SIZE);
+  });
+
+  const selectedMine = selectedMoveItem?.kind === 'mine' ? selectedMoveItem : null;
+  if (selectedMine) {
+    const visual = mineVisuals.get(selectedMine.id);
+    const mine = state.mines.find((candidate) => candidate.id === selectedMine.id);
+    const x = moveHoverCell?.x ?? mine?.x;
+    const z = moveHoverCell?.z ?? mine?.z;
+    if (visual && x !== undefined && z !== undefined) visual.group.position.set(x * BLOCK_SIZE, 0, z * BLOCK_SIZE);
+  }
 }
 
 function updateMineVisual(): void {
@@ -1250,8 +1432,9 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   mineGhostVisual.group.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
   setMineRotation(mineGhostVisual.group, preview.direction);
   updateMinePathConnector(mineGhostVisual, preview.x, preview.z, preview.direction, preview.railLength);
+  mineGhostVisual.storage.visible = false;
   const connectionIndex = updateMineRailLength(mineGhostVisual, preview.x, preview.z, preview.direction, preview.railLength);
-  syncMineCartMeshes(mineGhostVisual, 1, 0);
+  syncMineCartMeshes(mineGhostVisual);
   mineGhostVisual.carts[0].position.set(
     0,
     0,
@@ -1354,6 +1537,7 @@ const buildDrawer = document.querySelector<HTMLElement>('#build-drawer')!;
 const actualToggle = document.querySelector<HTMLButtonElement>('#actual-toggle')!;
 const buildBackButton = document.querySelector<HTMLButtonElement>('#build-back-button')!;
 const buildCategoryButtons = document.querySelectorAll<HTMLButtonElement>('[data-build-category]');
+const buildActionButtons = document.querySelectorAll<HTMLButtonElement>('[data-build-action]');
 const buildCategoryItemButtons = document.querySelectorAll<HTMLButtonElement>('[data-build-item]');
 const toolIconGroups = document.querySelectorAll<SVGGElement>('[data-tool-icon]');
 const musicVolumeSlider = document.querySelector<HTMLInputElement>('#music-volume-slider')!;
@@ -1367,6 +1551,7 @@ const miningDrawer = document.querySelector<HTMLElement>('#mining-drawer')!;
 const miningActualToggle = document.querySelector<HTMLButtonElement>('#mining-actual-toggle')!;
 const miningCategoryButtons = document.querySelectorAll<HTMLButtonElement>('[data-mining-category]');
 const miningMineList = document.querySelector<HTMLElement>('#mining-mine-list')!;
+const miningStorageList = document.querySelector<HTMLElement>('#mining-storage-list')!;
 const railUpgradeStatus = document.querySelector<HTMLElement>('#rail-upgrade-status')!;
 const storageUpgradeStatus = document.querySelector<HTMLElement>('#storage-upgrade-status')!;
 const miningUpgradeButtons = document.querySelectorAll<HTMLButtonElement>('[data-mining-upgrade]');
@@ -1378,8 +1563,17 @@ const tradingButton = document.querySelector<HTMLButtonElement>('#trading-button
 const traderEmeraldButton = document.querySelector<HTMLButtonElement>('#trader-emerald-button')!;
 const traderEmeraldStatus = document.querySelector<HTMLElement>('#trader-emerald-status')!;
 const storyButton = document.querySelector<HTMLButtonElement>('#story-button')!;
+const placementDestroyModal = document.querySelector<HTMLElement>('#placement-destroy-modal')!;
+const placementDestroyTitle = document.querySelector<HTMLElement>('#placement-destroy-title')!;
+const placementDestroyMessage = document.querySelector<HTMLElement>('#placement-destroy-message')!;
+const placementDestroyCancel = document.querySelector<HTMLButtonElement>('#placement-destroy-cancel')!;
+const placementDestroyConfirm = document.querySelector<HTMLButtonElement>('#placement-destroy-confirm')!;
 const pauseMenuButton = document.querySelector<HTMLButtonElement>('#pause-menu-button')!;
 const resumeButton = document.querySelector<HTMLButtonElement>('#resume-button')!;
+// Debug Menu temporarily disabled. Keep the wiring commented out for later.
+// const debugMenuButton = document.querySelector<HTMLButtonElement>('#debug-menu-button')!;
+// const debugUnlockSkillTreeButton = document.querySelector<HTMLButtonElement>('#debug-unlock-skill-tree')!;
+// const debugStatus = document.querySelector<HTMLElement>('#debug-status')!;
 const storyStageLabel = document.querySelector<HTMLElement>('#story-stage-label');
 const worldModals = document.querySelectorAll<HTMLElement>('.world-modal');
 const skillTreeOverlay = document.querySelector<HTMLElement>('#skill-tree-overlay')!;
@@ -1405,10 +1599,18 @@ const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
 type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
+type BuildAction = 'move' | 'destroy' | null;
+type PlacedItemTarget = { kind: 'mine'; id: string } | { kind: 'path'; x: number; z: number };
+type ActionVisualMode = 'none' | 'hover' | 'move' | 'move-invalid' | 'destroy';
 type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
 type BuildDrawerView = 'categories' | 'items';
 type MiningDrawerCategory = 'mines' | 'rails' | 'storage';
 let buildMode: BuildMode = null;
+let buildAction: BuildAction = null;
+let selectedMoveItem: PlacedItemTarget | null = null;
+let hoveredPlacedItem: PlacedItemTarget | null = null;
+let pendingDestroyItem: PlacedItemTarget | null = null;
+let moveHoverCell: { x: number; z: number } | null = null;
 let buildDrawerCategory: BuildDrawerCategory = 'root';
 let buildDrawerView: BuildDrawerView = 'categories';
 let miningDrawerCategory: MiningDrawerCategory = 'mines';
@@ -1789,6 +1991,12 @@ function updateBuildUi(): void {
     button.setAttribute('aria-pressed', String(isSelected));
     button.classList.toggle('selected', isSelected);
   });
+  buildActionButtons.forEach((button) => {
+    const action = button.dataset.buildAction as Exclude<BuildAction, null> | undefined;
+    const isActive = action !== undefined && action === buildAction;
+    button.setAttribute('aria-pressed', String(isActive));
+    button.classList.toggle('selected', isActive);
+  });
   const activeBuildItem = buildMode === 'mine' ? 'mine' : buildMode === 'path' ? 'path' : buildMode === 'path-upgrade' ? 'path-upgrade' : null;
   buildCategoryItemButtons.forEach((button) => {
     const item = button.dataset.buildItem;
@@ -1809,6 +2017,16 @@ function updateBuildUi(): void {
     button.setAttribute('aria-pressed', String(item === activeBuildItem));
     button.classList.toggle('selected', item === activeBuildItem);
   });
+  if (buildAction === 'move') {
+    buildStatusEl.textContent = selectedMoveItem
+      ? 'Choose an open block for the selected item · Esc cancels'
+      : 'Select a placed item to move · Esc cancels';
+    return;
+  }
+  if (buildAction === 'destroy') {
+    buildStatusEl.textContent = 'Select a placed item to destroy · Esc cancels';
+    return;
+  }
   if (buildDrawerCategory === 'root') {
     buildStatusEl.textContent = 'Choose a build category';
     return;
@@ -1863,6 +2081,16 @@ function formatMineCargo(cargo: MineCargoKind): string {
   return cargo.charAt(0).toUpperCase() + cargo.slice(1);
 }
 
+function formatMineStorageState(fillState: MineStorageFillState): string {
+  return fillState.charAt(0).toUpperCase() + fillState.slice(1);
+}
+
+function formatMineStorageTime(durationMs: number): string {
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.floor(durationMs / 1_000) % 60;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
 function updateMiningUi(): void {
   syncMiningModeDrawer();
   const tripDuration = getMineTripDuration(state);
@@ -1871,13 +2099,20 @@ function updateMiningUi(): void {
   const cargo = formatMineCargo(getMineCargoKind(state));
 
   miningMineList.replaceChildren();
+  miningStorageList.replaceChildren();
   if (state.mines.length === 0) {
     const empty = document.createElement('article');
     empty.className = 'mining-info-tile mining-info-tile--empty';
     empty.textContent = 'No active mines';
     miningMineList.append(empty);
+    const storageEmpty = document.createElement('article');
+    storageEmpty.className = 'mining-info-tile mining-info-tile--empty';
+    storageEmpty.textContent = 'No mine storage';
+    miningStorageList.append(storageEmpty);
   } else {
-    state.mines.forEach((_, index) => {
+    state.mines.forEach((mine, index) => {
+      const capacity = getMineStorageCapacity(mine);
+      const fillState = getMineStorageFillState(mine.storageAmount, capacity);
       const tile = document.createElement('article');
       tile.className = 'mining-info-tile';
       const title = document.createElement('strong');
@@ -1886,8 +2121,28 @@ function updateMiningUi(): void {
       speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart${cartCount === 1 ? '' : 's'}`;
       const ore = document.createElement('small');
       ore.textContent = `Mining ${cargo}`;
-      tile.append(title, speed, ore);
+      const storage = document.createElement('small');
+      storage.textContent = `Storage ${Math.floor(mine.storageAmount)}/${capacity} · ${formatMineStorageState(fillState)}`;
+      tile.append(title, speed, ore, storage);
       miningMineList.append(tile);
+
+      const storageTile = document.createElement('article');
+      storageTile.className = 'mining-info-tile mining-info-tile--storage';
+      const storageTitle = document.createElement('strong');
+      storageTitle.textContent = `Mine ${index + 1}`;
+      const storageAmount = document.createElement('span');
+      storageAmount.textContent = `${Math.floor(mine.storageAmount)}/${capacity} ore · ${formatMineStorageState(fillState)}`;
+      const storageTime = document.createElement('small');
+      storageTime.textContent = `Full in ${formatMineStorageTime(getMineStorageFillDuration(mine))}`;
+      const storageUpgrade = document.createElement('button');
+      storageUpgrade.className = 'storage-upgrade-button';
+      storageUpgrade.type = 'button';
+      storageUpgrade.dataset.mineStorageUpgrade = mine.id;
+      storageUpgrade.textContent = '+100 capacity · 1 Emerald';
+      storageUpgrade.disabled = (state.resources.emerald ?? 0) < (getMineStorageUpgradeCost(state, mine.id) ?? 1);
+      storageUpgrade.title = storageUpgrade.disabled ? 'Need 1 Emerald to upgrade this mine storage' : 'Upgrade this mine storage for 1 Emerald';
+      storageTile.append(storageTitle, storageAmount, storageTime, storageUpgrade);
+      miningStorageList.append(storageTile);
     });
   }
 
@@ -1919,6 +2174,12 @@ function updateMiningUi(): void {
 
 function setBuildMode(nextMode: BuildMode): void {
   buildMode = nextMode;
+  buildAction = null;
+  selectedMoveItem = null;
+  hoveredPlacedItem = null;
+  pendingDestroyItem = null;
+  moveHoverCell = null;
+  placementDestroyModal.hidden = true;
   if (nextMode === 'mine') {
     activeDrawer = 'build';
     buildDrawerCategory = 'mining';
@@ -1939,6 +2200,28 @@ function setBuildMode(nextMode: BuildMode): void {
   updateMineGhostVisual(null);
   updatePathGhostVisual(null);
   canvas.classList.toggle('is-building', buildMode !== null);
+  updateUi();
+}
+
+function setBuildAction(nextAction: BuildAction): void {
+  buildAction = buildAction === nextAction ? null : nextAction;
+  selectedMoveItem = null;
+  hoveredPlacedItem = null;
+  pendingDestroyItem = null;
+  moveHoverCell = null;
+  placementDestroyModal.hidden = true;
+  buildMode = null;
+  minePlacementPreview = null;
+  pathPlacementPreview = null;
+  activeDrawer = buildAction ? 'build' : activeDrawer;
+  if (buildAction) {
+    buildDrawerCategory = 'root';
+    buildDrawerView = 'categories';
+  }
+  app.dataset.activeDrawer = activeDrawer ?? '';
+  updateMineGhostVisual(null);
+  updatePathGhostVisual(null);
+  canvas.classList.remove('is-building');
   updateUi();
 }
 
@@ -1998,6 +2281,7 @@ function updateUi(): void {
   updateConstructionUi();
   updateMineUi();
   updateBuildUi();
+  syncPlacementActionVisuals();
   updateMiningUi();
 }
 
@@ -2022,6 +2306,14 @@ function flashXpCard(): void {
 
 function setActiveDrawer(nextDrawer: DrawerKind): void {
   activeDrawer = activeDrawer === nextDrawer ? null : nextDrawer;
+  if (activeDrawer !== 'build') {
+    buildAction = null;
+    selectedMoveItem = null;
+    hoveredPlacedItem = null;
+    pendingDestroyItem = null;
+    moveHoverCell = null;
+    placementDestroyModal.hidden = true;
+  }
   if (activeDrawer !== 'build' && buildMode !== null) setBuildMode(null);
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
@@ -2037,6 +2329,12 @@ function showBuildDrawer(category: BuildDrawerCategory): void {
     return;
   }
   if (buildMode !== null) setBuildMode(null);
+  buildAction = null;
+  selectedMoveItem = null;
+  hoveredPlacedItem = null;
+  pendingDestroyItem = null;
+  moveHoverCell = null;
+  placementDestroyModal.hidden = true;
   activeDrawer = 'build';
   buildDrawerCategory = category;
   buildDrawerView = category === 'root' ? 'categories' : 'items';
@@ -2076,6 +2374,7 @@ function closeWorldModal(id: string): void {
   const modal = document.querySelector<HTMLElement>(`#${id}`);
   if (!modal) return;
   modal.hidden = true;
+  if (id === 'placement-destroy-modal') cancelDestroyConfirmation();
 }
 
 function getOreAtPointer(event: PointerEvent): OreNode | null {
@@ -2085,6 +2384,119 @@ function getOreAtPointer(event: PointerEvent): OreNode | null {
   raycaster.setFromCamera(pointer, camera);
   const hit = raycaster.intersectObjects(oreTargets, false)[0];
   return hit ? oreByMesh.get(hit.object) ?? null : null;
+}
+
+function getPlacedItemAtPointer(event: PointerEvent): PlacedItemTarget | null {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const mineTargets = Array.from(mineVisuals.values())
+    .filter((visual) => visual.group.visible)
+    .map((visual) => visual.group);
+  const pathTargets = pathVisuals
+    .filter((visual) => visual.group.visible)
+    .map((visual) => visual.surface);
+  const hit = raycaster.intersectObjects([...mineTargets, ...pathTargets], true)[0];
+  if (!hit) return null;
+
+  let current: THREE.Object3D | null = hit.object;
+  while (current) {
+    const placementId = current.userData.placementId;
+    if (typeof placementId === 'string') return { kind: 'mine', id: placementId };
+    current = current.parent;
+  }
+  const pathVisual = pathVisuals.find((visual) => visual.surface === hit.object);
+  return pathVisual ? { kind: 'path', x: pathVisual.cell.x, z: pathVisual.cell.z } : null;
+}
+
+function getPlacedItemLabel(target: PlacedItemTarget): string {
+  if (target.kind === 'path') return 'path tile';
+  const mineIndex = state.mines.findIndex((mine) => mine.id === target.id);
+  return mineIndex >= 0 ? `Mine ${mineIndex + 1}` : 'placed item';
+}
+
+function updateBuildActionHover(event: PointerEvent): void {
+  if (pendingDestroyItem) return;
+  hoveredPlacedItem = getPlacedItemAtPointer(event);
+  if (buildAction === 'move' && selectedMoveItem) {
+    // Keep sampling the ground beneath the cursor even when the cursor is
+    // over the selected item. The selected visual is now a placement ghost,
+    // so clearing this cell would make it snap back to its original position
+    // instead of following the pointer like the normal green placement ghost.
+    // Keep the last valid cell during a transient raycast miss. Clearing the
+    // preview for one pointer event makes the mine flash back to its source.
+    const surfaceCell = getSurfaceCellAtPointer(event);
+    if (surfaceCell) moveHoverCell = surfaceCell;
+  } else {
+    moveHoverCell = null;
+  }
+  syncPlacementActionVisuals();
+}
+
+function cancelDestroyConfirmation(): void {
+  pendingDestroyItem = null;
+  placementDestroyModal.hidden = true;
+  syncPlacementActionVisuals();
+}
+
+function confirmDestroyPlacement(): void {
+  if (!pendingDestroyItem) return;
+  const target = pendingDestroyItem;
+  const destroyed = target.kind === 'mine'
+    ? destroyWorldPlacement(state, target.id)
+    : destroyPathCell(state, target.x, target.z);
+  if (!destroyed) {
+    cancelDestroyConfirmation();
+    return;
+  }
+  pendingDestroyItem = null;
+  hoveredPlacedItem = null;
+  placementDestroyModal.hidden = true;
+  audioManager.playMiningSound('stone');
+  updateWorldScene();
+  updateUi();
+  saveState(localStorage, state);
+}
+
+function handleBuildActionPointerDown(event: PointerEvent): void {
+  let target = getPlacedItemAtPointer(event);
+  if (buildAction === 'destroy') {
+    if (!target) return;
+    pendingDestroyItem = target;
+    hoveredPlacedItem = target;
+    placementDestroyTitle.textContent = `Destroy ${getPlacedItemLabel(target)}?`;
+    placementDestroyMessage.textContent = 'All progress and upgrades on this item will be lost.';
+    syncPlacementActionVisuals();
+    openWorldModal('placement-destroy-modal');
+    return;
+  }
+  if (buildAction !== 'move') return;
+  if (selectedMoveItem && target && samePlacedItem(target, selectedMoveItem)) target = null;
+  if (!selectedMoveItem) {
+    if (!target) return;
+    selectedMoveItem = target;
+    // Seed the preview from the ground cell under the initial click so the
+    // selected item immediately behaves like a normal placement ghost.
+    moveHoverCell = getSurfaceCellAtPointer(event) ?? (
+      target.kind === 'mine'
+        ? state.mines.find((mine) => mine.id === target.id) ?? null
+        : target
+    );
+    updateUi();
+    return;
+  }
+  const destination = getSurfaceCellAtPointer(event);
+  if (!destination || target) return;
+  const moved = selectedMoveItem.kind === 'mine'
+    ? moveWorldPlacement(state, selectedMoveItem.id, destination.x, destination.z)
+    : movePathCell(state, selectedMoveItem.x, selectedMoveItem.z, destination.x, destination.z);
+  if (!moved) return;
+  selectedMoveItem = null;
+  audioManager.playMiningSound('grass');
+  updateWorldScene();
+  updateUi();
+  saveState(localStorage, state);
 }
 
 function getSurfaceCellAtPointer(event: PointerEvent): { x: number; z: number } | null {
@@ -2243,6 +2655,10 @@ function updateHoverTarget(event: PointerEvent): void {
 
 canvas.addEventListener('pointerdown', (event) => {
   if (event.button === 0) {
+    if (buildAction !== null) {
+      handleBuildActionPointerDown(event);
+      return;
+    }
     if (buildMode === 'mine') {
       const placement = getMinePlacementAtPointer(event);
       if (placement?.valid && unlockStarterMine(state, Date.now(), placement.x, placement.z, placement.direction, placement.railLength)) {
@@ -2288,6 +2704,7 @@ canvas.addEventListener('pointerdown', (event) => {
 canvas.addEventListener('pointermove', (event) => {
   if (!isOrbiting) {
     if (buildMode !== null) updateBuildPlacementPreview(event);
+    else if (buildAction !== null) updateBuildActionHover(event);
     else updateHoverTarget(event);
     return;
   }
@@ -2301,10 +2718,14 @@ canvas.addEventListener('pointermove', (event) => {
 });
 canvas.addEventListener('pointerenter', (event) => {
   if (buildMode !== null) updateBuildPlacementPreview(event);
+  else if (buildAction !== null) updateBuildActionHover(event);
   else updateHoverTarget(event);
 });
 canvas.addEventListener('pointerleave', () => {
   setHoveredOre(null);
+  hoveredPlacedItem = null;
+  moveHoverCell = null;
+  syncPlacementActionVisuals();
   minePlacementPreview = null;
   pathPlacementPreview = null;
   updateMineGhostVisual(null);
@@ -2383,9 +2804,11 @@ skillTreeViewport.addEventListener('pointerup', endSkillTreePan);
 skillTreeViewport.addEventListener('pointercancel', endSkillTreePan);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !skillTreeOverlay.hidden) setSkillTreeOpen(false);
+  if (event.key === 'Escape' && !placementDestroyModal.hidden) cancelDestroyConfirmation();
   if (event.key === 'Escape') worldModals.forEach((modal) => { modal.hidden = true; });
   if (event.key === 'Escape' && activeDrawer !== null) setActiveDrawer(activeDrawer);
   if (event.key === 'Escape' && buildMode !== null) setBuildMode(null);
+  if (event.key === 'Escape' && buildAction !== null) setBuildAction(null);
 });
 
 mineButton.addEventListener('click', () => {
@@ -2424,6 +2847,12 @@ buildBackButton.addEventListener('click', () => {
 buildCategoryButtons.forEach((button) => {
   button.addEventListener('click', () => showBuildDrawer(button.dataset.buildCategory as BuildDrawerCategory));
 });
+buildActionButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const action = button.dataset.buildAction as Exclude<BuildAction, null> | undefined;
+    if (action) setBuildAction(action);
+  });
+});
 buildCategoryItemButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const item = button.dataset.buildItem;
@@ -2457,6 +2886,17 @@ miningUpgradeButtons.forEach((button) => {
     saveState(localStorage, state);
   });
 });
+miningDrawer.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest<HTMLButtonElement>('[data-mine-storage-upgrade]');
+  if (!button) return;
+  const mineId = button.dataset.mineStorageUpgrade;
+  if (!mineId || !buyMineStorageUpgrade(state, mineId)) return;
+  updateWorldScene();
+  updateUi();
+  saveState(localStorage, state);
+});
 document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((button) => {
   button.addEventListener('click', () => {
     if (buildMode !== 'mine') return;
@@ -2477,13 +2917,32 @@ traderEmeraldButton.addEventListener('click', () => {
 });
 storyButton.addEventListener('click', () => openWorldModal('story-modal'));
 pauseMenuButton.addEventListener('click', () => openWorldModal('pause-modal'));
+/* Debug Menu temporarily disabled. Keep the wiring for later development use.
+debugMenuButton.addEventListener('click', () => {
+  closeWorldModal('pause-modal');
+  openWorldModal('debug-modal');
+});
+debugUnlockSkillTreeButton.addEventListener('click', () => {
+  debugUnlockFullSkillTree(state);
+  updateWorldScene();
+  updateUi();
+  saveState(localStorage, state);
+  debugStatus.textContent = 'All skill nodes unlocked. The world is ready for testing.';
+  debugUnlockSkillTreeButton.textContent = 'Unlocked';
+  debugUnlockSkillTreeButton.disabled = true;
+});
+*/
 resumeButton.addEventListener('click', () => closeWorldModal('pause-modal'));
+placementDestroyCancel.addEventListener('click', cancelDestroyConfirmation);
+placementDestroyConfirm.addEventListener('click', confirmDestroyPlacement);
 document.querySelectorAll<HTMLButtonElement>('[data-close-modal]').forEach((button) => {
   button.addEventListener('click', () => closeWorldModal(button.dataset.closeModal!));
 });
 worldModals.forEach((modal) => {
   modal.addEventListener('click', (event) => {
-    if (event.target === modal) modal.hidden = true;
+    if (event.target !== modal) return;
+    if (modal === placementDestroyModal) cancelDestroyConfirmation();
+    else modal.hidden = true;
   });
 });
 musicVolumeSlider.addEventListener('input', () => audioManager.setMusicVolume(Number(musicVolumeSlider.value) / 100));

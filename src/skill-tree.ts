@@ -155,8 +155,8 @@ const materialsDeepMining: SkillNodeDefinition[] = [
 const automation: SkillNodeDefinition[] = [
   branchEntry('automation', 'Automation'),
   node('automation', 'automation-auto-strike', 'Auto Strike I–III', 'Improve the default automatic harvesting rhythm.', '+0.25 automatic strikes per second per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.automation], 3),
-  node('automation', 'automation-mine-carts', 'Mine Carts I–III', 'Put more carts on the permanent underground route.', '+1 active minecart per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.automation, 'world-cave-entrance'], 3, 'Adds another visible minecart to the underground route per rank.'),
-  node('automation', 'automation-chest-minecart', 'Chest Minecart', 'Bring the mine output home without interrupting the route.', 'Adds one storage cart to the mine.', 'unlock', ['automation-mine-carts']),
+  node('automation', 'automation-mine-carts', 'Mine Cart Handling I–III', 'Improve the single minecart route without adding duplicate carts.', 'Improves the one-cart mine route per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.automation, 'world-cave-entrance'], 3, 'Improves the existing minecart route without adding another cart.'),
+  node('automation', 'automation-chest-minecart', 'Cart Storage', 'Bring the mine output home without spawning another cart.', 'Unlocks storage handling for the existing minecart.', 'unlock', ['automation-mine-carts']),
   node('automation', 'automation-redstone-rails', 'Redstone Rails', 'Power the route so carts complete their trips faster.', '-25% minecart trip time per rank.', 'unlock', ['automation-chest-minecart', 'materials-redstone']),
   node('automation', 'automation-target-queue', 'Target Queue', 'Remember more than one target for automation.', 'Unlocks a queued target list.', 'unlock', ['automation-auto-strike']),
   node('automation', 'automation-block-priority', 'Block Priority', 'Choose which available materials matter most.', 'Unlocks material priority rules.', 'unlock', ['automation-target-queue']),

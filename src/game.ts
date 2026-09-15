@@ -67,10 +67,13 @@ export interface MineSite {
   progressMs: number;
   lastUpdatedAt: number;
   completedTrips: number;
+  storageAmount: number;
+  storageCapacityLevel: number;
 }
 
 export type MineCargoKind = 'stone' | 'coal' | 'iron' | 'gold' | 'diamond';
 export type MineRailLength = 2 | 3 | 4;
+export type MineStorageFillState = 'empty' | 'low' | 'medium' | 'full';
 
 export interface MineProductionResult {
   trips: number;
@@ -147,9 +150,12 @@ export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
     costs: [8, 20, 50],
   },
 ];
+export const MINE_STORAGE_BASE_CAPACITY = 100;
+export const MINE_STORAGE_CAPACITY_PER_UPGRADE = 100;
+export const MINE_STORAGE_UPGRADE_COST = 1;
+export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
+export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
 const MINE_ID = 'starter-mine';
-const MINE_CART_NODE_ID = 'automation-mine-carts';
-const MINE_STORAGE_CART_NODE_ID = 'automation-chest-minecart';
 const MINE_REDSTONE_NODE_ID = 'automation-redstone-rails';
 const MINE_MINER_NODE_ID = 'automation-miner-helper';
 
@@ -446,6 +452,62 @@ export function placeWorldPlacement(state: GameState, placement: WorldPlacement)
   return true;
 }
 
+/** Validate moving an existing placed structure to a new grid origin. */
+export function canMoveWorldPlacement(
+  state: GameState,
+  id: string,
+  x: number,
+  z: number,
+  direction?: WorldDirection,
+): boolean {
+  const existing = state.placements.find((placement) => placement.id === id);
+  if (!existing) return false;
+  const nextDirection = direction ?? existing.direction;
+  const mine = existing.kind === 'mine' ? state.mines.find((candidate) => candidate.id === id) : undefined;
+  const nextPlacement = mine
+    ? createWorldPlacement('mine', id, x, z, nextDirection, mine.railLength)
+    : { ...existing, x, z, direction: nextDirection };
+  const remainingPlacements = state.placements.filter((placement) => placement.id !== id);
+  const remainingMines = state.mines.filter((candidate) => candidate.id !== id);
+  const validationState = { ...state, placements: remainingPlacements, mines: remainingMines };
+  return mine
+    ? canPlaceMine(validationState, x, z, nextDirection, mine.railLength)
+    : canPlaceWorldPlacement(validationState, nextPlacement);
+}
+
+/** Move a structure without resetting any of its runtime state. */
+export function moveWorldPlacement(
+  state: GameState,
+  id: string,
+  x: number,
+  z: number,
+  direction?: WorldDirection,
+): boolean {
+  if (!canMoveWorldPlacement(state, id, x, z, direction)) return false;
+  const placement = state.placements.find((candidate) => candidate.id === id)!;
+  placement.x = x;
+  placement.z = z;
+  placement.direction = direction ?? placement.direction;
+  const mine = state.mines.find((candidate) => candidate.id === id);
+  if (mine) {
+    mine.x = x;
+    mine.z = z;
+    mine.direction = placement.direction;
+  }
+  return true;
+}
+
+/** Destroy a placed structure and, for mines, release its mine-site slot. */
+export function destroyWorldPlacement(state: GameState, id: string): boolean {
+  const placementIndex = state.placements.findIndex((placement) => placement.id === id);
+  if (placementIndex < 0) return false;
+  state.placements.splice(placementIndex, 1);
+  const mineIndex = state.mines.findIndex((mine) => mine.id === id);
+  if (mineIndex >= 0) state.mines.splice(mineIndex, 1);
+  syncAvailableMineSites(state);
+  return true;
+}
+
 /** A new route must grow from the existing connected path network. */
 export function canBuildPathCell(
   state: Pick<GameState, 'worldCells' | 'pathCells' | 'placements'>,
@@ -468,6 +530,31 @@ export function buildPathCell(state: GameState, x: number, z: number): boolean {
   if ((state.resources.dirt ?? 0) < DIRT_PATH_BUILD_COST) return false;
   state.resources.dirt -= DIRT_PATH_BUILD_COST;
   state.pathCells.push({ x, z, tier: 'dirt' });
+  return true;
+}
+
+export function canMovePathCell(state: GameState, x: number, z: number, nextX: number, nextZ: number): boolean {
+  const source = getPathCell(state, x, z);
+  if (!source || !Number.isInteger(nextX) || !Number.isInteger(nextZ)) return false;
+  if (x === nextX && z === nextZ) return true;
+  const remainingPaths = state.pathCells.filter((cell) => cell !== source);
+  const destinationState = { ...state, pathCells: remainingPaths };
+  if (!canBuildPathCell(destinationState, nextX, nextZ)) return false;
+  return state.mines.every((mine) => getMineRailPathConnection(destinationState, mine.x, mine.z, mine.direction, mine.railLength) !== null);
+}
+
+export function movePathCell(state: GameState, x: number, z: number, nextX: number, nextZ: number): boolean {
+  if (!canMovePathCell(state, x, z, nextX, nextZ)) return false;
+  const path = getPathCell(state, x, z)!;
+  path.x = nextX;
+  path.z = nextZ;
+  return true;
+}
+
+export function destroyPathCell(state: GameState, x: number, z: number): boolean {
+  const index = state.pathCells.findIndex((cell) => cell.x === x && cell.z === z);
+  if (index < 0) return false;
+  state.pathCells.splice(index, 1);
   return true;
 }
 
@@ -631,6 +718,8 @@ function createMineSite(
     progressMs: 0,
     lastUpdatedAt: now,
     completedTrips: 0,
+    storageAmount: 0,
+    storageCapacityLevel: 0,
   };
 }
 
@@ -665,6 +754,40 @@ export function getMineCargoKind(state: Pick<GameState, 'undergroundLayer' | 'sk
   return 'stone';
 }
 
+export function getMineStorageCapacity(mine: Pick<MineSite, 'storageCapacityLevel'>): number {
+  return MINE_STORAGE_BASE_CAPACITY + Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)) * MINE_STORAGE_CAPACITY_PER_UPGRADE;
+}
+
+export function getMineStorageFillDuration(mine: Pick<MineSite, 'railLevel'>): number {
+  const upgrades = Math.max(0, Math.floor(Number(mine.railLevel) || 0));
+  return Math.max(60_000, MINE_STORAGE_BASE_FILL_DURATION_MS - upgrades * MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS);
+}
+
+export function getMineStorageFillState(
+  amount: number,
+  capacity = MINE_STORAGE_BASE_CAPACITY,
+): MineStorageFillState {
+  const safeCapacity = Math.max(1, capacity);
+  const ratio = Math.max(0, Math.min(1, amount / safeCapacity));
+  if (ratio <= 0) return 'empty';
+  if (ratio < 0.6) return 'low';
+  if (ratio < 1) return 'medium';
+  return 'full';
+}
+
+export function getMineStorageUpgradeCost(state: Pick<GameState, 'mines' | 'resources'>, mineId: string): number | null {
+  if (!state.mines.some((mine) => mine.id === mineId)) return null;
+  return MINE_STORAGE_UPGRADE_COST;
+}
+
+export function buyMineStorageUpgrade(state: GameState, mineId: string): boolean {
+  const mine = state.mines.find((candidate) => candidate.id === mineId);
+  if (!mine || (state.resources.emerald ?? 0) < MINE_STORAGE_UPGRADE_COST) return false;
+  state.resources.emerald = (state.resources.emerald ?? 0) - MINE_STORAGE_UPGRADE_COST;
+  mine.storageCapacityLevel = Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)) + 1;
+  return true;
+}
+
 export function getMineUpgradeRank(
   state: Pick<GameState, 'skillRanks'> & Partial<Pick<GameState, 'mineUpgradeRanks'>>,
   id: MineUpgradeId,
@@ -693,12 +816,18 @@ export function buyMineUpgrade(state: GameState, id: MineUpgradeId): boolean {
   state.resources.emerald = (state.resources.emerald ?? 0) - cost;
   state.mineUpgradeRanks ??= {};
   state.mineUpgradeRanks[id] = getMineUpgradeRank(state, id) + 1;
+  if (id === 'rail-speed') {
+    state.mines.forEach((mine) => {
+      mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
+    });
+  }
   return true;
 }
 
-export function getMineCartCount(state: GameState): number {
-  const cartRanks = getSkillNodeRank(state, MINE_CART_NODE_ID);
-  return Math.max(1, 1 + cartRanks + getMineUpgradeRank(state, 'storage-capacity'));
+export function getMineCartCount(_state: GameState): number {
+  // A mine has one physical cart. Cart-related progression can improve the
+  // route later, but it must never spawn additional carts on the same mine.
+  return 1;
 }
 
 export function getMineTripDuration(state: GameState): number {
@@ -721,11 +850,19 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
   const layer = getMineLayer(state);
   const tripDuration = getMineTripDuration(state);
   state.mines.forEach((mine) => {
-    mine.cartCount = getMineCartCount(state);
-    mine.storageCarts = getSkillNodeRank(state, MINE_STORAGE_CART_NODE_ID) > 0 ? 1 : 0;
+    mine.cartCount = 1;
+    mine.storageCarts = 0;
     mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
+    const storageCapacity = getMineStorageCapacity(mine);
+    const storageWasStarted = mine.storageAmount > 0 || mine.completedTrips > 0;
+    if (storageWasStarted && mine.storageAmount < storageCapacity) {
+      mine.storageAmount = Math.min(
+        storageCapacity,
+        mine.storageAmount + elapsed * storageCapacity / getMineStorageFillDuration(mine),
+      );
+    }
     const totalProgress = mine.progressMs + elapsed;
     // The loop begins at the path: an empty cart travels to the mine, loads,
     // then delivers the ore back to the rail end. Credit the delivery only when
@@ -737,6 +874,13 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
 
     const cartTrips = completedArrivals * mine.cartCount;
     mine.completedTrips += cartTrips;
+    // The first returning cart starts the physical storage fill. Keep the
+    // existing resource rewards intact while the box provides a visible,
+    // capacity-limited stock indicator for the Mining menu and world view.
+    mine.storageAmount = Math.min(
+      storageCapacity,
+      Math.max(mine.storageAmount, cartTrips, Math.ceil(storageCapacity * 0.05)),
+    );
     result.trips += cartTrips;
     result.xp += cartTrips * (layer >= 1 ? 3 : 2);
     addMineResource(result, layer >= 1 ? 'deepslate' : 'cobblestone', cartTrips);
@@ -948,6 +1092,23 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
     state.toolRank = getToolRankFromSkills(state);
   }
   return true;
+}
+
+/**
+ * Development-only shortcut used by the in-game debug menu. It bypasses costs
+ * and prerequisites, then refreshes the derived systems that normal skill
+ * purchases would update.
+ */
+export function debugUnlockFullSkillTree(state: GameState, now = Date.now()): void {
+  SKILL_TREE_NODES.forEach((node) => setSkillNodeRank(state, node.id, node.maxRank));
+  state.speedRank = SPEED_RATES.length - 1;
+  state.toolRank = getToolRankFromSkills(state);
+  state.undergroundLayer = Math.max(state.undergroundLayer, 2);
+
+  // Mine Entrance's visible consequence is a starter mine. Avoid duplicating
+  // it when the shortcut is used on an existing save.
+  if (state.mines.length === 0) unlockStarterMine(state, now);
+  syncAvailableMineSites(state);
 }
 
 function getToolRankFromSkills(state: GameState): number {
@@ -1205,13 +1366,17 @@ function parseMines(value: unknown, now: number): MineSite[] {
     const id = seenIds.has(rawId) ? `mine-${seenIds.size + 1}` : rawId;
     seenIds.add(id);
     const lastUpdatedAt = Number(entry.lastUpdatedAt);
+    const storageCapacityLevel = Math.max(0, Math.floor(Number(entry.storageCapacityLevel) || 0));
+    const storageCapacity = getMineStorageCapacity({ storageCapacityLevel });
     return [{
       id,
       x: Number.isFinite(Number(entry.x)) ? Number(entry.x) : 0,
       z: Number.isFinite(Number(entry.z)) ? Number(entry.z) : 1,
       direction: WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : 'south',
-      cartCount: Math.max(1, Math.floor(Number(entry.cartCount) || 1)),
-      storageCarts: Math.max(0, Math.floor(Number(entry.storageCarts) || 0)),
+      // Older saves could contain multiple carts. Normalize them to the
+      // current one-cart-per-mine rule as they are loaded.
+      cartCount: 1,
+      storageCarts: 0,
       railLevel: Math.max(0, Math.floor(Number(entry.railLevel) || 0)),
       railLength: MINE_RAIL_LENGTHS.includes(Number(entry.railLength) as MineRailLength)
         ? Number(entry.railLength) as MineRailLength
@@ -1220,6 +1385,8 @@ function parseMines(value: unknown, now: number): MineSite[] {
       progressMs: Math.max(0, Number(entry.progressMs) || 0),
       lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,
       completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
+      storageAmount: Math.min(storageCapacity, Math.max(0, Number(entry.storageAmount) || 0)),
+      storageCapacityLevel,
     }];
   });
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -27,6 +28,18 @@ describe('IdleCraft progression', () => {
     expect(state.skillRanks['automation-auto-strike']).toBe(1);
     expect(state.speedRank).toBe(1);
     expect(getAutoRate(state)).toBe(1.5);
+  });
+
+  it('debug unlocks the full skill tree and its derived mine systems', () => {
+    const state = freshState(1000);
+    debugUnlockFullSkillTree(state, 1000);
+
+    expect(Object.keys(state.skillRanks)).toHaveLength(SKILL_TREE_NODES.length);
+    expect(SKILL_TREE_NODES.every((node) => state.skillRanks[node.id] === node.maxRank)).toBe(true);
+    expect(state.toolRank).toBe(3);
+    expect(state.undergroundLayer).toBe(2);
+    expect(state.mines).toHaveLength(1);
+    expect(getAvailableMineSites(state)).toBe(2);
   });
 
   it('unlocks a wooden pickaxe and increases harvest power', () => {
@@ -156,6 +169,21 @@ describe('IdleCraft progression', () => {
     expect(placeWorldPlacement(state, dwelling)).toBe(true);
     expect(canPlaceWorldPlacement(state, createWorldPlacement('well', 'well-1', 1, 1, 'south'))).toBe(false);
     expect(canPlaceWorldPlacement(state, createWorldPlacement('dwelling', 'dwelling-2', 1, 2, 'south'))).toBe(false);
+  });
+
+  it('moves and destroys a mine without resetting its runtime state', () => {
+    const state = freshState();
+    expect(unlockStarterMine(state, 1000, 0, -1, 'south', 4)).toBe(true);
+    state.mines[0].progressMs = 1234;
+    state.mines[0].completedTrips = 7;
+    expect(canMoveWorldPlacement(state, 'starter-mine', 0, 0, 'south')).toBe(false);
+    expect(canMoveWorldPlacement(state, 'starter-mine', 0, -1, 'south')).toBe(true);
+    expect(moveWorldPlacement(state, 'starter-mine', 0, -1, 'south')).toBe(true);
+    expect(state.mines[0]).toMatchObject({ progressMs: 1234, completedTrips: 7, x: 0, z: -1 });
+    expect(destroyWorldPlacement(state, 'starter-mine')).toBe(true);
+    expect(state.mines).toHaveLength(0);
+    expect(state.placements).toHaveLength(0);
+    expect(getAvailableMineSites(state)).toBe(1);
   });
 
   it('upgrades path tiles independently', () => {
@@ -362,6 +390,38 @@ describe('IdleCraft progression', () => {
     expect(state.mines[0].progressMs).toBe(0);
   });
 
+  it('fills mine storage from the first returning cart and reaches full in twelve minutes', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    expect(getMineStorageCapacity(mine)).toBe(100);
+    expect(getMineStorageFillDuration(mine)).toBe(MINE_STORAGE_BASE_FILL_DURATION_MS);
+    expect(getMineStorageFillState(0, 100)).toBe('empty');
+    expect(getMineStorageFillState(1, 100)).toBe('low');
+    expect(getMineStorageFillState(60, 100)).toBe('medium');
+    expect(getMineStorageFillState(100, 100)).toBe('full');
+
+    advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    expect(mine.storageAmount).toBe(5);
+    expect(getMineStorageFillState(mine.storageAmount, getMineStorageCapacity(mine))).toBe('low');
+
+    advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS + getMineStorageFillDuration(mine));
+    expect(mine.storageAmount).toBe(100);
+    expect(getMineStorageFillState(mine.storageAmount, getMineStorageCapacity(mine))).toBe('full');
+  });
+
+  it('supports individual mine storage capacity upgrades for one Emerald', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    state.resources.emerald = 1;
+    const mine = state.mines[0];
+    expect(getMineStorageUpgradeCost(state, mine.id)).toBe(1);
+    expect(buyMineStorageUpgrade(state, mine.id)).toBe(true);
+    expect(state.resources.emerald).toBe(0);
+    expect(mine.storageCapacityLevel).toBe(1);
+    expect(getMineStorageCapacity(mine)).toBe(200);
+  });
+
   it('loads a saved mine operation', () => {
     const saved = {
       ...freshState(1000),
@@ -373,15 +433,17 @@ describe('IdleCraft progression', () => {
     expect(loadState(storage, 2000).mines).toHaveLength(1);
   });
 
-  it('scales mine production with carts and keeps bonus ore clickable', () => {
+  it('keeps one cart per mine while keeping bonus ore clickable', () => {
     const state = freshState(1000);
     state.skillRanks = { 'automation-mine-carts': 2 };
-    expect(getMineCartCount(state)).toBe(3);
+    expect(getMineCartCount(state)).toBe(1);
     unlockStarterMine(state, 1000);
     expect(dispatchMineCart(state, 1000)).toMatchObject({ trips: 0, xp: 0 });
     const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
-    expect(result.trips).toBe(3);
-    expect(state.resources.cobblestone).toBe(3);
+    expect(result.trips).toBe(1);
+    expect(state.resources.cobblestone).toBe(1);
+    expect(state.mines[0].cartCount).toBe(1);
+    expect(state.mines[0].storageCarts).toBe(0);
     expect(collectOreBonus(state, 'diamond')).toBe(1);
     expect(state.resources.diamond).toBe(1);
     expect(dispatchMineCart(state, 1000).trips).toBe(0);
@@ -398,7 +460,7 @@ describe('IdleCraft progression', () => {
     expect(state.resources.emerald).toBe(8);
     expect(getMineTripDuration(state)).toBeLessThan(baseDuration);
     expect(buyMineUpgrade(state, 'storage-capacity')).toBe(true);
-    expect(getMineCartCount(state)).toBe(2);
+    expect(getMineCartCount(state)).toBe(1);
     expect(state.resources.emerald).toBe(0);
   });
 

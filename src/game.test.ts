@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
-describe('IdleCraft progression', () => {
+describe('Villagers - Idle World Game progression', () => {
   it('uses the intended early level curve', () => {
     expect([1, 2, 3].map(xpRequired)).toEqual([100, 250, 400]);
   });

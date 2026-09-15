@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SKILL_TREE_BRANCHES, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES } from './skill-tree';
 
-describe('IdleCraft skill tree model', () => {
+describe('Villagers - Idle World Game skill tree model', () => {
   it('contains all seven planned branches', () => {
     expect(SKILL_TREE_BRANCHES).toHaveLength(7);
     expect(new Set(SKILL_TREE_NODES.map((node) => node.branch))).toEqual(

@@ -1,8 +1,8 @@
-# IdleCraft Skill Tree Implementation Plan
+# Villagers - Idle World Game Skill Tree Implementation Plan
 
 Status: **FIXED IMPLEMENTATION ORDER**
 
-This document is the working contract for completing the IdleCraft skill tree. Work proceeds in the numbered order below. Each step is implemented, tested in the browser, and reviewed before the next step begins. Bugs found during a step are handled within that step. Unrelated polish, new systems, and speculative features are deferred.
+This document is the working contract for completing the Villagers - Idle World Game skill tree. Work proceeds in the numbered order below. Each step is implemented, tested in the browser, and reviewed before the next step begins. Bugs found during a step are handled within that step. Unrelated polish, new systems, and speculative features are deferred.
 
 ## Fixed implementation order
 

@@ -93,13 +93,13 @@ addPart(mine, stoneAccent, 'buried-rear-stone-footing', [0.82, 0.18, 0.22], [0, 
 mine.updateMatrixWorld(true);
 const exporter = new OBJExporter();
 const object = [
-  '# IdleCraft mine structure',
+  '# Villagers - Idle World Game mine structure',
   '# Units: 1 game block = 0.9 OBJ units',
   'mtllib idlecraft-mine.mtl',
   exporter.parse(mine),
 ].join('\n');
 
-const materialLibrary = `# IdleCraft mine material library\n\nnewmtl stone\nKd 0.604 0.643 0.639\nKs 0.08 0.08 0.08\nNs 16\n\nnewmtl stone-accent\nKd 0.412 0.459 0.471\nKs 0.06 0.06 0.06\nNs 12\n\nnewmtl timber\nKd 0.549 0.357 0.212\nKs 0.04 0.04 0.04\nNs 8\n\nnewmtl mine-darkness\nKd 0.063 0.098 0.114\nKs 0 0 0\nNs 1\n\nnewmtl dark-beam\nKd 0.373 0.243 0.165\nKs 0.03 0.03 0.03\nNs 6\n`;
+const materialLibrary = `# Villagers - Idle World Game mine material library\n\nnewmtl stone\nKd 0.604 0.643 0.639\nKs 0.08 0.08 0.08\nNs 16\n\nnewmtl stone-accent\nKd 0.412 0.459 0.471\nKs 0.06 0.06 0.06\nNs 12\n\nnewmtl timber\nKd 0.549 0.357 0.212\nKs 0.04 0.04 0.04\nNs 8\n\nnewmtl mine-darkness\nKd 0.063 0.098 0.114\nKs 0 0 0\nNs 1\n\nnewmtl dark-beam\nKd 0.373 0.243 0.165\nKs 0.03 0.03 0.03\nNs 6\n`;
 
 mkdirSync(outputDirectory, { recursive: true });
 writeFileSync(new URL('./idlecraft-mine.obj', outputDirectory), object, 'utf8');

@@ -1,4 +1,4 @@
-# IdleCraft
+# Villagers - Idle World Game
 
 An isometric idle-clicker game about growing one grass block into a living world.
 
@@ -37,7 +37,7 @@ npm run build
 
 ## Cloud session saving
 
-IdleCraft keeps its local autosave and also syncs the current save to Supabase
+Villagers - Idle World Game keeps its local autosave and also syncs the current save to Supabase
 when a player session is available. The browser uses only the publishable key;
 the secret key and database password must never be placed in the client or in a
 Vite environment variable.

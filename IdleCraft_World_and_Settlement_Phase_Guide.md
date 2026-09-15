@@ -1,12 +1,12 @@
-# IdleCraft World and Settlement Phase Guide
+# Villagers - Idle World Game World and Settlement Phase Guide
 
 Status: **FIXED IMPLEMENTATION ORDER**
 
-This guide is the working contract for moving IdleCraft from a mining prototype into a persistent, buildable isometric world. Work proceeds one phase at a time. Each phase is implemented, tested, browser-verified, committed, and reviewed before the next phase begins. Bugs found within the active phase are handled before moving on. Unrelated polish and speculative systems are deferred.
+This guide is the working contract for moving Villagers - Idle World Game from a mining prototype into a persistent, buildable isometric world. Work proceeds one phase at a time. Each phase is implemented, tested, browser-verified, committed, and reviewed before the next phase begins. Bugs found within the active phase are handled before moving on. Unrelated polish and speculative systems are deferred.
 
 ## Design goal
 
-IdleCraft should feel like a world that grows over a long period of play. Mining is a permanent underground operation that gathers materials without destroying the visible world. Surface and underground layers remain stable, while mine entrances, rails, carts, structures, settlement progression, and automation expand around them.
+Villagers - Idle World Game should feel like a world that grows over a long period of play. Mining is a permanent underground operation that gathers materials without destroying the visible world. Surface and underground layers remain stable, while mine entrances, rails, carts, structures, settlement progression, and automation expand around them.
 
 ## Fixed phases
 

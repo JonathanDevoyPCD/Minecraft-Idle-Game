@@ -1177,25 +1177,25 @@ const authoredModelBase = `${import.meta.env.BASE_URL}assets/models/`;
 authoredModelLoader.load(`${authoredModelBase}rail-straight.glb`, (gltf) => {
   railStraightTemplate = gltf.scene;
   refreshAuthoredMineModels();
-}, undefined, () => console.warn('IdleCraft: rail-straight.glb could not be loaded.'));
+}, undefined, () => console.warn('Villagers - Idle World Game: rail-straight.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}rail-end.glb`, (gltf) => {
   // The exported Blender scene also contains the mine, cart, straight rail,
   // and a floor plane. Use only the named Rail End object in this slot.
   railEndTemplate = extractAuthoredModel(gltf.scene, 'rail-end');
   refreshAuthoredMineModels();
-}, undefined, () => console.warn('IdleCraft: rail-end.glb could not be loaded.'));
+}, undefined, () => console.warn('Villagers - Idle World Game: rail-end.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}cart-empty.glb`, (gltf) => {
   cartEmptyTemplate = extractAuthoredModel(gltf.scene, 'cartEmpty');
   refreshMineCartModels();
-}, undefined, () => console.warn('IdleCraft: cart-empty.glb could not be loaded.'));
+}, undefined, () => console.warn('Villagers - Idle World Game: cart-empty.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}cart-contents-1.glb`, (gltf) => {
   cartContentsTemplate = extractAuthoredModel(gltf.scene, 'cartContents');
   refreshMineCartModels();
-}, undefined, () => console.warn('IdleCraft: cart-contents-1.glb could not be loaded.'));
+}, undefined, () => console.warn('Villagers - Idle World Game: cart-contents-1.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}MineEntrance.glb`, (gltf) => {
   mineEntranceTemplate = gltf.scene;
   refreshAuthoredMineModels();
-}, undefined, () => console.warn('IdleCraft: MineEntrance.glb could not be loaded.'));
+}, undefined, () => console.warn('Villagers - Idle World Game: MineEntrance.glb could not be loaded.'));
 
 function syncMineCartMeshes(visual: MineVisual): void {
   // There is exactly one physical cart per mine. Storage upgrades affect the
@@ -2979,7 +2979,7 @@ document.querySelector('#offline-close')!.addEventListener('click', () => {
 });
 
 document.querySelector('#reset-button')!.addEventListener('click', () => {
-  if (window.confirm('Reset all IdleCraft progress?')) {
+  if (window.confirm('Reset all Villagers - Idle World Game progress?')) {
     isResetting = true;
     localStorage.removeItem(SAVE_KEY);
     void playerSaveSync.clearRemoteSave().finally(() => window.location.reload());
@@ -3039,7 +3039,7 @@ void playerSaveSync.initialize(state, hasLocalSave).then((remoteState) => {
   updateWorldScene();
   updateUi();
 }).catch((error: unknown) => {
-  console.warn('IdleCraft cloud session initialization failed; local saving remains active.', error);
+  console.warn('Villagers - Idle World Game cloud session initialization failed; local saving remains active.', error);
 });
 
 const clock = new THREE.Clock();

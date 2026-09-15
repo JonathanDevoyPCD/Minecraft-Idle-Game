@@ -48,7 +48,7 @@ export class PlayerSaveSync {
     this.remoteState = null;
     const { data: sessionData, error: sessionError } = await this.client.auth.getSession();
     if (sessionError) {
-      console.warn('IdleCraft cloud session could not be restored; local saving remains active.', sessionError.message);
+      console.warn('Villagers - Idle World Game cloud session could not be restored; local saving remains active.', sessionError.message);
       return;
     }
 
@@ -56,7 +56,7 @@ export class PlayerSaveSync {
     if (!userId) {
       const { data, error } = await this.client.auth.signInAnonymously();
       if (error || !data.user) {
-        console.warn('IdleCraft cloud saving is unavailable; enable Anonymous Sign-Ins in Supabase.', error?.message ?? 'No user returned');
+        console.warn('Villagers - Idle World Game cloud saving is unavailable; enable Anonymous Sign-Ins in Supabase.', error?.message ?? 'No user returned');
         return;
       }
       userId = data.user.id;
@@ -70,7 +70,7 @@ export class PlayerSaveSync {
       .eq('save_key', SAVE_KEY)
       .maybeSingle<RemoteSaveRow>();
     if (loadError) {
-      console.warn('IdleCraft cloud save could not be loaded; local saving remains active.', loadError.message);
+      console.warn('Villagers - Idle World Game cloud save could not be loaded; local saving remains active.', loadError.message);
       return;
     }
 
@@ -107,7 +107,7 @@ export class PlayerSaveSync {
       .delete()
       .eq('user_id', this.userId)
       .eq('save_key', SAVE_KEY);
-    if (error) console.warn('IdleCraft cloud save could not be cleared.', error.message);
+    if (error) console.warn('Villagers - Idle World Game cloud save could not be cleared.', error.message);
   }
 
   private async flush(): Promise<void> {
@@ -122,7 +122,7 @@ export class PlayerSaveSync {
         save_data: JSON.parse(serialized),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,save_key' });
-      if (error) console.warn('IdleCraft cloud save failed; local saving remains active.', error.message);
+      if (error) console.warn('Villagers - Idle World Game cloud save failed; local saving remains active.', error.message);
     } finally {
       this.saveInFlight = false;
       if (this.pendingSerialized) void this.flush();

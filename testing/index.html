@@ -30,7 +30,27 @@
         <button id="story-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="story-modal"><img src="/assets/ui/Story-Icon.png" alt="" /><span>Story</span><small id="story-stage-label">Dwelling</small></button>
         <button id="skill-tree-button" class="world-menu-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay"><img src="/assets/ui/experience_bottle.png" alt="" /><span>Skill Tree</span><small id="skill-tree-points-label">0 CP</small></button>
         <button id="mining-mode-toggle" class="world-menu-button panel" type="button" aria-pressed="false" aria-controls="mining-drawer"><img src="/assets/ui/Mining-Icon.png" alt="" /><span>Mining</span><small id="mining-menu-rate">0.00/s</small></button>
-        <button id="build-mode-toggle" class="world-menu-button panel" type="button" aria-pressed="false" aria-controls="build-drawer"><img src="/assets/ui/Build-Icon.png" alt="" /><span>Build Mode</span><small>Paths</small></button>
+        <div id="build-mode-toggle" class="world-menu-button panel" aria-pressed="false" aria-expanded="false" aria-controls="build-drawer">
+          <button id="actual-toggle" class="actual-toggle" type="button" aria-label="Toggle Build Mode" aria-expanded="false" aria-controls="build-drawer"><img src="/assets/ui/Build-Icon.png" alt="" /><span>Build Mode</span></button>
+          <div class="build-mode-drawer" id="build-drawer" aria-expanded="false" data-view="categories">
+            <div class="build-drawer-page build-drawer-page--categories" data-build-page="categories">
+              <button class="build-category" type="button" data-build-category="mining">Mining</button>
+              <button class="build-category" type="button" data-build-category="paths">Paths</button>
+              <button class="build-category" type="button" data-build-category="farm">Farm</button>
+              <button class="build-category" type="button" data-build-category="smithing">Smithing</button>
+              <button class="build-category" type="button" data-build-category="houses">Houses</button>
+              <button class="build-category" type="button" data-build-category="animals">Animals</button>
+            </div>
+            <div class="build-drawer-page build-drawer-page--items" data-build-page="items" aria-hidden="true">
+              <button class="build-category-item build-category-item--back" type="button" data-build-item="back" aria-label="Back to build categories">‹</button>
+              <button class="build-category-item selected" type="button" data-build-item="mine" data-build-item-category="mining"><img src="/assets/ui/minethumb.png" alt="" /><span>Mine</span></button>
+              <button class="build-category-item" type="button" data-build-item="path" data-build-item-category="paths"><span class="path-item-icon">▦</span><span>Path</span></button>
+              <button class="build-category-item" type="button" data-build-item="path-upgrade" data-build-item-category="paths"><span class="path-item-icon">↑</span><span>Upgrade</span></button>
+              <button class="build-category-item empty" type="button" data-build-item="empty-1" aria-label="Empty build slot"></button>
+              <button class="build-category-item empty" type="button" data-build-item="empty-2" aria-label="Empty build slot"></button>
+            </div>
+          </div>
+        </div>
       </nav>
 
       <header class="topbar">
@@ -71,30 +91,7 @@
         <div class="construction-track"><div id="mine-fill"></div></div>
       </section>
 
-      <section id="build-drawer" class="build-palette panel" aria-label="Build menu" data-category="root">
-        <span class="drawer-ribbon">Upgrades</span>
-        <div class="drawer-anchor" aria-hidden="true"><img src="/assets/ui/Build-Icon.png" alt="" /><span>Build Mode</span></div>
-        <div class="drawer-tray">
-          <button id="build-back-button" class="drawer-back-button" type="button" aria-label="Back to build categories">‹</button>
-          <nav class="build-categories" aria-label="Build categories">
-            <button type="button" data-build-category="mining">Mining</button>
-            <button type="button" data-build-category="paths">Paths</button>
-            <button type="button" data-build-category="farm" disabled>Farm</button>
-            <button type="button" data-build-category="smithing" disabled>Smithing</button>
-            <button type="button" data-build-category="houses" disabled>Houses</button>
-            <button type="button" data-build-category="animals" disabled>Animals</button>
-            <button type="button" data-build-category="science" disabled>Science</button>
-          </nav>
-          <div class="build-item-slots" aria-live="polite">
-            <button id="mine-button" class="build-item mine-item" type="button" aria-pressed="false"><img src="/assets/ui/minethumb.png" alt="" /><span>Mine</span></button>
-            <button id="path-button" class="build-item" type="button" aria-pressed="false"><span class="path-item-icon">▦</span><span>Path</span><small>2 dirt</small></button>
-            <button id="path-upgrade-button" class="build-item" type="button" aria-pressed="false"><span class="path-item-icon">↑</span><span>Upgrade</span><small>Tile</small></button>
-            <span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span><span class="build-item-slot" aria-hidden="true"></span>
-          </div>
-          <fieldset class="rail-length-selector"><legend>Rail length</legend><button type="button" data-rail-length="2" aria-pressed="false">Short</button><button type="button" data-rail-length="3" aria-pressed="false">Medium</button><button type="button" data-rail-length="4" aria-pressed="true">Long</button><small>Choose before placement · R cycles lengths</small></fieldset>
-          <small id="build-status" class="build-status" aria-live="polite">Choose a build category</small>
-        </div>
-      </section>
+      <div id="build-controls-compat" hidden aria-hidden="true"><button id="mine-button" type="button"></button><button id="path-button" type="button"></button><button id="path-upgrade-button" type="button"></button><button id="build-back-button" type="button"></button><fieldset class="rail-length-selector"><button type="button" data-rail-length="2" aria-pressed="false">Short</button><button type="button" data-rail-length="3" aria-pressed="false">Medium</button><button type="button" data-rail-length="4" aria-pressed="true">Long</button></fieldset><small id="build-status" aria-live="polite">Choose a build category</small></div>
 
       <section id="mining-drawer" class="mining-drawer panel" aria-label="Mining menu">
         <article class="tool-card" aria-live="polite" aria-label="Current mining operation">

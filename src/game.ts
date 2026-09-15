@@ -167,6 +167,36 @@ export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { 
   tree: { width: 1, depth: 1, requiresPath: false },
   'animal-pen': { width: 2, depth: 2, requiresPath: true },
 };
+
+export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
+export type UnlockPrerequisiteKind = 'skill' | 'settlement-stage' | 'level' | 'resource';
+
+export interface UnlockPrerequisite {
+  kind: UnlockPrerequisiteKind;
+  id?: string;
+  required: number;
+  label: string;
+}
+
+export interface BuildItemUnlockDefinition {
+  id: BuildItemId;
+  label: string;
+  prerequisites: readonly UnlockPrerequisite[];
+}
+
+// The registry is intentionally data-driven so every buildable can share the
+// same unlock flow as the mine. Future item definitions can add requirements
+// here without adding another one-off conditional to the UI or game loop.
+export const BUILD_ITEM_UNLOCKS: readonly BuildItemUnlockDefinition[] = [
+  { id: 'mine', label: 'Mine', prerequisites: [{ kind: 'skill', id: 'world-cave-entrance', required: 1, label: 'Mine Entrance skill' }] },
+  { id: 'path', label: 'Path', prerequisites: [] },
+  { id: 'path-upgrade', label: 'Path Upgrade', prerequisites: [{ kind: 'resource', id: 'cobblestone', required: 8, label: '8 cobblestone' }] },
+  { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },
+  { id: 'smithing', label: 'Smithing', prerequisites: [{ kind: 'skill', id: 'tools-tool-bench', required: 1, label: 'Tool Bench skill' }] },
+  { id: 'houses', label: 'Houses', prerequisites: [{ kind: 'skill', id: 'life-villager-housing', required: 1, label: 'Villager Housing skill' }] },
+  { id: 'animals', label: 'Animals', prerequisites: [{ kind: 'skill', id: 'life-animals', required: 1, label: 'Animals skill' }] },
+  { id: 'science', label: 'Science', prerequisites: [{ kind: 'skill', id: 'materials-redstone', required: 1, label: 'Redstone skill' }] },
+];
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
 export const TOOL_TIERS = [
   { kind: 'hand', material: 'Bare', name: 'Bare Hands', requiredLevel: 1, cost: 0, harvestPower: 1, description: 'Harvest basic blocks by hand.' },
@@ -439,7 +469,7 @@ export function canPlaceMine(
   direction: WorldDirection = 'south',
   railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): boolean {
-  if (state.availableMineSites <= 0 || !Number.isInteger(x) || !Number.isInteger(z)) return false;
+  if (getAvailableMineSites(state) <= 0 || !Number.isInteger(x) || !Number.isInteger(z)) return false;
   const footprint = getMineFootprint(x, z, direction, railLength);
   const bounds = getChunkBounds(state);
   if (footprint.some((cell) => cell.x < bounds.minX || cell.x > bounds.maxX || cell.z < bounds.minZ || cell.z > bounds.maxZ)) return false;
@@ -534,6 +564,7 @@ export function expandToFirstAdjacentCell(state: GameState, direction: WorldDire
   const [x, z] = offsets[direction];
   addWorldCell(state, x, z);
   state.worldRank = Math.max(state.worldRank, 1);
+  syncAvailableMineSites(state);
 }
 
 export function expandToSurface3x3(state: GameState): void {
@@ -549,9 +580,11 @@ export function expandToNextChunk(state: GameState): void {
   }));
   state.chunkSize = nextSize;
   state.worldRank = Math.max(state.worldRank, Math.floor((nextSize - STARTING_CHUNK_SIZE) / 2));
+  syncAvailableMineSites(state);
 }
 
 function createMineSite(
+  id: string,
   now: number,
   x: number,
   z: number,
@@ -559,7 +592,7 @@ function createMineSite(
   railLength: MineRailLength,
 ): MineSite {
   return {
-    id: MINE_ID,
+    id,
     x,
     z,
     direction,
@@ -582,10 +615,13 @@ export function unlockStarterMine(
   direction: WorldDirection = 'south',
   railLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH,
 ): boolean {
-  if (state.mines.length > 0 || !canPlaceMine(state, x, z, direction, railLength)) return false;
-  state.mines.push(createMineSite(now, x, z, direction, railLength));
-  state.placements.push(createWorldPlacement('mine', MINE_ID, x, z, direction, railLength));
-  state.availableMineSites = Math.max(0, state.availableMineSites - 1);
+  if (!canPlaceMine(state, x, z, direction, railLength)) return false;
+  const id = state.mines.length === 0 && !state.placements.some((placement) => placement.id === MINE_ID)
+    ? MINE_ID
+    : `mine-${state.mines.length + 1}`;
+  state.mines.push(createMineSite(id, now, x, z, direction, railLength));
+  state.placements.push(createWorldPlacement('mine', id, x, z, direction, railLength));
+  syncAvailableMineSites(state);
   return true;
 }
 
@@ -715,15 +751,64 @@ export function addSettlementProgress(state: GameState, amount: number): number 
   const safeAmount = Math.max(0, Math.floor(amount));
   if (safeAmount <= 0) return 0;
   state.settlementProgress += safeAmount;
+  syncAvailableMineSites(state);
   return safeAmount;
 }
 
-export function getSettlementStage(state: GameState): SettlementStageDefinition {
+export function getSettlementStage(state: Pick<GameState, 'settlementProgress' | 'worldRank'>): SettlementStageDefinition {
   let current = SETTLEMENT_STAGES[0];
   SETTLEMENT_STAGES.forEach((stage) => {
     if (state.settlementProgress >= stage.requiredProgress && state.worldRank >= stage.requiredWorldRank) current = stage;
   });
   return current;
+}
+
+export function getSettlementStageIndex(state: Pick<GameState, 'settlementProgress' | 'worldRank'>): number {
+  const index = SETTLEMENT_STAGES.findIndex((stage) => stage.id === getSettlementStage(state).id);
+  return Math.max(0, index);
+}
+
+/**
+ * One starter slot, one slot for each of the two mine-site skill unlocks, and
+ * one more slot for every settlement stage reached after Dwelling.
+ */
+export function getMineSiteCapacity(state: Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>): number {
+  return 1
+    + getSkillNodeRank(state, 'world-second-mine-site')
+    + getSkillNodeRank(state, 'world-third-mine-site')
+    + getSettlementStageIndex(state);
+}
+
+export function getAvailableMineSites(
+  state: Pick<GameState, 'mines' | 'availableMineSites'>
+    & Partial<Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>>,
+): number {
+  if (state.settlementProgress === undefined || state.worldRank === undefined || state.skillRanks === undefined) {
+    return Math.max(0, state.availableMineSites);
+  }
+  return Math.max(0, getMineSiteCapacity(state as Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>) - state.mines.length);
+}
+
+function syncAvailableMineSites(state: GameState): void {
+  state.availableMineSites = getAvailableMineSites(state);
+}
+
+export function getBuildItemUnlockStatus(
+  state: Pick<GameState, 'level' | 'settlementProgress' | 'worldRank' | 'skillRanks' | 'resources'>,
+  itemId: BuildItemId,
+): { unlocked: boolean; missing: UnlockPrerequisite[] } {
+  const definition = BUILD_ITEM_UNLOCKS.find((entry) => entry.id === itemId);
+  if (!definition) return { unlocked: false, missing: [] };
+  const missing = definition.prerequisites.filter((prerequisite) => {
+    if (prerequisite.kind === 'skill') return getSkillNodeRank(state, prerequisite.id ?? '') < prerequisite.required;
+    if (prerequisite.kind === 'settlement-stage') {
+      const stageIndex = SETTLEMENT_STAGES.findIndex((stage) => stage.id === prerequisite.id);
+      return getSettlementStageIndex(state) < Math.max(0, stageIndex);
+    }
+    if (prerequisite.kind === 'level') return state.level < prerequisite.required;
+    return (state.resources[prerequisite.id ?? ''] ?? 0) < prerequisite.required;
+  });
+  return { unlocked: missing.length === 0, missing: missing.map((entry) => ({ ...entry })) };
 }
 
 export function getNextSettlementStage(state: GameState): SettlementStageDefinition | null {
@@ -791,6 +876,7 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'chunk-upgrade', now);
   if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, currentRank + 1);
   if (node.id === 'world-cave-entrance') unlockStarterMine(state, now);
+  if (node.id === 'world-second-mine-site' || node.id === 'world-third-mine-site') syncAvailableMineSites(state);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
@@ -987,7 +1073,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const resources = Object.fromEntries(
       Object.entries(parsed.resources ?? {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Math.max(0, Number(value))]),
     );
-    return {
+    const restored: GameState = {
       schemaVersion: SAVE_SCHEMA_VERSION,
       level: Math.max(1, Number(parsed.level) || base.level),
       xp: Math.max(0, Number(parsed.xp) || 0),
@@ -1021,6 +1107,8 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       skillRanks,
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
+    syncAvailableMineSites(restored);
+    return restored;
   } catch {
     return freshState(now);
   }
@@ -1028,13 +1116,17 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
 
 function parseMines(value: unknown, now: number): MineSite[] {
   if (!Array.isArray(value)) return [];
+  const seenIds = new Set<string>();
   return value.flatMap((candidate): MineSite[] => {
     if (!candidate || typeof candidate !== 'object') return [];
     const entry = candidate as Partial<MineSite>;
-    if (entry.id !== MINE_ID) return [];
+    const rawId = String(entry.id ?? '');
+    if (rawId !== MINE_ID && !/^mine-\d+$/.test(rawId)) return [];
+    const id = seenIds.has(rawId) ? `mine-${seenIds.size + 1}` : rawId;
+    seenIds.add(id);
     const lastUpdatedAt = Number(entry.lastUpdatedAt);
     return [{
-      id: MINE_ID,
+      id,
       x: Number.isFinite(Number(entry.x)) ? Number(entry.x) : 0,
       z: Number.isFinite(Number(entry.z)) ? Number(entry.z) : 1,
       direction: WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : 'south',
@@ -1049,7 +1141,7 @@ function parseMines(value: unknown, now: number): MineSite[] {
       lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,
       completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
     }];
-  }).slice(0, 1);
+  });
 }
 
 function parsePathCells(value: unknown): PathCell[] | null {

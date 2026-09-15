@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineSiteCapacity, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -123,6 +123,30 @@ describe('IdleCraft progression', () => {
     expect(unlockStarterMine(state, 1000, 0, 1, 'south', 2)).toBe(true);
     expect(state.mines[0].railLength).toBe(2);
     expect(state.placements.find((placement) => placement.id === 'starter-mine')?.depth).toBe(2);
+  });
+
+  it('supports three independent mine sites and adds one slot per settlement stage', () => {
+    const state = freshState();
+    state.skillRanks = { 'world-cave-entrance': 1, 'world-second-mine-site': 1, 'world-third-mine-site': 1 };
+    expect(getMineSiteCapacity(state)).toBe(3);
+    expect(getAvailableMineSites(state)).toBe(3);
+    expect(unlockStarterMine(state, 1000, 0, 1, 'south', 2)).toBe(true);
+    expect(unlockStarterMine(state, 1000, 1, -1, 'south', 4)).toBe(true);
+    expect(unlockStarterMine(state, 1000, 2, -1, 'south', 4)).toBe(true);
+    expect(state.mines.map((mine) => mine.id)).toEqual(['starter-mine', 'mine-2', 'mine-3']);
+    expect(getAvailableMineSites(state)).toBe(0);
+    state.worldRank = 1;
+    addSettlementProgress(state, 500);
+    expect(getSettlementStage(state).id).toBe('hamlet');
+    expect(getMineSiteCapacity(state)).toBe(4);
+    expect(getAvailableMineSites(state)).toBe(1);
+  });
+
+  it('reports build prerequisites from the shared unlock registry', () => {
+    const state = freshState();
+    expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(false);
+    state.skillRanks['world-cave-entrance'] = 1;
+    expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(true);
   });
 
   it('uses one collision rule for path-facing structures', () => {

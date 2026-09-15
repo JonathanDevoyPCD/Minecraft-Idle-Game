@@ -39,7 +39,8 @@ export class AudioManager {
 
   constructor() {
     this.music.loop = true;
-    this.music.preload = 'auto';
+    // Defer the large background track until the player actually starts music.
+    this.music.preload = 'none';
     this.applyMusicSettings();
   }
 

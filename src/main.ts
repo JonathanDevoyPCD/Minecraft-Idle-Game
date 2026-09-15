@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import './style.css';
-import { CloudCell, createCloudGeometry } from './cloud-geometry';
 import { AudioManager } from './audio';
 import {
   SAVE_KEY,
@@ -740,6 +739,7 @@ interface MineVisual {
   ghost: boolean;
   pathConnector: THREE.Group;
   storage: THREE.Group;
+  storageVisualKey?: string;
   railSegments: THREE.Group[];
   cargoKind: MineCargoKind | null;
 }
@@ -868,11 +868,30 @@ function createMineStorageVisual(
   return storage;
 }
 
+function disposeObjectResources(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    geometries.add(object.geometry);
+    const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    meshMaterials.forEach((material) => materials.add(material));
+  });
+  geometries.forEach((geometry) => geometry.dispose());
+  materials.forEach((material) => material.dispose());
+}
+
 function updateMineStorageVisual(visual: MineVisual, mine: MineSite): void {
-  visual.storage.clear();
   const capacity = getMineStorageCapacity(mine);
   const fillState = getMineStorageFillState(mine.storageAmount, capacity);
-  visual.storage.add(createMineStorageVisual(fillState, getMineCargoKind(state), visual.ghost));
+  const cargoKind = getMineCargoKind(state);
+  const storageVisualKey = `${fillState}:${cargoKind}:${visual.ghost}`;
+  if (visual.storageVisualKey !== storageVisualKey) {
+    visual.storage.children.forEach(disposeObjectResources);
+    visual.storage.clear();
+    visual.storage.add(createMineStorageVisual(fillState, cargoKind, visual.ghost));
+    visual.storageVisualKey = storageVisualKey;
+  }
   visual.storage.userData.storageState = fillState;
   visual.storage.userData.storageAmount = mine.storageAmount;
   visual.storage.userData.storageCapacity = capacity;
@@ -1271,6 +1290,33 @@ function setMineCartCargoVisible(cart: THREE.Group, visible: boolean): void {
   if (cargo) cargo.visible = visible;
 }
 
+function isMineAnimationPaused(mineId: string): boolean {
+  return (selectedMoveItem?.kind === 'mine' && selectedMoveItem.id === mineId)
+    || (pendingDestroyItem?.kind === 'mine' && pendingDestroyItem.id === mineId);
+}
+
+function updateMineCartAnimation(visual: MineVisual, mine: MineSite, connectionIndex: number, now = Date.now()): void {
+  if (isMineAnimationPaused(mine.id)) return;
+  const tripDuration = getMineTripDuration(state);
+  // Mine production is intentionally simulated on a slower cadence to reduce
+  // CPU and save churn. Project that state forward for the visual only so the
+  // cart continues moving continuously between simulation ticks.
+  const projectedProgressMs = mine.progressMs + Math.max(0, now - mine.lastUpdatedAt);
+  const baseProgress = (projectedProgressMs % tripDuration) / tripDuration;
+  const startZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
+  const endZ = BLOCK_SIZE * getMineRailCenterZ(0);
+  visual.carts.forEach((cart, index) => {
+    if (!cart.visible) return;
+    const phase = (baseProgress + index * 0.27) % 1;
+    const travellingToMine = phase < 0.5;
+    const travel = travellingToMine ? phase * 2 : 1 - (phase - 0.5) * 2;
+    const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
+    cart.position.set(lane * BLOCK_SIZE, 0, startZ + (endZ - startZ) * travel);
+    cart.rotation.y = travellingToMine ? Math.PI : 0;
+    setMineCartCargoVisible(cart, phase >= 0.5);
+  });
+}
+
 function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
   visual.group.visible = true;
   visual.group.userData.placementId = mine.id;
@@ -1293,29 +1339,7 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
     visual.group.position.set(moveHoverCell.x * BLOCK_SIZE, 0, moveHoverCell.z * BLOCK_SIZE);
   }
   if (isMovePreview || isDestroyPreview) return;
-  const tripDuration = getMineTripDuration(state);
-  const baseProgress = mine.progressMs / tripDuration;
-  const startZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
-  // The cart ends on the final regular rail. The Rail End sits on the
-  // neighboring path block and is not part of the cart's travel rail.
-  const endZ = BLOCK_SIZE * getMineRailCenterZ(0);
-  visual.carts.forEach((cart, index) => {
-    if (!cart.visible) return;
-    const phase = (baseProgress + index * 0.27) % 1;
-    const travellingToMine = phase < 0.5;
-    // Empty carts leave the path end for the mine, then return loaded. This
-    // makes the reward event and the visible delivery happen at the same place.
-    // Outbound: path -> mine. Return: mine -> path after loading.
-    const travel = travellingToMine ? phase * 2 : 1 - (phase - 0.5) * 2;
-    const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
-    cart.position.set(
-      lane * BLOCK_SIZE,
-      0,
-      startZ + (endZ - startZ) * travel,
-    );
-    cart.rotation.y = travellingToMine ? Math.PI : 0;
-    setMineCartCargoVisible(cart, phase >= 0.5);
-  });
+  updateMineCartAnimation(visual, mine, connectionIndex);
 }
 
 function restoreActionVisual(mesh: THREE.Mesh): void {
@@ -1425,6 +1449,17 @@ function updateMineVisual(): void {
   });
 }
 
+function updateMineCartAnimations(now = Date.now()): void {
+  state.mines.forEach((mine) => {
+    const visual = mineVisuals.get(mine.id);
+    if (!visual || !visual.group.visible) return;
+    const direction = mine.direction ?? 'south';
+    const railLength = mine.railLength ?? DEFAULT_MINE_RAIL_LENGTH;
+    const connectionIndex = getMinePathConnection(mine.x, mine.z, direction, railLength)?.index ?? railLength - 1;
+    updateMineCartAnimation(visual, mine, connectionIndex, now);
+  });
+}
+
 function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   const visible = buildMode === 'mine' && getAvailableMineSites(state) > 0 && Boolean(preview);
   mineGhostVisual.group.visible = visible;
@@ -1444,39 +1479,6 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   setMineCartCargoVisible(mineGhostVisual.carts[0], false);
   setMineGhostValid(preview.valid);
 }
-
-const CLOUD_BLOCK_SIZE = BLOCK_SIZE;
-const CLOUD_BLOCK_HEIGHT = BLOCK_SIZE;
-const viewRight = new THREE.Vector3(1, 0, -1).normalize();
-const viewUp = new THREE.Vector3(-1, 2, -1).normalize();
-const viewBack = new THREE.Vector3(-1, -1, -1).normalize();
-
-const CLOUD_CELLS: readonly CloudCell[] = [
-  [-1, 0, 0],
-  [0, 0, 0],
-  [1, 0, 0],
-];
-
-function createCloud(screenX: number, screenY: number): THREE.Group {
-  const cloud = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xf7fbf4,
-    roughness: 1,
-    transparent: true,
-    opacity: 0.1,
-    depthWrite: false,
-    side: THREE.FrontSide,
-  });
-  cloud.add(new THREE.Mesh(createCloudGeometry(CLOUD_CELLS, CLOUD_BLOCK_SIZE, CLOUD_BLOCK_HEIGHT), material));
-  cloud.position
-    .addScaledVector(viewRight, screenX)
-    .addScaledVector(viewUp, screenY)
-    .addScaledVector(viewBack, 4);
-  scene.add(cloud);
-  return cloud;
-}
-
-const clouds = [createCloud(-5.5, 4.5), createCloud(5.5, 4.5), createCloud(-4, 7)];
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -2285,15 +2287,12 @@ function updateUi(): void {
   updateMiningUi();
 }
 
-function updateConstructionState(now: number): void {
+function updateConstructionState(now: number): boolean {
   const completed = completeConstructionProjects(state, now);
   if (completed.length > 0) {
     updateWorldScene();
-    updateUi();
-    saveState(localStorage, state);
   }
-  updateConstructionUi(now);
-  updateMineUi();
+  return completed.length > 0;
 }
 
 function flashXpCard(): void {
@@ -3024,6 +3023,10 @@ updateUi();
 updateAudioUi();
 
 const clock = new THREE.Clock();
+const SIMULATION_INTERVAL_MS = 100;
+const UI_REFRESH_INTERVAL_MS = 250;
+let lastSimulationAt = Date.now();
+let lastUiRefreshAt = 0;
 function updateCameraPan(delta: number): void {
   let x = 0;
   let z = 0;
@@ -3043,23 +3046,28 @@ function render(_now: number): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   updateCameraPan(delta);
   const wallClockNow = Date.now();
-  updateConstructionState(wallClockNow);
-  const mineResult = advanceMineOperations(state, wallClockNow);
-  if (mineResult.trips > 0) {
-    addXp(state, mineResult.xp);
-    flashXpCard();
-    audioManager.playMiningSound('stone');
-    updateUi();
-    saveState(localStorage, state);
+  let stateChanged = false;
+  if (wallClockNow - lastSimulationAt >= SIMULATION_INTERVAL_MS) {
+    lastSimulationAt = wallClockNow;
+    stateChanged = updateConstructionState(wallClockNow);
+    const mineResult = advanceMineOperations(state, wallClockNow);
+    if (mineResult.trips > 0) {
+      addXp(state, mineResult.xp);
+      flashXpCard();
+      audioManager.playMiningSound('stone');
+      stateChanged = true;
+    }
+    if (stateChanged) saveState(localStorage, state);
   }
+  if (stateChanged || wallClockNow - lastUiRefreshAt >= UI_REFRESH_INTERVAL_MS) {
+    updateUi();
+    lastUiRefreshAt = wallClockNow;
+  }
+  updateMineCartAnimations(wallClockNow);
   oreNodes.forEach((node) => {
     node.pulse = Math.max(0, node.pulse - delta * 4);
     const pulse = Math.sin(node.pulse * Math.PI);
     node.mesh.scale.setScalar(1 + pulse * 0.28);
-  });
-  clouds.forEach((cloud, index) => {
-    cloud.position.x += delta * (0.045 + index * 0.012);
-    if (cloud.position.x > 6) cloud.position.x = -6;
   });
   renderer.render(scene, camera);
   requestAnimationFrame(render);

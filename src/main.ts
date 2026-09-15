@@ -1158,7 +1158,8 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
     const travellingToMine = phase < 0.5;
     // Empty carts leave the path end for the mine, then return loaded. This
     // makes the reward event and the visible delivery happen at the same place.
-    const travel = travellingToMine ? 1 - phase * 2 : (phase - 0.5) * 2;
+    // Outbound: path -> mine. Return: mine -> path after loading.
+    const travel = travellingToMine ? phase * 2 : 1 - (phase - 0.5) * 2;
     const lane = mine.cartCount > 1 ? (index % 2 === 0 ? -0.2 : 0.2) : 0;
     cart.position.set(
       lane * BLOCK_SIZE,

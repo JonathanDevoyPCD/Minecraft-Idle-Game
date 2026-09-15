@@ -727,6 +727,8 @@ interface MineVisual {
 let railStraightTemplate: THREE.Group | null = null;
 let railEndTemplate: THREE.Group | null = null;
 let mineEntranceTemplate: THREE.Group | null = null;
+let cartEmptyTemplate: THREE.Group | null = null;
+let cartContentsTemplate: THREE.Group | null = null;
 
 interface MinePlacementPreview {
   x: number;
@@ -803,16 +805,25 @@ function createMineCargoVisual(kind: MineCargoKind, ghost: boolean): THREE.Group
   cargo.userData.isGhost = ghost;
   cargo.userData.isMineCargo = true;
   cargo.visible = !ghost;
+
+  if (cartContentsTemplate) {
+    const authoredContents = prepareAuthoredModel(cartContentsTemplate, ghost);
+    // cart-contents-1.glb shares the cart's bottom-centered origin. Keep it
+    // inside the cart and let the rock accents emerge from its upper half.
+    authoredContents.position.set(0, BLOCK_SIZE * 0.5, 0);
+    cargo.add(authoredContents);
+  }
+
   const rockMaterial = createMineMaterial(0x6c7678, undefined, ghost);
   const rockPositions: Array<[number, number, number, number]> = [
-    [-0.17, 1.0, -0.14, 0.18],
-    [0.04, 1.02, -0.11, -0.24],
-    [0.18, 1.01, 0.02, 0.12],
-    [-0.06, 1.03, 0.11, 0.36],
-    [0.12, 1.0, 0.16, -0.1],
+    [-0.1, 0.86, -0.12, 0.18],
+    [0.03, 0.85, -0.1, -0.24],
+    [0.1, 0.86, 0.02, 0.12],
+    [-0.04, 0.87, 0.1, 0.36],
+    [0.07, 0.85, 0.13, -0.1],
   ];
   rockPositions.forEach(([x, y, z, rotation]) => {
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(BLOCK_SIZE * 0.11, 0), rockMaterial);
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(BLOCK_SIZE * 0.07, 0), rockMaterial);
     rock.position.set(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
     rock.rotation.set(rotation, rotation * 0.7, rotation * 1.2);
     rock.castShadow = !ghost;
@@ -829,9 +840,9 @@ function createMineCargoVisual(kind: MineCargoKind, ghost: boolean): THREE.Group
       opacity: ghost ? 0.5 : 1,
       depthWrite: !ghost,
     });
-    [[-0.13, 1.11, -0.06], [0.09, 1.1, 0.09]].forEach(([x, y, z], index) => {
+    [[-0.08, 0.9, -0.06], [0.06, 0.89, 0.08]].forEach(([x, y, z], index) => {
       const ore = new THREE.Mesh(
-        new THREE.BoxGeometry(BLOCK_SIZE * 0.11, BLOCK_SIZE * 0.13, BLOCK_SIZE * 0.11),
+        new THREE.BoxGeometry(BLOCK_SIZE * 0.07, BLOCK_SIZE * 0.08, BLOCK_SIZE * 0.07),
         oreMaterial,
       );
       ore.position.set(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
@@ -843,22 +854,38 @@ function createMineCargoVisual(kind: MineCargoKind, ghost: boolean): THREE.Group
   return cargo;
 }
 
-function createMineCartVisual(ghost: boolean, storage: boolean, cargoKind: MineCargoKind | null): THREE.Group {
-  const cart = new THREE.Group();
-  cart.userData.isGhost = ghost;
-  cart.userData.cargoKind = cargoKind;
+function createMineCartBody(ghost: boolean, storage: boolean): THREE.Group {
+  const body = new THREE.Group();
+  body.userData.isGhost = ghost;
+  body.userData.isMineCartBody = true;
+
+  if (cartEmptyTemplate) {
+    const authoredCart = prepareAuthoredModel(cartEmptyTemplate, ghost);
+    // cart-empty.glb uses a bottom-centered origin. Place that origin on the
+    // turf surface, level with the authored rail modules.
+    authoredCart.position.set(0, BLOCK_SIZE * 0.5, 0);
+    body.add(authoredCart);
+  } else {
+    createProceduralMineCartBody(body, ghost, storage);
+  }
+
+  if (storage) {
+    const woodMaterial = createMineMaterial(0x95643b, oakPlanksTexture, ghost);
+    addMinePart(body, woodMaterial, [0.46, 0.22, 0.48], [0, 1.05, 0]);
+  }
+  return body;
+}
+
+function createProceduralMineCartBody(body: THREE.Group, ghost: boolean, storage: boolean): void {
   const bodyMaterial = createMineMaterial(storage ? 0x9f7951 : 0xb8c0c0, undefined, ghost);
   const darkMaterial = createMineMaterial(0x182126, undefined, ghost);
   const wheelMaterial = createMineMaterial(0x20282b, undefined, ghost);
-  const woodMaterial = createMineMaterial(0x95643b, oakPlanksTexture, ghost);
-  addMinePart(cart, bodyMaterial, [0.62, 0.3, 0.68], [0, 0.72, 0]);
-  addMinePart(cart, darkMaterial, [0.46, 0.05, 0.5], [0, 0.9, 0]);
-  addMinePart(cart, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, -0.3]);
-  addMinePart(cart, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, 0.3]);
-  addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [-0.3, 0.94, 0]);
-  addMinePart(cart, bodyMaterial, [0.08, 0.08, 0.52], [0.3, 0.94, 0]);
-  if (storage) addMinePart(cart, woodMaterial, [0.46, 0.22, 0.48], [0, 1.05, 0]);
-  if (!storage && cargoKind) cart.add(createMineCargoVisual(cargoKind, ghost));
+  addMinePart(body, bodyMaterial, [0.62, 0.3, 0.68], [0, 0.72, 0]);
+  addMinePart(body, darkMaterial, [0.46, 0.05, 0.5], [0, 0.9, 0]);
+  addMinePart(body, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, -0.3]);
+  addMinePart(body, bodyMaterial, [0.68, 0.08, 0.08], [0, 0.94, 0.3]);
+  addMinePart(body, bodyMaterial, [0.08, 0.08, 0.52], [-0.3, 0.94, 0]);
+  addMinePart(body, bodyMaterial, [0.08, 0.08, 0.52], [0.3, 0.94, 0]);
 
   [-0.3, 0.3].forEach((x) => {
     [-0.2, 0.2].forEach((z) => {
@@ -869,9 +896,18 @@ function createMineCartVisual(ghost: boolean, storage: boolean, cargoKind: MineC
       wheel.rotation.z = Math.PI / 2;
       wheel.position.set(x * BLOCK_SIZE, BLOCK_SIZE * 0.49, z * BLOCK_SIZE);
       wheel.castShadow = !ghost;
-      cart.add(wheel);
+      body.add(wheel);
     });
   });
+}
+
+function createMineCartVisual(ghost: boolean, storage: boolean, cargoKind: MineCargoKind | null): THREE.Group {
+  const cart = new THREE.Group();
+  cart.userData.isGhost = ghost;
+  cart.userData.cargoKind = cargoKind;
+  cart.userData.isStorageCart = storage;
+  cart.add(createMineCartBody(ghost, storage));
+  if (!storage && cargoKind) cart.add(createMineCargoVisual(cargoKind, ghost));
   return cart;
 }
 
@@ -942,6 +978,13 @@ function installRailEndModel(parent: THREE.Group, ghost: boolean): void {
   parent.userData.railModelKind = 'end-only';
 }
 
+function extractAuthoredModel(scene: THREE.Group, objectName: string): THREE.Group {
+  const model = new THREE.Group();
+  const authoredObject = scene.getObjectByName(objectName);
+  if (authoredObject) model.add(authoredObject.clone(true));
+  return model;
+}
+
 function installMineEntranceModel(visual: MineVisual): void {
   if (!mineEntranceTemplate) return;
   visual.group.children
@@ -1004,6 +1047,24 @@ function refreshAuthoredMineModels(): void {
   updateMineVisual();
 }
 
+function refreshMineCartModels(): void {
+  const visuals = [mineVisual, mineGhostVisual, ...mineVisuals.values()];
+  visuals.forEach((visual) => {
+    visual.carts.forEach((cart) => {
+      const previousBody = cart.children.find((child) => child.userData.isMineCartBody);
+      if (previousBody) cart.remove(previousBody);
+      cart.add(createMineCartBody(visual.ghost, Boolean(cart.userData.isStorageCart)));
+      const previousCargo = cart.children.find((child) => child.userData.isMineCargo);
+      if (previousCargo) cart.remove(previousCargo);
+      const cargoKind = cart.userData.cargoKind as MineCargoKind | null;
+      if (!cart.userData.isStorageCart && cargoKind) {
+        cart.add(createMineCargoVisual(cargoKind, visual.ghost));
+      }
+    });
+  });
+  updateMineVisual();
+}
+
 const authoredModelLoader = new GLTFLoader();
 const authoredModelBase = `${import.meta.env.BASE_URL}assets/models/`;
 authoredModelLoader.load(`${authoredModelBase}rail-straight.glb`, (gltf) => {
@@ -1011,9 +1072,19 @@ authoredModelLoader.load(`${authoredModelBase}rail-straight.glb`, (gltf) => {
   refreshAuthoredMineModels();
 }, undefined, () => console.warn('IdleCraft: rail-straight.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}rail-end.glb`, (gltf) => {
-  railEndTemplate = gltf.scene;
+  // The exported Blender scene also contains the mine, cart, straight rail,
+  // and a floor plane. Use only the named Rail End object in this slot.
+  railEndTemplate = extractAuthoredModel(gltf.scene, 'rail-end');
   refreshAuthoredMineModels();
 }, undefined, () => console.warn('IdleCraft: rail-end.glb could not be loaded.'));
+authoredModelLoader.load(`${authoredModelBase}cart-empty.glb`, (gltf) => {
+  cartEmptyTemplate = extractAuthoredModel(gltf.scene, 'cartEmpty');
+  refreshMineCartModels();
+}, undefined, () => console.warn('IdleCraft: cart-empty.glb could not be loaded.'));
+authoredModelLoader.load(`${authoredModelBase}cart-contents-1.glb`, (gltf) => {
+  cartContentsTemplate = extractAuthoredModel(gltf.scene, 'cartContents');
+  refreshMineCartModels();
+}, undefined, () => console.warn('IdleCraft: cart-contents-1.glb could not be loaded.'));
 authoredModelLoader.load(`${authoredModelBase}MineEntrance.glb`, (gltf) => {
   mineEntranceTemplate = gltf.scene;
   refreshAuthoredMineModels();

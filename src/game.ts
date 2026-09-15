@@ -24,6 +24,8 @@ export interface GameState {
   resources: Record<string, number>;
   blockProgress: Record<string, BlockMiningProgress>;
   skillRanks: Record<string, number>;
+  /** Direct Mining-menu upgrades, kept separate from the Skill Tree ranks. */
+  mineUpgradeRanks?: Record<string, number>;
   lastSavedAt: number;
 }
 
@@ -121,6 +123,30 @@ export const MINE_TRIP_DURATION_MS = 8_000;
 export const MINE_RAIL_LENGTHS: readonly MineRailLength[] = [4, 3, 2];
 export const DEFAULT_MINE_RAIL_LENGTH: MineRailLength = 4;
 export const MINE_LAYER_NAMES = ['Stone Layer', 'Deepstone Layer', 'Bedrock Boundary'] as const;
+export type MineUpgradeId = 'rail-speed' | 'storage-capacity';
+export interface MineUpgradeDefinition {
+  id: MineUpgradeId;
+  category: 'rails' | 'storage';
+  name: string;
+  description: string;
+  costs: readonly number[];
+}
+export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
+  {
+    id: 'rail-speed',
+    category: 'rails',
+    name: 'Powered Rails',
+    description: 'Shortens every minecart trip.',
+    costs: [5, 15, 40],
+  },
+  {
+    id: 'storage-capacity',
+    category: 'storage',
+    name: 'Storage Carts',
+    description: 'Adds another cart to carry each delivery.',
+    costs: [8, 20, 50],
+  },
+];
 const MINE_ID = 'starter-mine';
 const MINE_CART_NODE_ID = 'automation-mine-carts';
 const MINE_STORAGE_CART_NODE_ID = 'automation-chest-minecart';
@@ -289,6 +315,7 @@ export function freshState(now = Date.now()): GameState {
     resources: { dirt: 0, cobblestone: 0 },
     blockProgress: {},
     skillRanks: {},
+    mineUpgradeRanks: {},
     lastSavedAt: now,
   };
 }
@@ -638,28 +665,65 @@ export function getMineCargoKind(state: Pick<GameState, 'undergroundLayer' | 'sk
   return 'stone';
 }
 
+export function getMineUpgradeRank(
+  state: Pick<GameState, 'skillRanks'> & Partial<Pick<GameState, 'mineUpgradeRanks'>>,
+  id: MineUpgradeId,
+): number {
+  return Math.max(0, Math.floor(Number(state.mineUpgradeRanks?.[id]) || 0));
+}
+
+export function getMineUpgradeDefinition(id: MineUpgradeId): MineUpgradeDefinition | undefined {
+  return MINE_UPGRADES.find((upgrade) => upgrade.id === id);
+}
+
+export function getMineUpgradeCost(
+  state: Pick<GameState, 'skillRanks' | 'resources'> & Partial<Pick<GameState, 'mineUpgradeRanks' | 'mines'>>,
+  id: MineUpgradeId,
+): number | null {
+  const definition = getMineUpgradeDefinition(id);
+  if (!definition) return null;
+  const rank = getMineUpgradeRank(state, id);
+  return definition.costs[rank] ?? null;
+}
+
+export function buyMineUpgrade(state: GameState, id: MineUpgradeId): boolean {
+  if (state.mines.length === 0) return false;
+  const cost = getMineUpgradeCost(state, id);
+  if (cost === null || (state.resources.emerald ?? 0) < cost) return false;
+  state.resources.emerald = (state.resources.emerald ?? 0) - cost;
+  state.mineUpgradeRanks ??= {};
+  state.mineUpgradeRanks[id] = getMineUpgradeRank(state, id) + 1;
+  return true;
+}
+
 export function getMineCartCount(state: GameState): number {
   const cartRanks = getSkillNodeRank(state, MINE_CART_NODE_ID);
-  return Math.max(1, 1 + cartRanks);
+  return Math.max(1, 1 + cartRanks + getMineUpgradeRank(state, 'storage-capacity'));
 }
 
 export function getMineTripDuration(state: GameState): number {
-  const railRanks = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID);
+  const railRanks = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
   return Math.max(2_000, MINE_TRIP_DURATION_MS / (1 + railRanks * 0.25));
+}
+
+/** Level-one mines start at 0.08%; Mining-menu upgrades raise this slowly. */
+export function getMineEmeraldChance(state: GameState): number {
+  const upgradeRanks = getMineUpgradeRank(state, 'rail-speed') + getMineUpgradeRank(state, 'storage-capacity');
+  return Math.min(0.01, 0.0008 + upgradeRanks * 0.0002);
 }
 
 function addMineResource(result: MineProductionResult, resource: string, amount: number): void {
   result.resources[resource] = (result.resources[resource] ?? 0) + amount;
 }
 
-export function advanceMineOperations(state: GameState, now = Date.now()): MineProductionResult {
+export function advanceMineOperations(state: GameState, now = Date.now(), random = Math.random): MineProductionResult {
   const result: MineProductionResult = { trips: 0, xp: 0, resources: {} };
   const layer = getMineLayer(state);
   const tripDuration = getMineTripDuration(state);
   state.mines.forEach((mine) => {
     mine.cartCount = getMineCartCount(state);
     mine.storageCarts = getSkillNodeRank(state, MINE_STORAGE_CART_NODE_ID) > 0 ? 1 : 0;
-    mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID);
+    mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
     const totalProgress = mine.progressMs + elapsed;
@@ -687,6 +751,9 @@ export function advanceMineOperations(state: GameState, now = Date.now()): MineP
     }
     if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) {
       addMineResource(result, 'diamond', Math.floor(cartTrips / 10));
+    }
+    for (let trip = 0; trip < cartTrips; trip += 1) {
+      if (random() < getMineEmeraldChance(state)) addMineResource(result, 'emerald', 1);
     }
   });
   Object.entries(result.resources).forEach(([resource, amount]) => {
@@ -1105,6 +1172,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       resources: { ...base.resources, ...resources },
       blockProgress: parseBlockProgress(parsed.blockProgress),
       skillRanks,
+      mineUpgradeRanks: parseMineUpgradeRanks(parsed.mineUpgradeRanks),
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
     syncAvailableMineSites(restored);
@@ -1112,6 +1180,18 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   } catch {
     return freshState(now);
   }
+}
+
+function parseMineUpgradeRanks(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  const ranks: Record<string, number> = {};
+  Object.entries(value).forEach(([id, rank]) => {
+    if (!MINE_UPGRADES.some((upgrade) => upgrade.id === id)) return;
+    const definition = getMineUpgradeDefinition(id as MineUpgradeId);
+    const safeRank = Math.max(0, Math.floor(Number(rank) || 0));
+    ranks[id] = Math.min(definition?.costs.length ?? safeRank, safeRank);
+  });
+  return ranks;
 }
 
 function parseMines(value: unknown, now: number): MineSite[] {

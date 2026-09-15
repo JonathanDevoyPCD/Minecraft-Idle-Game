@@ -10,6 +10,7 @@ import {
   MINE_RAIL_LENGTHS,
   addXp,
   advanceMineOperations,
+  buyMineUpgrade,
   buildPathCell,
   buySkillNode,
   canBuildPathCell,
@@ -24,6 +25,9 @@ import {
   getMineFootprint,
   getMineRailPathConnection,
   getMineCartCount,
+  getMineUpgradeCost,
+  getMineUpgradeDefinition,
+  getMineUpgradeRank,
   getAvailableMineSites,
   getMineSiteCapacity,
   getMineLayer,
@@ -46,6 +50,7 @@ import {
   type LivingEntityPlan,
   type MineCargoKind,
   type MineRailLength,
+  type MineUpgradeId,
   type MeadowFeature,
   type MineSite,
   type PathCell,
@@ -720,6 +725,8 @@ interface MineVisual {
 }
 
 let railStraightTemplate: THREE.Group | null = null;
+let railEndTemplate: THREE.Group | null = null;
+let mineEntranceTemplate: THREE.Group | null = null;
 
 interface MinePlacementPreview {
   x: number;
@@ -776,46 +783,6 @@ function addMinePart(
   );
   mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
   mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
-  const ghost = Boolean(parent.userData.isGhost);
-  mesh.castShadow = !ghost;
-  mesh.receiveShadow = !ghost;
-  parent.add(mesh);
-  return mesh;
-}
-
-function addMineSlopeFill(
-  parent: THREE.Group,
-  material: THREE.Material,
-  dimensions: { width: number; rearZ: number; frontZ: number; groundY: number; peakY: number },
-): THREE.Mesh {
-  const halfWidth = dimensions.width / 2;
-  const scale = BLOCK_SIZE;
-  // A closed triangular prism: its rear edge is buried just below the turf and
-  // the sloped top meets the entrance header. This prevents daylight below the
-  // mine body from every viewing angle while retaining the one-block footprint.
-  const vertices = [
-    -halfWidth, dimensions.groundY, dimensions.rearZ,
-    halfWidth, dimensions.groundY, dimensions.rearZ,
-    -halfWidth, dimensions.groundY, dimensions.frontZ,
-    halfWidth, dimensions.groundY, dimensions.frontZ,
-    -halfWidth, dimensions.peakY, dimensions.frontZ,
-    halfWidth, dimensions.peakY, dimensions.frontZ,
-  ].map((value) => value * scale);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setAttribute(
-    'uv',
-    new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1], 2),
-  );
-  geometry.setIndex([
-    0, 2, 3, 0, 3, 1, // buried base
-    2, 3, 5, 2, 5, 4, // front wall
-    0, 4, 5, 0, 5, 1, // sloped surface
-    0, 2, 4, // left side
-    1, 5, 3, // right side
-  ]);
-  geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, material);
   const ghost = Boolean(parent.userData.isGhost);
   mesh.castShadow = !ghost;
   mesh.receiveShadow = !ghost;
@@ -908,15 +875,18 @@ function createMineCartVisual(ghost: boolean, storage: boolean, cargoKind: MineC
   return cart;
 }
 
-function createRailModelInstance(ghost: boolean): THREE.Group | null {
-  if (!railStraightTemplate) return null;
-  const rail = railStraightTemplate.clone(true);
+function prepareAuthoredModel(template: THREE.Group, ghost: boolean): THREE.Group {
+  const model = template.clone(true);
   // The authored GLB is modeled in one Blender unit per block. Keep its
   // bottom-centered origin on the turf while matching the game's 0.9-unit
   // block grid so a module never spills into the neighboring block.
-  rail.scale.setScalar(BLOCK_SIZE);
-  rail.userData.isGhost = ghost;
-  rail.traverse((object) => {
+  model.scale.setScalar(BLOCK_SIZE);
+  model.userData.isGhost = ghost;
+  model.traverse((object) => {
+    // GLTFLoader keeps the authored scene hierarchy intact. Explicitly make
+    // every exported object visible so a hidden Blender node cannot make the
+    // in-game model appear to be only a fragment.
+    object.visible = true;
     if (!(object instanceof THREE.Mesh)) return;
     object.castShadow = !ghost;
     object.receiveShadow = !ghost;
@@ -937,64 +907,59 @@ function createRailModelInstance(ghost: boolean): THREE.Group | null {
     });
     object.material = Array.isArray(object.material) ? ghostMaterials : ghostMaterials[0];
   });
-  return rail;
+  return model;
 }
 
-function installRailModel(parent: THREE.Group, ghost: boolean): void {
-  const rail = createRailModelInstance(ghost);
-  if (!rail) return;
+function placeAuthoredModelOnBlock(model: THREE.Group): void {
+  // MineEntrance.glb is authored with its origin at the bottom-center of the
+  // one-block module. Keep that origin exact so the entrance's built-in rails
+  // line up with the first external rail module without a bounds-based shift.
+  // World cubes are centered at y=0, so their top face is half a block above
+  // the mine group's origin.
+  model.position.set(0, BLOCK_SIZE * 0.5, 0);
+}
+
+function createRailModelInstance(ghost: boolean, end = false): THREE.Group | null {
+  const template = end ? railEndTemplate : railStraightTemplate;
+  if (!template) return null;
+  return prepareAuthoredModel(template, ghost);
+}
+
+function installRailModel(parent: THREE.Group, ghost: boolean, end = false): void {
   parent.clear();
-  parent.add(rail);
+  // rail-end.glb is authored as the terminal detail rather than a complete
+  // one-block rail module. Keep the modular straight rail underneath it so
+  // the track remains continuous, then layer the end detail on top.
+  const straight = createRailModelInstance(ghost, false);
+  if (straight) parent.add(straight);
+  if (end && railEndTemplate) {
+    parent.add(prepareAuthoredModel(railEndTemplate, ghost));
+  } else if (!straight) {
+    const rail = createRailModelInstance(ghost, end);
+    if (rail) parent.add(rail);
+  }
+  parent.userData.railModelKind = end ? 'end' : 'straight';
+}
+
+function installMineEntranceModel(visual: MineVisual): void {
+  if (!mineEntranceTemplate) return;
+  visual.group.children
+    .filter((child) => child.userData.isMineEntrance)
+    .forEach((child) => visual.group.remove(child));
+  const entrance = prepareAuthoredModel(mineEntranceTemplate, visual.ghost);
+  // MineEntrance.glb is authored facing the opposite direction from the
+  // mine's forward rail, so apply the required local 180-degree correction.
+  entrance.rotation.set(0, Math.PI, 0);
+  // The authored entrance is presented as the opposite-handed side in the
+  // game view. Mirror it across its local width before placing it on the tile.
+  entrance.scale.x *= -1;
+  placeAuthoredModelOnBlock(entrance);
+  entrance.userData.isMineEntrance = true;
+  visual.group.add(entrance);
 }
 
 function createMineVisual(visual: MineVisual): void {
   visual.group.userData.isGhost = visual.ghost;
-  const stoneMaterial = createMineMaterial(0x9aa4a3, stoneBricksTexture, visual.ghost);
-  const stoneAccentMaterial = createMineMaterial(0x697578, cobblestoneTexture, visual.ghost);
-  const woodMaterial = createMineMaterial(0x8c5b36, oakLogTexture, visual.ghost);
-  const darkMaterial = createMineMaterial(0x10191d, undefined, visual.ghost);
-  const beamMaterial = createMineMaterial(0x5f3e2a, darkOakPlanksTexture, visual.ghost);
-
-  addMinePart(visual.group, darkMaterial, [0.78, 1.1, 0.12], [0, 1.0, 0.58]);
-  [-0.36, 0.36].forEach((x) => {
-    addMinePart(visual.group, stoneMaterial, [0.16, 1.18, 0.3], [x, 0.96, 0.58]);
-    addMinePart(visual.group, stoneAccentMaterial, [0.2, 0.18, 0.34], [x, 0.32, 0.58]);
-    // Sink the timber feet a touch into the turf so the entrance reads as planted,
-    // rather than hovering above the placement block from low camera angles.
-    addMinePart(visual.group, woodMaterial, [0.12, 1.4, 0.18], [x * 1.08, 0.95, 0.42]);
-  });
-  addMinePart(visual.group, stoneMaterial, [0.84, 0.2, 0.3], [0, 1.56, 0.58]);
-  // The rear is a compact, closed mine-head support like the reference:
-  // parallel timber ribs and cross-beams sit on a solid sloped back body.
-  // Its shortened rear edge stays inside the anchor block and clear of the rail.
-  addMinePart(visual.group, beamMaterial, [0.92, 0.18, 0.22], [0, 1.68, 0.42]);
-  addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [-0.39, 0.3, 0.42]);
-  addMinePart(visual.group, woodMaterial, [0.14, 0.18, 0.3], [0.39, 0.3, 0.42]);
-  // A solid, grounded rear body seals the visible sloped shell. Its rear toe
-  // is embedded in the turf at z -0.42, safely inside this tile.
-  const rearSlopeRotation: [number, number, number] = [-Math.PI * 0.285, 0, 0];
-  // Keep the visible sloped stone shell from the reference. The triangular
-  // volume below it is a concealed ground seal, not the exposed silhouette.
-  addMinePart(visual.group, stoneMaterial, [0.78, 0.56, 1.12], [0, 0.98, 0.17], rearSlopeRotation);
-  addMineSlopeFill(visual.group, stoneMaterial, {
-    width: 0.78,
-    rearZ: -0.42,
-    frontZ: 0.55,
-    groundY: 0.34,
-    peakY: 1.58,
-  });
-  [-0.27, 0, 0.27].forEach((x) => {
-    addMinePart(visual.group, beamMaterial, [0.13, 0.16, 1.14], [x, 1.25, -0.1], rearSlopeRotation);
-  });
-  [
-    { y: 0.92, z: -0.35 },
-    { y: 1.22, z: -0.02 },
-    { y: 1.5, z: 0.25 },
-  ].forEach(({ y, z }) => {
-    addMinePart(visual.group, woodMaterial, [0.78, 0.11, 0.12], [0, y, z]);
-  });
-  addMinePart(visual.group, stoneAccentMaterial, [0.82, 0.18, 0.22], [0, 0.34, -0.34]);
-
   for (let index = 0; index < 4; index += 1) {
     const segment = new THREE.Group();
     segment.userData.isGhost = visual.ghost;
@@ -1014,6 +979,7 @@ function createMineVisual(visual: MineVisual): void {
   visual.pathConnector.visible = false;
   visual.group.position.set(0, 0, 0);
   visual.group.visible = false;
+  installMineEntranceModel(visual);
 }
 
 const MINE_RAIL_START_Z = 0;
@@ -1026,25 +992,31 @@ function getMineRailCenterZ(index: number): number {
 createMineVisual(mineVisual);
 createMineVisual(mineGhostVisual);
 
-new GLTFLoader().load(
-  `${import.meta.env.BASE_URL}assets/models/rail-straight.glb`,
-  (gltf) => {
-    railStraightTemplate = gltf.scene;
-    const visuals = [mineVisual, mineGhostVisual, ...mineVisuals.values()];
-    visuals.forEach((visual) => {
-      visual.railSegments.forEach((segment) => installRailModel(segment, visual.ghost));
-      const connector = visual.pathConnector.children[0];
-      if (connector instanceof THREE.Group) installRailModel(connector, visual.ghost);
-    });
-    updateMineVisual();
-  },
-  undefined,
-  () => {
-    // Keep the placement and cart systems usable if the optional authored rail
-    // asset is unavailable; the GLB is a visual replacement only.
-    console.warn('IdleCraft: rail-straight.glb could not be loaded.');
-  },
-);
+function refreshAuthoredMineModels(): void {
+  const visuals = [mineVisual, mineGhostVisual, ...mineVisuals.values()];
+  visuals.forEach((visual) => {
+    installMineEntranceModel(visual);
+    visual.railSegments.forEach((segment) => installRailModel(segment, visual.ghost));
+    const connector = visual.pathConnector.children[0];
+    if (connector instanceof THREE.Group && railStraightTemplate) installRailModel(connector, visual.ghost);
+  });
+  updateMineVisual();
+}
+
+const authoredModelLoader = new GLTFLoader();
+const authoredModelBase = `${import.meta.env.BASE_URL}assets/models/`;
+authoredModelLoader.load(`${authoredModelBase}rail-straight.glb`, (gltf) => {
+  railStraightTemplate = gltf.scene;
+  refreshAuthoredMineModels();
+}, undefined, () => console.warn('IdleCraft: rail-straight.glb could not be loaded.'));
+authoredModelLoader.load(`${authoredModelBase}rail-end.glb`, (gltf) => {
+  railEndTemplate = gltf.scene;
+  refreshAuthoredMineModels();
+}, undefined, () => console.warn('IdleCraft: rail-end.glb could not be loaded.'));
+authoredModelLoader.load(`${authoredModelBase}MineEntrance.glb`, (gltf) => {
+  mineEntranceTemplate = gltf.scene;
+  refreshAuthoredMineModels();
+}, undefined, () => console.warn('IdleCraft: MineEntrance.glb could not be loaded.'));
 
 function syncMineCartMeshes(visual: MineVisual, cartCount: number, storageCarts: number): void {
   const wanted = visual.ghost ? 1 : Math.max(1, cartCount) + storageCarts;
@@ -1126,7 +1098,15 @@ function updateMineRailLength(
   const connection = getMinePathConnection(x, z, direction, railLength);
   const connectionIndex = connection?.index ?? railLength - 1;
   visual.railSegments.forEach((segment, index) => {
-    segment.visible = index < railLength && index <= connectionIndex;
+    const shouldUseEndModel = index === connectionIndex;
+    const expectedModelKind = shouldUseEndModel ? 'end' : 'straight';
+    if (segment.userData.railModelKind !== expectedModelKind) {
+      installRailModel(segment, visual.ghost, shouldUseEndModel);
+    }
+    // The MineEntrance GLB includes the rail module on its own tile. Start
+    // the separate modular rail assets on the next tile so they do not stack
+    // underneath the entrance.
+    segment.visible = index > 0 && index < railLength && index <= connectionIndex;
   });
   return connectionIndex;
 }
@@ -1311,11 +1291,20 @@ const sfxToggle = document.querySelector<HTMLButtonElement>('#sfx-toggle')!;
 const skillTreeButton = document.querySelector<HTMLButtonElement>('#skill-tree-button')!;
 const skillTreePointsLabel = document.querySelector<HTMLElement>('#skill-tree-points-label');
 const miningMenuRate = document.querySelector<HTMLElement>('#mining-menu-rate');
+const miningDrawer = document.querySelector<HTMLElement>('#mining-drawer')!;
+const miningActualToggle = document.querySelector<HTMLButtonElement>('#mining-actual-toggle')!;
+const miningCategoryButtons = document.querySelectorAll<HTMLButtonElement>('[data-mining-category]');
+const miningMineList = document.querySelector<HTMLElement>('#mining-mine-list')!;
+const railUpgradeStatus = document.querySelector<HTMLElement>('#rail-upgrade-status')!;
+const storageUpgradeStatus = document.querySelector<HTMLElement>('#storage-upgrade-status')!;
+const miningUpgradeButtons = document.querySelectorAll<HTMLButtonElement>('[data-mining-upgrade]');
 const app = document.querySelector<HTMLElement>('#app')!;
 const buildModeToggle = document.querySelector<HTMLElement>('#build-mode-toggle')!;
-const miningModeToggle = document.querySelector<HTMLButtonElement>('#mining-mode-toggle')!;
+const miningModeToggle = document.querySelector<HTMLElement>('#mining-mode-toggle')!;
 const resourcesButton = document.querySelector<HTMLButtonElement>('#resources-button')!;
 const tradingButton = document.querySelector<HTMLButtonElement>('#trading-button')!;
+const traderEmeraldButton = document.querySelector<HTMLButtonElement>('#trader-emerald-button')!;
+const traderEmeraldStatus = document.querySelector<HTMLElement>('#trader-emerald-status')!;
 const storyButton = document.querySelector<HTMLButtonElement>('#story-button')!;
 const pauseMenuButton = document.querySelector<HTMLButtonElement>('#pause-menu-button')!;
 const resumeButton = document.querySelector<HTMLButtonElement>('#resume-button')!;
@@ -1346,11 +1335,12 @@ let hoveredOre: OreNode | null = null;
 type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
 type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
 type BuildDrawerView = 'categories' | 'items';
-type BuildDrawerContext = 'build' | 'mining';
+type MiningDrawerCategory = 'mines' | 'rails' | 'storage';
 let buildMode: BuildMode = null;
 let buildDrawerCategory: BuildDrawerCategory = 'root';
 let buildDrawerView: BuildDrawerView = 'categories';
-let buildDrawerContext: BuildDrawerContext = 'build';
+let miningDrawerCategory: MiningDrawerCategory = 'mines';
+let miningDrawerView: BuildDrawerView = 'categories';
 let minePlacementPreview: MinePlacementPreview | null = null;
 let pathPlacementPreview: PathPlacementPreview | null = null;
 let selectedMineRailLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH;
@@ -1367,8 +1357,9 @@ let isPanningSkillTree = false;
 let lastSkillTreePanX = 0;
 let lastSkillTreePanY = 0;
 let selectedSkillNodeId: string | null = null;
-type DrawerKind = 'build' | null;
+type DrawerKind = 'build' | 'mining' | null;
 let activeDrawer: DrawerKind = null;
+const TRADER_EMERALD_COST = 25;
 
 if (offlineXp > 0) {
   addXp(state, offlineXp);
@@ -1776,11 +1767,82 @@ function syncBuildModeDrawer(): void {
   actualToggle.setAttribute('aria-expanded', String(isOpen));
   buildDrawer.setAttribute('aria-expanded', String(isOpen));
   buildDrawer.dataset.view = buildDrawerView;
-  buildDrawer.dataset.context = buildDrawerContext;
   buildDrawer.querySelectorAll<HTMLElement>('[data-build-page]').forEach((page) => {
     page.setAttribute('aria-hidden', String(page.dataset.buildPage !== buildDrawerView));
   });
   buildDrawer.classList.toggle('open', isOpen);
+}
+
+function syncMiningModeDrawer(): void {
+  const isOpen = activeDrawer === 'mining';
+  miningModeToggle.classList.toggle('is-expanded', isOpen);
+  miningModeToggle.setAttribute('aria-expanded', String(isOpen));
+  miningActualToggle.setAttribute('aria-expanded', String(isOpen));
+  miningDrawer.setAttribute('aria-expanded', String(isOpen));
+  miningDrawer.dataset.view = miningDrawerView;
+  miningDrawer.dataset.category = miningDrawerCategory;
+  miningDrawer.querySelectorAll<HTMLElement>('[data-mining-page]').forEach((page) => {
+    page.setAttribute('aria-hidden', String(page.dataset.miningPage !== miningDrawerView));
+  });
+  miningDrawer.classList.toggle('open', isOpen);
+}
+
+function formatMineCargo(cargo: MineCargoKind): string {
+  return cargo.charAt(0).toUpperCase() + cargo.slice(1);
+}
+
+function updateMiningUi(): void {
+  syncMiningModeDrawer();
+  const tripDuration = getMineTripDuration(state);
+  const cartCount = getMineCartCount(state);
+  const rate = cartCount * 1000 / tripDuration;
+  const cargo = formatMineCargo(getMineCargoKind(state));
+
+  miningMineList.replaceChildren();
+  if (state.mines.length === 0) {
+    const empty = document.createElement('article');
+    empty.className = 'mining-info-tile mining-info-tile--empty';
+    empty.textContent = 'No active mines';
+    miningMineList.append(empty);
+  } else {
+    state.mines.forEach((_, index) => {
+      const tile = document.createElement('article');
+      tile.className = 'mining-info-tile';
+      const title = document.createElement('strong');
+      title.textContent = `Mine ${index + 1}`;
+      const speed = document.createElement('span');
+      speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart${cartCount === 1 ? '' : 's'}`;
+      const ore = document.createElement('small');
+      ore.textContent = `Mining ${cargo}`;
+      tile.append(title, speed, ore);
+      miningMineList.append(tile);
+    });
+  }
+
+  const upgradeStatus = (id: MineUpgradeId): string => {
+    const definition = getMineUpgradeDefinition(id);
+    const rank = getMineUpgradeRank(state, id);
+    const cost = getMineUpgradeCost(state, id);
+    if (!definition || cost === null) return `Max rank ${rank}`;
+    return `Rank ${rank}/${definition.costs.length} · ${cost} Emerald${cost === 1 ? '' : 's'}`;
+  };
+  railUpgradeStatus.textContent = upgradeStatus('rail-speed');
+  storageUpgradeStatus.textContent = upgradeStatus('storage-capacity');
+  miningUpgradeButtons.forEach((button) => {
+    const id = button.dataset.miningUpgrade as MineUpgradeId;
+    const cost = getMineUpgradeCost(state, id);
+    const maxed = cost === null;
+    button.disabled = state.mines.length === 0 || maxed || (state.resources.emerald ?? 0) < cost;
+    button.title = maxed ? 'Fully upgraded' : `Spend ${cost} Emerald${cost === 1 ? '' : 's'} to upgrade`;
+  });
+  miningCategoryButtons.forEach((button) => {
+    const selected = miningDrawerView === 'categories' && button.dataset.miningCategory === miningDrawerCategory;
+    button.setAttribute('aria-pressed', String(selected));
+    button.classList.toggle('selected', selected);
+  });
+  miningDrawer.querySelectorAll<HTMLElement>('[data-mining-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.miningPanel !== miningDrawerCategory;
+  });
 }
 
 function setBuildMode(nextMode: BuildMode): void {
@@ -1789,18 +1851,17 @@ function setBuildMode(nextMode: BuildMode): void {
     activeDrawer = 'build';
     buildDrawerCategory = 'mining';
     buildDrawerView = 'items';
-    buildDrawerContext = 'build';
   }
   if (nextMode === 'path' || nextMode === 'path-upgrade') {
     activeDrawer = 'build';
     buildDrawerCategory = 'paths';
     buildDrawerView = 'items';
-    buildDrawerContext = 'build';
   }
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
-  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build' && buildDrawerCategory === 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
   syncBuildModeDrawer();
+  syncMiningModeDrawer();
   minePlacementPreview = null;
   pathPlacementPreview = null;
   updateMineGhostVisual(null);
@@ -1852,12 +1913,20 @@ function updateUi(): void {
   resourceGoldFillEl.style.width = resourceFill(state.resources.gold ?? 0, 100);
   if (skillTreePointsLabel) skillTreePointsLabel.textContent = `${state.craftingPoints} CP`;
   if (miningMenuRate) miningMenuRate.textContent = `${rate.toFixed(2)}/s`;
+  const traderReady = state.worldRank >= 1;
+  traderEmeraldButton.disabled = !traderReady || (state.resources.cobblestone ?? 0) < TRADER_EMERALD_COST;
+  traderEmeraldStatus.textContent = !traderReady
+    ? 'The trader arrives after your first land expansion.'
+    : traderEmeraldButton.disabled
+      ? `Need ${TRADER_EMERALD_COST} Cobblestone.`
+      : `${state.resources.cobblestone.toLocaleString()} Cobblestone available.`;
   if (storyStageLabel) storyStageLabel.textContent = settlementStage.name;
   pointsEl.textContent = `${state.craftingPoints} CP`;
   updateCurrentTool();
   updateConstructionUi();
   updateMineUi();
   updateBuildUi();
+  updateMiningUi();
 }
 
 function updateConstructionState(now: number): void {
@@ -1881,15 +1950,16 @@ function flashXpCard(): void {
 
 function setActiveDrawer(nextDrawer: DrawerKind): void {
   activeDrawer = activeDrawer === nextDrawer ? null : nextDrawer;
-  if (activeDrawer !== 'build' && (buildMode === 'path' || buildMode === 'path-upgrade')) setBuildMode(null);
-  if (activeDrawer !== 'build' && buildMode === 'mine') setBuildMode(null);
+  if (activeDrawer !== 'build' && buildMode !== null) setBuildMode(null);
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
-  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build' && buildDrawerCategory === 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
   syncBuildModeDrawer();
+  syncMiningModeDrawer();
+  updateUi();
 }
 
-function showBuildDrawer(category: BuildDrawerCategory, context: BuildDrawerContext = 'build'): void {
+function showBuildDrawer(category: BuildDrawerCategory): void {
   if (activeDrawer === 'build' && buildDrawerCategory === category && category === 'root') {
     setActiveDrawer('build');
     return;
@@ -1898,10 +1968,28 @@ function showBuildDrawer(category: BuildDrawerCategory, context: BuildDrawerCont
   activeDrawer = 'build';
   buildDrawerCategory = category;
   buildDrawerView = category === 'root' ? 'categories' : 'items';
-  buildDrawerContext = context;
   app.dataset.activeDrawer = 'build';
   buildModeToggle.setAttribute('aria-pressed', String(category !== 'mining'));
-  miningModeToggle.setAttribute('aria-pressed', String(category === 'mining'));
+  miningModeToggle.setAttribute('aria-pressed', 'false');
+  updateUi();
+}
+
+function showMiningDrawer(category?: MiningDrawerCategory): void {
+  if (category) {
+    activeDrawer = 'mining';
+    miningDrawerCategory = category;
+    miningDrawerView = 'items';
+  } else if (activeDrawer === 'mining') {
+    activeDrawer = null;
+    miningDrawerView = 'categories';
+  } else {
+    activeDrawer = 'mining';
+    miningDrawerView = 'categories';
+  }
+  if (activeDrawer === 'mining' && buildMode !== null) setBuildMode(null);
+  app.dataset.activeDrawer = activeDrawer ?? '';
+  buildModeToggle.setAttribute('aria-pressed', 'false');
+  miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
   updateUi();
 }
 
@@ -2243,7 +2331,12 @@ actualToggle.addEventListener('click', () => {
   actualToggle.classList.add('is-pulsing');
   showBuildDrawer('root');
 });
-miningModeToggle.addEventListener('click', () => showBuildDrawer('mining', 'mining'));
+miningActualToggle.addEventListener('click', () => {
+  miningActualToggle.classList.remove('is-pulsing');
+  void miningActualToggle.offsetWidth;
+  miningActualToggle.classList.add('is-pulsing');
+  showMiningDrawer();
+});
 buildBackButton.addEventListener('click', () => {
   if (buildDrawerCategory === 'root') {
     setActiveDrawer('build');
@@ -2264,19 +2357,32 @@ buildCategoryItemButtons.forEach((button) => {
     const item = button.dataset.buildItem;
     if (item === 'back') {
       if (buildMode !== null) setBuildMode(null);
-      if (buildDrawerContext === 'mining') {
-        setActiveDrawer('build');
-        return;
-      }
       buildDrawerCategory = 'root';
       buildDrawerView = 'categories';
       updateUi();
       return;
     }
-    if (buildDrawerContext !== 'build') return;
     if (item === 'mine') beginNewMinePlacement();
     if (item === 'path') pathButton.click();
     if (item === 'path-upgrade') pathUpgradeButton.click();
+  });
+});
+miningCategoryButtons.forEach((button) => {
+  button.addEventListener('click', () => showMiningDrawer(button.dataset.miningCategory as MiningDrawerCategory));
+});
+miningDrawer.querySelectorAll<HTMLButtonElement>('[data-mining-item="back"]').forEach((button) => {
+  button.addEventListener('click', () => {
+    miningDrawerView = 'categories';
+    updateUi();
+  });
+});
+miningUpgradeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const id = button.dataset.miningUpgrade as MineUpgradeId;
+    if (!buyMineUpgrade(state, id)) return;
+    updateWorldScene();
+    updateUi();
+    saveState(localStorage, state);
   });
 });
 document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((button) => {
@@ -2290,6 +2396,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-rail-length]').forEach((butt
 });
 resourcesButton.addEventListener('click', () => openWorldModal('resources-modal'));
 tradingButton.addEventListener('click', () => openWorldModal('trading-modal'));
+traderEmeraldButton.addEventListener('click', () => {
+  if ((state.resources.cobblestone ?? 0) < TRADER_EMERALD_COST) return;
+  state.resources.cobblestone -= TRADER_EMERALD_COST;
+  state.resources.emerald = (state.resources.emerald ?? 0) + 1;
+  updateUi();
+  saveState(localStorage, state);
+});
 storyButton.addEventListener('click', () => openWorldModal('story-modal'));
 pauseMenuButton.addEventListener('click', () => openWorldModal('pause-modal'));
 resumeButton.addEventListener('click', () => closeWorldModal('pause-modal'));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineSiteCapacity, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_TRIP_DURATION_MS, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 
 describe('IdleCraft progression', () => {
   it('uses the intended early level curve', () => {
@@ -385,6 +385,29 @@ describe('IdleCraft progression', () => {
     expect(collectOreBonus(state, 'diamond')).toBe(1);
     expect(state.resources.diamond).toBe(1);
     expect(dispatchMineCart(state, 1000).trips).toBe(0);
+  });
+
+  it('keeps Mining-menu upgrades separate and pays for them with Emeralds', () => {
+    const state = freshState(1000);
+    expect(getMineEmeraldChance(state)).toBeCloseTo(0.0008);
+    expect(buyMineUpgrade(state, 'rail-speed')).toBe(false);
+    unlockStarterMine(state, 1000);
+    state.resources.emerald = 13;
+    const baseDuration = getMineTripDuration(state);
+    expect(buyMineUpgrade(state, 'rail-speed')).toBe(true);
+    expect(state.resources.emerald).toBe(8);
+    expect(getMineTripDuration(state)).toBeLessThan(baseDuration);
+    expect(buyMineUpgrade(state, 'storage-capacity')).toBe(true);
+    expect(getMineCartCount(state)).toBe(2);
+    expect(state.resources.emerald).toBe(0);
+  });
+
+  it('can award the level-one Emerald chance when a cart delivers', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0);
+    expect(result.resources.emerald).toBe(1);
+    expect(state.resources.emerald).toBe(1);
   });
 
   it('shows the deepest unlocked material in returning minecart cargo', () => {

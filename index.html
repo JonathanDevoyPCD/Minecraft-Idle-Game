@@ -28,7 +28,29 @@
         <button id="trading-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="trading-modal"><img src="/assets/ui/TraderTransparentIcon.png" alt="" /><span>Trading</span></button>
         <button id="story-button" class="world-menu-button panel" type="button" aria-haspopup="dialog" aria-controls="story-modal"><img src="/assets/ui/Story-Icon.png" alt="" /><span>Story</span></button>
         <button id="skill-tree-button" class="world-menu-button panel" type="button" aria-expanded="false" aria-controls="skill-tree-overlay"><img src="/assets/ui/experience_bottle.png" alt="" /><span>Skill Tree</span></button>
-        <button id="mining-mode-toggle" class="world-menu-button panel" type="button" aria-pressed="false" aria-controls="mining-drawer"><img src="/assets/ui/Mining-Icon.png" alt="" /><span>Mining</span></button>
+        <div id="mining-mode-toggle" class="world-menu-button panel mining-mode-toggle" aria-pressed="false" aria-expanded="false" aria-controls="mining-drawer">
+          <button id="mining-actual-toggle" class="actual-toggle mining-actual-toggle" type="button" aria-label="Toggle Mining menu" aria-expanded="false" aria-controls="mining-drawer">
+            <img src="/assets/ui/Mining-Icon.png" alt="" />
+            <span>Mining</span>
+          </button>
+          <div id="mining-drawer" class="mining-mode-drawer" aria-expanded="false" data-view="categories" data-category="mines">
+            <div class="mining-drawer-page mining-drawer-page--categories" data-mining-page="categories">
+              <button class="mining-category" type="button" data-mining-category="mines">Mines</button>
+              <button class="mining-category" type="button" data-mining-category="rails">Rails</button>
+              <button class="mining-category" type="button" data-mining-category="storage">Storage</button>
+            </div>
+            <div class="mining-drawer-page mining-drawer-page--items" data-mining-page="items" aria-hidden="true">
+              <button class="mining-drawer-item mining-drawer-item--back" type="button" data-mining-item="back" aria-label="Back to mining categories">‹</button>
+              <div id="mining-mine-list" class="mining-mine-list" data-mining-panel="mines"></div>
+              <button class="mining-drawer-item mining-upgrade-item" type="button" data-mining-panel="rails" data-mining-upgrade="rail-speed">
+                <span class="mining-item-icon">↯</span><strong>Powered Rails</strong><small id="rail-upgrade-status">Loading...</small>
+              </button>
+              <button class="mining-drawer-item mining-upgrade-item" type="button" data-mining-panel="storage" data-mining-upgrade="storage-capacity">
+                <span class="mining-item-icon">▣</span><strong>Storage Carts</strong><small id="storage-upgrade-status">Loading...</small>
+              </button>
+            </div>
+          </div>
+        </div>
         <div id="build-mode-toggle" class="world-menu-button panel" aria-pressed="false" aria-expanded="false" aria-controls="build-drawer">
           <button id="actual-toggle" class="actual-toggle" type="button" aria-label="Toggle Build Mode" aria-expanded="false" aria-controls="build-drawer">
             <img src="/assets/ui/Build-Icon.png" alt="" />
@@ -96,38 +118,8 @@
       <div id="build-controls-compat" hidden aria-hidden="true">
         <button id="mine-button" type="button"></button><button id="path-button" type="button"></button><button id="path-upgrade-button" type="button"></button><button id="build-back-button" type="button"></button>
         <fieldset class="rail-length-selector"><button type="button" data-rail-length="2" aria-pressed="false">Short</button><button type="button" data-rail-length="3" aria-pressed="false">Medium</button><button type="button" data-rail-length="4" aria-pressed="true">Long</button></fieldset>
-        <small id="build-status" aria-live="polite">Choose a build category</small>
+        <small id="build-status" aria-live="polite">Choose a build category</small><span id="current-tool">Mine Cart</span><span id="current-tool-hint">Unlock a mine entrance</span><span id="auto-rate">0.00</span>
       </div>
-
-      <section id="mining-drawer" class="mining-drawer panel" aria-label="Mining menu">
-        <article class="tool-card" aria-live="polite" aria-label="Current mining operation">
-          <span id="tool-icon" class="tool-icon" aria-hidden="true">
-            <svg viewBox="0 0 48 48" role="presentation">
-              <g data-tool-icon="hand">
-                <path d="M11 24V13h5v-6h5v11h3V4h5v14h3V8h5v14h3v10l-9 10H19l-8-8Z" fill="#e6a36c" stroke="#8a4d2d" stroke-width="3" stroke-linejoin="round" />
-                <path d="M16 29h17" fill="none" stroke="#fff1c5" stroke-width="2" opacity=".75" />
-              </g>
-              <g data-tool-icon="pickaxe">
-                <path d="M21 12h6v31h-6z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
-                <path d="M7 8h34v6H7z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
-                <path d="M10 14h8l4-6h5l4 6h7" fill="none" stroke="#46545a" stroke-width="3" />
-              </g>
-              <g data-tool-icon="shovel">
-                <path d="M22 10h5v30h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
-                <path d="M18 7h13v6H18z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" />
-                <path d="M13 34h23l-4 9H17Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
-              </g>
-              <g data-tool-icon="axe">
-                <path d="M22 9h5v34h-5z" fill="#9a643d" stroke="#633b28" stroke-width="3" />
-                <path d="M25 8h13v6H31v11h-6Z" fill="#9aa3a3" stroke="#46545a" stroke-width="3" stroke-linejoin="round" />
-              </g>
-            </svg>
-          </span>
-          <div><small>MINE OPERATION</small><strong id="current-tool">Mine Cart</strong><span id="current-tool-hint">Unlock a mine entrance</span></div>
-        </article>
-
-        <div class="mining-rate"><small>MINE RATE</small><strong><span id="auto-rate">0.00</span>/sec</strong></div>
-      </section>
 
       <section id="skill-tree-overlay" class="skill-tree-overlay" aria-label="Crafting skill tree" hidden>
         <div class="skill-tree-modal panel" role="dialog" aria-modal="true" aria-labelledby="skill-tree-title">
@@ -231,8 +223,13 @@
           <button class="modal-close" type="button" data-close-modal="trading-modal" aria-label="Close trading">×</button>
           <img class="modal-art modal-art--trader" src="/assets/ui/TraderTransparentIcon.png" alt="" />
           <p class="eyebrow">WANDERING TRADER</p>
-          <h2 id="trading-title">Trading arrives with your village</h2>
-          <p>Grow your settlement before traders visit. Their offers will convert surplus resources into the materials your next expansion needs.</p>
+          <h2 id="trading-title">Wandering Trader</h2>
+          <p>Trade surplus materials for the Emeralds needed by your mine upgrades.</p>
+          <div class="trader-offer">
+            <div><strong>Emerald</strong><small>1 Emerald · <span id="trader-emerald-cost">25</span> Cobblestone</small></div>
+            <button id="trader-emerald-button" type="button">Trade</button>
+          </div>
+          <small id="trader-emerald-status" class="trader-status" aria-live="polite"></small>
         </div>
       </section>
 

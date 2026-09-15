@@ -919,26 +919,27 @@ function placeAuthoredModelOnBlock(model: THREE.Group): void {
   model.position.set(0, BLOCK_SIZE * 0.5, 0);
 }
 
-function createRailModelInstance(ghost: boolean, end = false): THREE.Group | null {
-  const template = end ? railEndTemplate : railStraightTemplate;
-  if (!template) return null;
-  return prepareAuthoredModel(template, ghost);
+function createRailModelInstance(ghost: boolean): THREE.Group | null {
+  if (!railStraightTemplate) return null;
+  return prepareAuthoredModel(railStraightTemplate, ghost);
 }
 
-function installRailModel(parent: THREE.Group, ghost: boolean, end = false): void {
+function installRailModel(parent: THREE.Group, ghost: boolean): void {
   parent.clear();
-  // rail-end.glb is authored as the terminal detail rather than a complete
-  // one-block rail module. Keep the modular straight rail underneath it so
-  // the track remains continuous, then layer the end detail on top.
-  const straight = createRailModelInstance(ghost, false);
+  const straight = createRailModelInstance(ghost);
   if (straight) parent.add(straight);
-  if (end && railEndTemplate) {
-    parent.add(prepareAuthoredModel(railEndTemplate, ghost));
-  } else if (!straight) {
-    const rail = createRailModelInstance(ghost, end);
-    if (rail) parent.add(rail);
-  }
-  parent.userData.railModelKind = end ? 'end' : 'straight';
+  parent.userData.railModelKind = 'straight';
+}
+
+function installRailEndModel(parent: THREE.Group, ghost: boolean): void {
+  parent.clear();
+  if (!railEndTemplate) return;
+  const railEnd = prepareAuthoredModel(railEndTemplate, ghost);
+  // The Rail End faces the opposite way in its authored file. Rotating it
+  // makes its near edge meet the last regular rail on the neighboring block.
+  railEnd.rotation.y = Math.PI;
+  parent.add(railEnd);
+  parent.userData.railModelKind = 'end-only';
 }
 
 function installMineEntranceModel(visual: MineVisual): void {
@@ -973,7 +974,7 @@ function createMineVisual(visual: MineVisual): void {
   visual.pathConnector.userData.isGhost = visual.ghost;
   const forwardConnector = new THREE.Group();
   forwardConnector.userData.connectorDirection = 'forward';
-  if (railStraightTemplate) installRailModel(forwardConnector, visual.ghost);
+  if (railEndTemplate) installRailEndModel(forwardConnector, visual.ghost);
   visual.pathConnector.add(forwardConnector);
   visual.group.add(visual.pathConnector);
   visual.pathConnector.visible = false;
@@ -998,7 +999,7 @@ function refreshAuthoredMineModels(): void {
     installMineEntranceModel(visual);
     visual.railSegments.forEach((segment) => installRailModel(segment, visual.ghost));
     const connector = visual.pathConnector.children[0];
-    if (connector instanceof THREE.Group && railStraightTemplate) installRailModel(connector, visual.ghost);
+    if (connector instanceof THREE.Group && railEndTemplate) installRailEndModel(connector, visual.ghost);
   });
   updateMineVisual();
 }
@@ -1080,6 +1081,8 @@ function updateMinePathConnector(
   visual.pathConnector.visible = Boolean(connection);
   if (!connection) return;
   const terminalZ = getMineRailCenterZ(connection.index);
+  // Center the Rail End on the neighboring path block. Its rotated near edge
+  // is authored to meet the final regular rail without adding a path rail.
   visual.pathConnector.position.set(
     0,
     BLOCK_SIZE * 0.5,
@@ -1098,10 +1101,9 @@ function updateMineRailLength(
   const connection = getMinePathConnection(x, z, direction, railLength);
   const connectionIndex = connection?.index ?? railLength - 1;
   visual.railSegments.forEach((segment, index) => {
-    const shouldUseEndModel = index === connectionIndex;
-    const expectedModelKind = shouldUseEndModel ? 'end' : 'straight';
+    const expectedModelKind = 'straight';
     if (segment.userData.railModelKind !== expectedModelKind) {
-      installRailModel(segment, visual.ghost, shouldUseEndModel);
+      installRailModel(segment, visual.ghost);
     }
     // The MineEntrance GLB includes the rail module on its own tile. Start
     // the separate modular rail assets on the next tile so they do not stack
@@ -1127,10 +1129,9 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
   syncMineCartMeshes(visual, mine.cartCount, mine.storageCarts);
   const tripDuration = getMineTripDuration(state);
   const baseProgress = mine.progressMs / tripDuration;
-  const startZ = BLOCK_SIZE * (getMineRailCenterZ(connectionIndex) + 1);
-  // The path connection is at the far end of the rail run. The cart must
-  // travel across every visible module and finish at the first module beside
-  // the mine, rather than stopping at the path-side terminal segment.
+  const startZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
+  // The cart ends on the final regular rail. The Rail End sits on the
+  // neighboring path block and is not part of the cart's travel rail.
   const endZ = BLOCK_SIZE * getMineRailCenterZ(0);
   visual.carts.forEach((cart, index) => {
     if (!cart.visible) return;
@@ -1183,7 +1184,7 @@ function updateMineGhostVisual(preview: MinePlacementPreview | null): void {
   mineGhostVisual.carts[0].position.set(
     0,
     0,
-    BLOCK_SIZE * (getMineRailCenterZ(connectionIndex) + 1),
+    BLOCK_SIZE * getMineRailCenterZ(connectionIndex),
   );
   mineGhostVisual.carts[0].rotation.y = 0;
   setMineCartCargoVisible(mineGhostVisual.carts[0], false);

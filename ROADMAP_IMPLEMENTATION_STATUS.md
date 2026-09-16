@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Planning complete; Phase 2A is next.
+Status: Phase 2A complete; Phase 2B is next.
 
 ## Current Sub-Phase
 
 **Phase 2A - Mine upgrade consolidation and Emerald deadlock removal**
 
-Status: Not started.
+Status: Complete.
 
 ## Current-repo audit
 
@@ -130,6 +130,7 @@ Phase 1D-A: 63 tests passed; production build and `git diff --check` passed; bro
 Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; browser verified the independent Mining storage drawer, Settlement Storage upgrade blocker and next-goal/builder feedback at desktop and compact viewport sizes with no application console errors.
 Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; browser verified local and cloud-shaped restore reconciliation, offline progress feedback, independent drawers and responsive production/staging shells at desktop and compact viewport sizes with no application console errors.
 Minecart regression fix: 70 tests passed; production build and `git diff --check` passed; browser verified repeated long-rail travel, an east-facing short rail, and active save/reload continuity with exactly one cart per mine.
+Phase 2A: 72 tests passed; production build and `git diff --check` passed; browser verified the independent Mining drawer, normal-resource mine upgrade labels and the removal of the duplicate Storage Carts upgrade entry.
 
 ## Test / Verification History
 
@@ -147,9 +148,26 @@ Minecart regression fix: 70 tests passed; production build and `git diff --check
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2A — Mine upgrade consolidation and Emerald deadlock removal.
+Next incomplete roadmap sub-phase: Phase 2B — Skill Tree currency and discovery ownership.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A begins only after the minecart regression fix is committed and pushed.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A is complete and pushed after the minecart regression fix.
+
+## Phase 2A acceptance criteria
+
+- [x] Current rail-speed and mine-storage upgrades no longer require Emeralds and use data-driven normal-resource costs.
+- [x] The Mine is the sole active authority for rail-speed and storage-capacity upgrades; the duplicate storage upgrade entry and Skill Tree rail-speed contribution are no longer active upgrade paths.
+- [x] Existing serialized storage capacity remains authoritative; obsolete legacy storage-capacity ranks are safely ignored during normal save parsing.
+- [x] First Villager no longer depends on the Emerald discovery, so the circular progression gate is removed without introducing Phase 3 or trader systems.
+- [x] Existing mine/path placement, one-cart travel, local/cloud save contract and responsive Mining UI remain intact.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 2A completion record
+
+- Consolidated active mine upgrades around `rail-speed` and the per-mine serialized `storageCapacityLevel`.
+- Replaced Emerald payments with data-driven cobblestone costs and kept Emerald drops/trading available as a rare economy resource.
+- Removed the duplicate Storage Carts Mining-menu item and updated upgrade status/affordability UI for normal-resource costs.
+- Removed the Emerald prerequisite from First Villager and added regression coverage for the deadlock and upgrade ownership/costs.
+- No save schema or Supabase migration was required; existing storage levels continue to load, while obsolete storage-capacity upgrade ranks are excluded by the current allow-list normalizer.
 
 ## Phase 1D-C implementation plan
 

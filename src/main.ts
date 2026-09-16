@@ -1592,7 +1592,6 @@ const miningCategoryButtons = document.querySelectorAll<HTMLButtonElement>('[dat
 const miningMineList = document.querySelector<HTMLElement>('#mining-mine-list')!;
 const miningStorageList = document.querySelector<HTMLElement>('#mining-storage-list')!;
 const railUpgradeStatus = document.querySelector<HTMLElement>('#rail-upgrade-status')!;
-const storageUpgradeStatus = document.querySelector<HTMLElement>('#storage-upgrade-status')!;
 const miningUpgradeButtons = document.querySelectorAll<HTMLButtonElement>('[data-mining-upgrade]');
 const app = document.querySelector<HTMLElement>('#app')!;
 const buildModeToggle = document.querySelector<HTMLElement>('#build-mode-toggle')!;
@@ -2235,9 +2234,20 @@ function updateMiningUi(): void {
       storageUpgrade.className = 'storage-upgrade-button';
       storageUpgrade.type = 'button';
       storageUpgrade.dataset.mineStorageUpgrade = mine.id;
-      storageUpgrade.textContent = '+100 capacity · 1 Emerald';
-      storageUpgrade.disabled = (state.resources.emerald ?? 0) < (getMineStorageUpgradeCost(state, mine.id) ?? 1);
-      storageUpgrade.title = storageUpgrade.disabled ? 'Need 1 Emerald to upgrade this mine storage' : 'Upgrade this mine storage for 1 Emerald';
+      const storageCost = getMineStorageUpgradeCost(state, mine.id);
+      const storageCostLabel = storageCost
+        ? Object.entries(storageCost).map(([resource, amount]) => `${amount} ${resource}`).join(' + ')
+        : 'Max level';
+      const canAffordStorage = storageCost
+        ? Object.entries(storageCost).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount)
+        : false;
+      storageUpgrade.textContent = storageCost ? `+100 capacity · ${storageCostLabel}` : 'Mine storage fully upgraded';
+      storageUpgrade.disabled = !canAffordStorage;
+      storageUpgrade.title = storageCost
+        ? canAffordStorage
+          ? `Upgrade this mine storage for ${storageCostLabel}`
+          : `Need ${storageCostLabel} to upgrade this mine storage`
+        : 'Mine storage is fully upgraded';
       storageTile.append(storageTitle, storageAmount, storageTime, storageUpgrade);
       miningStorageList.append(storageTile);
     });
@@ -2248,16 +2258,18 @@ function updateMiningUi(): void {
     const rank = getMineUpgradeRank(state, id);
     const cost = getMineUpgradeCost(state, id);
     if (!definition || cost === null) return `Max rank ${rank}`;
-    return `Rank ${rank}/${definition.costs.length} · ${cost} Emerald${cost === 1 ? '' : 's'}`;
+    const costLabel = Object.entries(cost).map(([resource, amount]) => `${amount} ${resource}`).join(' + ');
+    return `Rank ${rank}/${definition.costs.length} · ${costLabel}`;
   };
   railUpgradeStatus.textContent = upgradeStatus('rail-speed');
-  storageUpgradeStatus.textContent = upgradeStatus('storage-capacity');
   miningUpgradeButtons.forEach((button) => {
     const id = button.dataset.miningUpgrade as MineUpgradeId;
     const cost = getMineUpgradeCost(state, id);
     const maxed = cost === null;
-    button.disabled = state.mines.length === 0 || maxed || (state.resources.emerald ?? 0) < cost;
-    button.title = maxed ? 'Fully upgraded' : `Spend ${cost} Emerald${cost === 1 ? '' : 's'} to upgrade`;
+    const costLabel = cost ? Object.entries(cost).map(([resource, amount]) => `${amount} ${resource}`).join(' + ') : '';
+    const canAfford = cost ? Object.entries(cost).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount) : false;
+    button.disabled = state.mines.length === 0 || maxed || !canAfford;
+    button.title = maxed ? 'Fully upgraded' : `Spend ${costLabel} to upgrade`;
   });
   miningCategoryButtons.forEach((button) => {
     const selected = miningDrawerView === 'categories' && button.dataset.miningCategory === miningDrawerCategory;

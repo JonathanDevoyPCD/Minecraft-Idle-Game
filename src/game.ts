@@ -231,13 +231,13 @@ export const MINE_TRIP_DURATION_MS = 8_000;
 export const MINE_RAIL_LENGTHS: readonly MineRailLength[] = [4, 3, 2];
 export const DEFAULT_MINE_RAIL_LENGTH: MineRailLength = 4;
 export const MINE_LAYER_NAMES = ['Stone Layer', 'Deepstone Layer', 'Bedrock Boundary'] as const;
-export type MineUpgradeId = 'rail-speed' | 'storage-capacity';
+export type MineUpgradeId = 'rail-speed';
 export interface MineUpgradeDefinition {
   id: MineUpgradeId;
   category: 'rails' | 'storage';
   name: string;
   description: string;
-  costs: readonly number[];
+  costs: readonly ResourceCost[];
 }
 export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
   {
@@ -245,19 +245,17 @@ export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
     category: 'rails',
     name: 'Powered Rails',
     description: 'Shortens every minecart trip.',
-    costs: [5, 15, 40],
-  },
-  {
-    id: 'storage-capacity',
-    category: 'storage',
-    name: 'Storage Carts',
-    description: 'Adds another cart to carry each delivery.',
-    costs: [8, 20, 50],
+    costs: [{ cobblestone: 40 }, { cobblestone: 100 }, { cobblestone: 250 }],
   },
 ];
 export const MINE_STORAGE_BASE_CAPACITY = 100;
 export const MINE_STORAGE_CAPACITY_PER_UPGRADE = 100;
-export const MINE_STORAGE_UPGRADE_COST = 1;
+export const MINE_STORAGE_UPGRADE_COSTS: readonly ResourceCost[] = [
+  { cobblestone: 25 },
+  { cobblestone: 75 },
+  { cobblestone: 150 },
+  { cobblestone: 300 },
+];
 export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
 export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
 
@@ -335,7 +333,6 @@ export function transferResourcesToSettlement(
 }
 
 const MINE_ID = 'starter-mine';
-const MINE_REDSTONE_NODE_ID = 'automation-redstone-rails';
 const MINE_MINER_NODE_ID = 'automation-miner-helper';
 
 export const TOOL_KIND_PROFILES = {
@@ -1032,15 +1029,19 @@ export function getMineStorageFillState(
   return 'full';
 }
 
-export function getMineStorageUpgradeCost(state: Pick<GameState, 'mines' | 'resources'>, mineId: string): number | null {
-  if (!state.mines.some((mine) => mine.id === mineId)) return null;
-  return MINE_STORAGE_UPGRADE_COST;
+export function getMineStorageUpgradeCost(state: Pick<GameState, 'mines'>, mineId: string): ResourceCost | null {
+  const mine = state.mines.find((candidate) => candidate.id === mineId);
+  if (!mine) return null;
+  const level = Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0));
+  const cost = MINE_STORAGE_UPGRADE_COSTS[level];
+  return cost ? { ...cost } : null;
 }
 
 export function buyMineStorageUpgrade(state: GameState, mineId: string): boolean {
   const mine = state.mines.find((candidate) => candidate.id === mineId);
-  if (!mine || (state.resources.emerald ?? 0) < MINE_STORAGE_UPGRADE_COST) return false;
-  state.resources.emerald = (state.resources.emerald ?? 0) - MINE_STORAGE_UPGRADE_COST;
+  const cost = getMineStorageUpgradeCost(state, mineId);
+  if (!mine || !cost || !canAffordResourceCost(state.resources, cost)) return false;
+  payResourceCost(state.resources, cost);
   mine.storageCapacityLevel = Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)) + 1;
   return true;
 }
@@ -1057,25 +1058,26 @@ export function getMineUpgradeDefinition(id: MineUpgradeId): MineUpgradeDefiniti
 }
 
 export function getMineUpgradeCost(
-  state: Pick<GameState, 'skillRanks' | 'resources'> & Partial<Pick<GameState, 'mineUpgradeRanks' | 'mines'>>,
+  state: Pick<GameState, 'skillRanks'> & Partial<Pick<GameState, 'mineUpgradeRanks'>>,
   id: MineUpgradeId,
-): number | null {
+): ResourceCost | null {
   const definition = getMineUpgradeDefinition(id);
   if (!definition) return null;
   const rank = getMineUpgradeRank(state, id);
-  return definition.costs[rank] ?? null;
+  const cost = definition.costs[rank];
+  return cost ? { ...cost } : null;
 }
 
 export function buyMineUpgrade(state: GameState, id: MineUpgradeId): boolean {
   if (state.mines.length === 0) return false;
   const cost = getMineUpgradeCost(state, id);
-  if (cost === null || (state.resources.emerald ?? 0) < cost) return false;
-  state.resources.emerald = (state.resources.emerald ?? 0) - cost;
+  if (!cost || !canAffordResourceCost(state.resources, cost)) return false;
+  payResourceCost(state.resources, cost);
   state.mineUpgradeRanks ??= {};
   state.mineUpgradeRanks[id] = getMineUpgradeRank(state, id) + 1;
   if (id === 'rail-speed') {
     state.mines.forEach((mine) => {
-      mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
+      mine.railLevel = getMineUpgradeRank(state, 'rail-speed');
     });
   }
   return true;
@@ -1088,7 +1090,7 @@ export function getMineCartCount(_state: GameState): number {
 }
 
 export function getMineTripDuration(state: GameState): number {
-  const railRanks = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
+  const railRanks = getMineUpgradeRank(state, 'rail-speed');
   return Math.max(2_000, MINE_TRIP_DURATION_MS / (1 + railRanks * 0.25));
 }
 
@@ -1112,10 +1114,10 @@ export function getMineCartTravelState(
   return { phase, travellingToMine, travel };
 }
 
-/** Level-one mines start at 0.08%; Mining-menu upgrades raise this slowly. */
+/** Level-one mines have a rare 0.08% Emerald drop chance; rail upgrades improve it slowly. */
 export function getMineEmeraldChance(state: GameState): number {
-  const upgradeRanks = getMineUpgradeRank(state, 'rail-speed') + getMineUpgradeRank(state, 'storage-capacity');
-  return Math.min(0.01, 0.0008 + upgradeRanks * 0.0002);
+  const railRanks = getMineUpgradeRank(state, 'rail-speed');
+  return Math.min(0.01, 0.0008 + railRanks * 0.0002);
 }
 
 function addMineResource(result: MineProductionResult, resource: string, amount: number): void {
@@ -1129,7 +1131,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
   state.mines.forEach((mine) => {
     mine.cartCount = 1;
     mine.storageCarts = 0;
-    mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
+    mine.railLevel = getMineUpgradeRank(state, 'rail-speed');
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
     if (getAvailableSettlementStorage(state) <= 0) {
       mine.lastUpdatedAt = now;

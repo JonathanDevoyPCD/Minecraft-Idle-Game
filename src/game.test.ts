@@ -710,16 +710,35 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getMineStorageFillState(mine.storageAmount, getMineStorageCapacity(mine))).toBe('full');
   });
 
-  it('supports individual mine storage capacity upgrades for one Emerald', () => {
+  it('supports individual mine storage capacity upgrades with normal resources', () => {
     const state = freshState(1000);
     unlockStarterMine(state, 1000);
-    state.resources.emerald = 1;
+    state.resources.cobblestone = 25;
+    state.resources.emerald = 7;
     const mine = state.mines[0];
-    expect(getMineStorageUpgradeCost(state, mine.id)).toBe(1);
+    expect(getMineStorageUpgradeCost(state, mine.id)).toEqual({ cobblestone: 25 });
     expect(buyMineStorageUpgrade(state, mine.id)).toBe(true);
-    expect(state.resources.emerald).toBe(0);
+    expect(state.resources.cobblestone).toBe(0);
+    expect(state.resources.emerald).toBe(7);
     expect(mine.storageCapacityLevel).toBe(1);
     expect(getMineStorageCapacity(mine)).toBe(200);
+  });
+
+  it('drops obsolete storage upgrade ranks while preserving serialized capacity', () => {
+    const saved = freshState(1000);
+    unlockStarterMine(saved, 1000);
+    saved.mineUpgradeRanks = { 'rail-speed': 1, 'storage-capacity': 3 };
+    saved.mines[0].storageCapacityLevel = 2;
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 2000);
+    expect(state.mineUpgradeRanks).toEqual({ 'rail-speed': 1 });
+    expect(state.mines[0].storageCapacityLevel).toBe(2);
+    expect(getMineStorageCapacity(state.mines[0])).toBe(300);
+  });
+
+  it('does not make Emerald a prerequisite for the first villager', () => {
+    const firstVillager = SKILL_TREE_NODES.find((node) => node.id === 'life-first-villager');
+    expect(firstVillager?.prerequisites).not.toContain('materials-emerald');
   });
 
   it('loads a saved mine operation', () => {
@@ -778,19 +797,21 @@ describe('Villagers - Idle World Game progression', () => {
     expect(dispatchMineCart(state, 1000).trips).toBe(0);
   });
 
-  it('keeps Mining-menu upgrades separate and pays for them with Emeralds', () => {
+  it('keeps Mining-menu upgrades mine-owned and pays normal resources', () => {
     const state = freshState(1000);
     expect(getMineEmeraldChance(state)).toBeCloseTo(0.0008);
     expect(buyMineUpgrade(state, 'rail-speed')).toBe(false);
     unlockStarterMine(state, 1000);
+    state.resources.cobblestone = 40;
     state.resources.emerald = 13;
     const baseDuration = getMineTripDuration(state);
     expect(buyMineUpgrade(state, 'rail-speed')).toBe(true);
-    expect(state.resources.emerald).toBe(8);
+    expect(state.resources.cobblestone).toBe(0);
+    expect(state.resources.emerald).toBe(13);
     expect(getMineTripDuration(state)).toBeLessThan(baseDuration);
-    expect(buyMineUpgrade(state, 'storage-capacity')).toBe(true);
+    expect(getMineEmeraldChance(state)).toBeCloseTo(0.001);
     expect(getMineCartCount(state)).toBe(1);
-    expect(state.resources.emerald).toBe(0);
+    expect(getMineStorageUpgradeCost(state, state.mines[0].id)).toEqual({ cobblestone: 25 });
   });
 
   it('can award the level-one Emerald chance when a cart delivers', () => {

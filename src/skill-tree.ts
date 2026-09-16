@@ -205,7 +205,7 @@ const lifeSettlement: SkillNodeDefinition[] = [
   node('life-settlement', 'life-animals', 'Animals', 'Invite passive animals into the world.', 'Unlocks animal spawns.', 'unlock', ['life-farmland']),
   node('life-settlement', 'life-animal-pens', 'Animal Pens', 'Keep animals safe and productive.', 'Unlocks animal pen structures.', 'unlock', ['life-animals']),
   node('life-settlement', 'life-storage-shed', 'Storage Shed', 'Expand physical storage near the settlement.', 'Unlocks a larger local storage container.', 'unlock', ['life-farmland', 'automation-storage-chest']),
-  node('life-settlement', 'life-first-villager', 'First Villager', 'Give the growing world its first resident.', 'Unlocks the first villager.', 'milestone', ['life-animal-pens', 'life-storage-shed', 'materials-emerald'], 1, 'Adds a visible villager to the settlement.'),
+  node('life-settlement', 'life-first-villager', 'First Villager', 'Give the growing world its first resident.', 'Unlocks the first villager.', 'milestone', ['life-animal-pens', 'life-storage-shed'], 1, 'Adds a visible villager to the settlement.'),
   node('life-settlement', 'life-farmhouse', 'Farmhouse', 'Give the farming branch a home and center.', 'Unlocks the Farmhouse structure.', 'milestone', ['life-farmland', 'life-first-villager']),
   node('life-settlement', 'life-specialist-miner', 'Specialist Miner', 'Assign a villager to deep mining.', 'Unlocks the Miner specialist role.', 'unlock', ['life-first-villager', 'materials-deep-layer']),
   node('life-settlement', 'life-specialist-farmer', 'Specialist Farmer', 'Assign a villager to crop production.', 'Unlocks the Farmer specialist role.', 'unlock', ['life-first-villager', 'life-farmhouse']),

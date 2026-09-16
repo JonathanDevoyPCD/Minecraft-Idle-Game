@@ -43,6 +43,8 @@ import {
   getMineStorageFillState,
   getMineStorageUpgradeCost,
   getMineTripDuration,
+  getMineCartCapacity,
+  getMineProductionDefinition,
   getActiveBuilderCount,
   addSettlementResource,
   getAvailableSettlementStorage,
@@ -55,7 +57,7 @@ import {
   getSettlementHubUpgradeStatus,
   getSettlementStageIndex,
   getLivingEntityPlan,
-  getMineCargoKind,
+  getMineProductionVisualKind,
   getMineCartTravelState,
   collectMineStorage,
   getMeadowFeaturePlan,
@@ -1227,7 +1229,7 @@ function syncMineCartMeshes(visual: MineVisual): void {
   // There is exactly one physical cart per mine. Storage upgrades affect the
   // box capacity, not the number of carts rendered on the route.
   const wanted = 1;
-  const cargoKind = visual.ghost ? 'stone' : getMineCargoKind(state);
+  const cargoKind = visual.ghost ? 'stone' : getMineProductionVisualKind(state);
   if (visual.cargoKind !== cargoKind) {
     visual.carts.forEach((cart) => visual.group.remove(cart));
     visual.carts = [];
@@ -2176,10 +2178,6 @@ function syncMiningModeDrawer(): void {
   miningDrawer.classList.toggle('open', isOpen);
 }
 
-function formatMineCargo(cargo: MineCargoKind): string {
-  return cargo.charAt(0).toUpperCase() + cargo.slice(1);
-}
-
 function formatMineStorageState(fillState: MineStorageFillState): string {
   return fillState.charAt(0).toUpperCase() + fillState.slice(1);
 }
@@ -2194,8 +2192,9 @@ function updateMiningUi(): void {
   syncMiningModeDrawer();
   const tripDuration = getMineTripDuration(state);
   const cartCount = getMineCartCount(state);
-  const rate = cartCount * 1000 / tripDuration;
-  const cargo = formatMineCargo(getMineCargoKind(state));
+  const cartCapacity = getMineCartCapacity(state);
+  const rate = cartCount * cartCapacity * 1000 / tripDuration;
+  const production = getMineProductionDefinition(state);
 
   miningMineList.replaceChildren();
   miningStorageList.replaceChildren();
@@ -2246,9 +2245,9 @@ function updateMiningUi(): void {
       const level = document.createElement('small');
       level.textContent = `Building level ${placement?.level ?? 1}`;
       const speed = document.createElement('span');
-      speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart${cartCount === 1 ? '' : 's'}`;
+      speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart · ${cartCapacity} cargo/trip`;
       const ore = document.createElement('small');
-      ore.textContent = `Mining ${cargo}`;
+      ore.textContent = `Table: ${production.name}`;
       const storage = document.createElement('small');
       storage.textContent = `Storage ${amount}/${capacity} · ${formatMineStorageState(fillState)}`;
       tile.append(title, level, speed, ore, storage);

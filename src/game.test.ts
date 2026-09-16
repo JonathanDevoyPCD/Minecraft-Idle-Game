@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { syncAutomaticSkillNodes } from './game';
-import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, calculateOfflineXp, canAffordSkillNode, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, calculateOfflineXp, canAffordSkillNode, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, generateMineCartCargo, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCapacity, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineProductionDefinition, getMineProductionTier, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_PRODUCTION_TABLES, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, selectWeightedMineResource, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES, WORLD_POWER_EXPANSION_NODE_IDS } from './skill-tree';
 import { collectMineStorage, getMineStorageAmount } from './game';
 
@@ -785,7 +785,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(unlockStarterMine(state, 1000)).toBe(true);
     expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS / 2)).toMatchObject({ trips: 0, xp: 0 });
     expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS - 1)).toMatchObject({ trips: 0, xp: 0 });
-    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
     expect(result).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
     expect(state.resources).toEqual({ dirt: 0, cobblestone: 0 });
     expect(state.mines[0].inventory).toEqual({ cobblestone: 1 });
@@ -793,11 +793,26 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.mines[0].progressMs).toBe(0);
   });
 
+  it('refreshes the existing discovery system after a mine reveals eligible ores', () => {
+    const state = freshState(1000);
+    state.settlementHub.level = 4;
+    syncAutomaticSkillNodes(state);
+    unlockStarterMine(state, 1000);
+    state.skillRanks['tools-wooden-pickaxe'] = 1;
+    expect(state.skillRanks['materials-coal']).toBeUndefined();
+    expect(state.skillRanks['materials-copper']).toBeUndefined();
+
+    advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
+
+    expect(state.skillRanks['materials-coal']).toBe(1);
+    expect(state.skillRanks['materials-copper']).toBe(1);
+  });
+
   it('keeps producing into mine storage when settlement storage is full, then collects after space is freed', () => {
     const state = freshState(1000);
     unlockStarterMine(state, 1000);
     state.resources.dirt = 500;
-    const produced = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    const produced = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
     expect(produced).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
     expect(state.mines[0].inventory).toEqual({ cobblestone: 1 });
     expect(collectMineStorage(state, state.mines[0].id)).toMatchObject({ transferred: {}, overflow: { cobblestone: 1 } });
@@ -949,12 +964,13 @@ describe('Villagers - Idle World Game progression', () => {
     const state = freshState(1000);
     state.skillRanks = { 'automation-mine-carts': 2 };
     expect(getMineCartCount(state)).toBe(1);
+    expect(getMineCartCapacity(state)).toBe(3);
     unlockStarterMine(state, 1000);
     expect(dispatchMineCart(state, 1000)).toMatchObject({ trips: 0, xp: 0 });
-    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
     expect(result.trips).toBe(1);
     expect(state.resources.cobblestone).toBe(0);
-    expect(state.mines[0].inventory).toEqual({ cobblestone: 1 });
+    expect(state.mines[0].inventory).toEqual({ cobblestone: 3 });
     expect(state.mines[0].cartCount).toBe(1);
     expect(state.mines[0].storageCarts).toBe(0);
     expect(collectOreBonus(state, 'diamond')).toBe(1);
@@ -989,16 +1005,66 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.mines[0].inventory.emerald).toBe(1);
   });
 
-  it('shows the deepest unlocked material in returning minecart cargo', () => {
+  it('selects the data-driven production table from the canonical depth and discovery state', () => {
     const state = freshState();
-    expect(getMineCargoKind(state)).toBe('stone');
+    expect(getMineProductionTier(state)).toBe('shallow');
+    expect(getMineProductionDefinition(state)).toEqual(MINE_PRODUCTION_TABLES[0]);
     state.undergroundLayer = 1;
-    state.skillRanks = { 'materials-coal': 1, 'materials-iron': 1 };
-    expect(getMineCargoKind(state)).toBe('iron');
+    expect(getMineProductionTier(state)).toBe('iron');
+    expect(getMineProductionDefinition(state).entries).toEqual([
+      { resource: 'deepslate', weight: 60 },
+      { resource: 'coal', weight: 15 },
+      { resource: 'copper', weight: 10 },
+      { resource: 'iron', weight: 15 },
+    ]);
     state.undergroundLayer = 2;
-    state.skillRanks['materials-gold'] = 1;
-    expect(getMineCargoKind(state)).toBe('gold');
+    expect(getMineProductionTier(state)).toBe('redstone');
     state.skillRanks['materials-diamond'] = 1;
-    expect(getMineCargoKind(state)).toBe('diamond');
+    expect(getMineProductionTier(state)).toBe('diamond');
+  });
+
+  it('selects weighted resources at the expected table boundaries', () => {
+    const shallow = MINE_PRODUCTION_TABLES[0].entries;
+    expect(selectWeightedMineResource(shallow, 0)).toBe('cobblestone');
+    expect(selectWeightedMineResource(shallow, 0.79999)).toBe('cobblestone');
+    expect(selectWeightedMineResource(shallow, 0.8)).toBe('coal');
+    expect(selectWeightedMineResource(shallow, 0.95)).toBe('copper');
+    expect(selectWeightedMineResource(shallow, 1)).toBe('copper');
+  });
+
+  it('generates multiple normal cargo rolls while keeping Emerald independent', () => {
+    const state = freshState();
+    state.skillRanks['automation-mine-carts'] = 2;
+    const randomValues = [0.81, 0.5, 0.96, 0.5, 0.2, 0.5];
+    const cargo = generateMineCartCargo(state, () => randomValues.shift() ?? 0.5);
+    expect(cargo).toEqual({ coal: 1, copper: 1, cobblestone: 1 });
+    expect(MINE_PRODUCTION_TABLES[0].entries.map((entry) => entry.resource)).not.toContain('emerald');
+  });
+
+  it('uses partial remaining mine capacity without deleting existing cargo', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    mine.inventory = { coal: 99 };
+    state.skillRanks['automation-mine-carts'] = 2;
+    const result = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
+    expect(result.trips).toBe(1);
+    expect(result.resources).toEqual({ cobblestone: 1 });
+    expect(mine.inventory).toEqual({ coal: 99, cobblestone: 1 });
+    expect(getMineStorageAmount(mine)).toBe(100);
+  });
+
+  it('pauses after a capacity-limited trip and resumes after collection', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    mine.inventory = { cobblestone: 99 };
+    state.skillRanks['automation-mine-carts'] = 1;
+    const first = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
+    expect(first.trips).toBe(1);
+    expect(mine.inventory).toEqual({ cobblestone: 100 });
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS * 3, () => 0.01)).toMatchObject({ trips: 0, xp: 0 });
+    expect(collectMineStorage(state, mine.id, 1000 + MINE_TRIP_DURATION_MS * 3).transferred).toEqual({ cobblestone: 100 });
+    expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS * 4, () => 0.01).trips).toBe(1);
   });
 });

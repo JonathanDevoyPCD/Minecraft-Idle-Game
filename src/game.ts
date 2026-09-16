@@ -248,6 +248,82 @@ export const MINE_RAIL_LENGTHS: readonly MineRailLength[] = [4, 3, 2];
 export const DEFAULT_MINE_RAIL_LENGTH: MineRailLength = 4;
 export const MINE_LAYER_NAMES = ['Stone Layer', 'Deepstone Layer', 'Bedrock Boundary'] as const;
 export type MineUpgradeId = 'rail-speed';
+
+export type MineProductionTier = 'shallow' | 'iron' | 'redstone' | 'diamond';
+export type MineProductionResource =
+  | 'cobblestone'
+  | 'coal'
+  | 'copper'
+  | 'deepslate'
+  | 'iron'
+  | 'redstone'
+  | 'lapis'
+  | 'gold'
+  | 'diamond';
+
+export interface MineOreTableEntry {
+  resource: MineProductionResource;
+  weight: number;
+}
+
+export interface MineProductionDefinition {
+  tier: MineProductionTier;
+  name: string;
+  entries: readonly MineOreTableEntry[];
+}
+
+/**
+ * The active mine production tables. Weights are balance targets from the
+ * roadmap and deliberately exclude Emerald, which is rolled separately.
+ */
+export const MINE_PRODUCTION_TABLES: readonly MineProductionDefinition[] = [
+  {
+    tier: 'shallow',
+    name: 'Shallow Stone Mine',
+    entries: [
+      { resource: 'cobblestone', weight: 80 },
+      { resource: 'coal', weight: 15 },
+      { resource: 'copper', weight: 5 },
+    ],
+  },
+  {
+    tier: 'iron',
+    name: 'Iron Layer',
+    entries: [
+      { resource: 'deepslate', weight: 60 },
+      { resource: 'coal', weight: 15 },
+      { resource: 'copper', weight: 10 },
+      { resource: 'iron', weight: 15 },
+    ],
+  },
+  {
+    tier: 'redstone',
+    name: 'Redstone Layer',
+    entries: [
+      { resource: 'deepslate', weight: 50 },
+      { resource: 'iron', weight: 20 },
+      { resource: 'redstone', weight: 12 },
+      { resource: 'lapis', weight: 8 },
+      { resource: 'gold', weight: 10 },
+    ],
+  },
+  {
+    tier: 'diamond',
+    name: 'Diamond Layer',
+    entries: [
+      { resource: 'deepslate', weight: 55 },
+      { resource: 'iron', weight: 15 },
+      { resource: 'redstone', weight: 10 },
+      { resource: 'gold', weight: 10 },
+      { resource: 'lapis', weight: 7 },
+      { resource: 'diamond', weight: 3 },
+    ],
+  },
+];
+
+/** Capacity is a Skill Tree perk: rank 0 is the baseline one-roll cart. */
+export const MINE_CART_CAPACITY_BY_HANDLING_RANK: readonly number[] = [1, 2, 3, 4];
+
 export interface MineUpgradeDefinition {
   id: MineUpgradeId;
   category: 'rails' | 'storage';
@@ -1027,13 +1103,65 @@ export function getMineLayer(state: GameState): number {
   return Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
 }
 
-export function getMineCargoKind(state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>): MineCargoKind {
-  const layer = Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
+export function getMineProductionTier(
+  state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+): MineProductionTier {
+  const layer = Math.min(2, Math.max(0, Math.floor(Number(state.undergroundLayer) || 0)));
   if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) return 'diamond';
-  if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0) return 'gold';
-  if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0) return 'iron';
-  if (layer >= 1 && getSkillNodeRank(state, 'materials-coal') > 0) return 'coal';
-  return 'stone';
+  if (layer >= 2) return 'redstone';
+  if (layer >= 1) return 'iron';
+  return 'shallow';
+}
+
+export function getMineProductionDefinition(
+  state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+): MineProductionDefinition {
+  const tier = getMineProductionTier(state);
+  return MINE_PRODUCTION_TABLES.find((definition) => definition.tier === tier) ?? MINE_PRODUCTION_TABLES[0];
+}
+
+/** A compact visual fallback for the authored cart contents model. */
+export function getMineProductionVisualKind(
+  state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+): MineCargoKind {
+  const resource = getMineProductionDefinition(state).entries[0]?.resource;
+  return resource === 'diamond' ? 'diamond' : resource === 'gold' ? 'gold' : 'stone';
+}
+
+/** Select one entry from a normalized weighted table without coupling it to rendering. */
+export function selectWeightedMineResource(
+  entries: readonly MineOreTableEntry[],
+  roll: number,
+): MineProductionResource {
+  const totalWeight = entries.reduce((total, entry) => total + Math.max(0, entry.weight), 0);
+  if (totalWeight <= 0 || entries.length === 0) return 'cobblestone';
+  const normalizedRoll = Math.min(0.999999999, Math.max(0, Number.isFinite(roll) ? roll : 0));
+  let threshold = normalizedRoll * totalWeight;
+  for (const entry of entries) {
+    threshold -= Math.max(0, entry.weight);
+    if (threshold < 0) return entry.resource;
+  }
+  return entries[entries.length - 1].resource;
+}
+
+/**
+ * Generate one cart's complete cargo manifest. Each capacity slot gets one
+ * weighted ore roll and Emerald is independently evaluated per slot.
+ */
+export function generateMineCartCargo(
+  state: GameState,
+  random = Math.random,
+  capacity = getMineCartCapacity(state),
+): Record<string, number> {
+  const cargo: Record<string, number> = {};
+  const definition = getMineProductionDefinition(state);
+  const safeCapacity = Math.max(1, Math.floor(Number(capacity) || 1));
+  for (let rollIndex = 0; rollIndex < safeCapacity; rollIndex += 1) {
+    const resource = selectWeightedMineResource(definition.entries, random());
+    cargo[resource] = (cargo[resource] ?? 0) + 1;
+    if (random() < getMineEmeraldChance(state)) cargo.emerald = (cargo.emerald ?? 0) + 1;
+  }
+  return cargo;
 }
 
 export function getMineStorageCapacity(mine: Pick<MineSite, 'storageCapacityLevel'>): number {
@@ -1061,6 +1189,9 @@ export function getMineStorageCargoKind(
     ['gold', 'gold'],
     ['iron', 'iron'],
     ['coal', 'coal'],
+    ['copper', 'gold'],
+    ['redstone', 'coal'],
+    ['lapis', 'diamond'],
     ['deepslate', 'stone'],
     ['cobblestone', 'stone'],
     ['stone', 'stone'],
@@ -1068,7 +1199,8 @@ export function getMineStorageCargoKind(
   for (const [resource, cargoKind] of resourceKinds) {
     if ((mine.inventory[resource] ?? 0) > 0) return cargoKind;
   }
-  return getMineCargoKind(state);
+  const visualResource = getMineProductionDefinition(state).entries[0]?.resource;
+  return visualResource === 'diamond' ? 'diamond' : visualResource === 'gold' ? 'gold' : 'stone';
 }
 
 export function getMineStorageFillDuration(mine: Pick<MineSite, 'railLevel'>): number {
@@ -1151,6 +1283,14 @@ export function getMineCartCount(_state: GameState): number {
   return 1;
 }
 
+export function getMineCartCapacity(state: Pick<GameState, 'skillRanks'>): number {
+  const handlingRank = Math.min(
+    MINE_CART_CAPACITY_BY_HANDLING_RANK.length - 1,
+    getSkillNodeRank(state, 'automation-mine-carts'),
+  );
+  return MINE_CART_CAPACITY_BY_HANDLING_RANK[handlingRank] ?? MINE_CART_CAPACITY_BY_HANDLING_RANK[0];
+}
+
 export function getMineTripDuration(state: GameState): number {
   const railRanks = getMineUpgradeRank(state, 'rail-speed');
   return Math.max(2_000, MINE_TRIP_DURATION_MS / (1 + railRanks * 0.25));
@@ -1187,6 +1327,26 @@ function addMineResource(result: MineProductionResult, resource: string, amount:
   result.resources[resource] = (result.resources[resource] ?? 0) + amount;
 }
 
+function depositMineCargo(
+  mine: MineSite,
+  cargo: Readonly<Record<string, number>>,
+  remainingCapacity: number,
+  result: MineProductionResult,
+): number {
+  let acceptedTotal = 0;
+  Object.entries(cargo).forEach(([resource, amount]) => {
+    const accepted = Math.min(
+      Math.max(0, Math.floor(Number(amount) || 0)),
+      Math.max(0, remainingCapacity - acceptedTotal),
+    );
+    if (accepted <= 0) return;
+    mine.inventory[resource] = (mine.inventory[resource] ?? 0) + accepted;
+    addMineResource(result, resource, accepted);
+    acceptedTotal += accepted;
+  });
+  return acceptedTotal;
+}
+
 export function advanceMineOperations(state: GameState, now = Date.now(), random = Math.random): MineProductionResult {
   const result: MineProductionResult = { trips: 0, xp: 0, resources: {} };
   const layer = getMineLayer(state);
@@ -1219,22 +1379,10 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     let acceptedTrips = 0;
     let storageAmount = currentStorage;
     for (let trip = 0; trip < completedArrivals; trip += 1) {
-      const tripNumber = mine.completedTrips + trip + 1;
-      const cargo: Record<string, number> = {};
-      const baseResource = layer >= 1 ? 'deepslate' : 'cobblestone';
-      cargo[baseResource] = 1;
-      if (getSkillNodeRank(state, 'materials-coal') > 0 && tripNumber % 4 === 0) cargo.coal = 1;
-      if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0 && tripNumber % 5 === 0) cargo.iron = 1;
-      if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0 && tripNumber % 6 === 0) cargo.gold = 1;
-      if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0 && tripNumber % 10 === 0) cargo.diamond = 1;
-      if (random() < getMineEmeraldChance(state)) cargo.emerald = 1;
-      const cargoAmount = Object.values(cargo).reduce((sum, amount) => sum + amount, 0);
-      if (storageAmount + cargoAmount > storageCapacity) break;
-      Object.entries(cargo).forEach(([resource, amount]) => {
-        mine.inventory[resource] = (mine.inventory[resource] ?? 0) + amount;
-        addMineResource(result, resource, amount);
-      });
-      storageAmount += cargoAmount;
+      const cargo = generateMineCartCargo(state, random);
+      const acceptedAmount = depositMineCargo(mine, cargo, storageCapacity - storageAmount, result);
+      if (acceptedAmount <= 0) break;
+      storageAmount += acceptedAmount;
       acceptedTrips += 1;
     }
     mine.completedTrips += acceptedTrips;

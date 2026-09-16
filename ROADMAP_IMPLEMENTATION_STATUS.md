@@ -9,13 +9,13 @@
 
 **Phase 3 — Real Mine Economy**
 
-Status: Phase 3A complete; Phase 3B is next.
+Status: Phase 3B complete; Phase 3C is next.
 
 ## Current Sub-Phase
 
-**Phase 3A - Canonical mine-local inventory and collection**
+**Phase 3B - Data-driven mine production and cart capacity**
 
-Status: Complete; Phase 3B is next.
+Status: Complete; Phase 3C is next.
 
 ## Current-repo audit
 
@@ -186,6 +186,7 @@ Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; bro
 Phase 2C-B: 80 tests passed; production build and `git diff --check` passed; browser verified the production Skill Tree and World Power summary with no application console errors.
 Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; browser verified Build Mode path flow, Settlement XP/next-goal UI and no application console errors.
 Phase 3A: 82 tests passed; production build and `git diff --check` passed; browser verified local mine storage presentation, manual collection controls, save normalization and no application console errors. The existing cart projection remains the sole transform owner.
+Phase 3B: 87 tests passed; production build and `git diff --check` passed; browser verified weighted local production, multi-resource storage, collection, reload continuity, repeated trips and two mine orientations/rail configurations. Supabase requests were unavailable in the isolated browser session; local gameplay remained functional.
 
 ## Test / Verification History
 
@@ -200,6 +201,7 @@ Phase 3A: 82 tests passed; production build and `git diff --check` passed; brows
 - Phase 1D-C: `npm test` — 69 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
 - Phase 1D-C browser: Playwright CLI verified production at `http://127.0.0.1:5176/Minecraft-Idle-Game/` and staging at `/testing/` on desktop and compact viewports. Restored no-mine state displayed offline XP once; Mining and Build Mode stayed independent; next-goal, builder and storage feedback rendered; staging retained its isolation banner; console error checks returned zero errors.
 - Minecart regression: render-loop optimization had left two transform writers active: routine scene/UI reconciliation and the frame animator both positioned the same cart. The renderer is now the sole transform owner, using a shared pure projection of persisted `progressMs` and `lastUpdatedAt`. Playwright verified normal repeated travel, an east-facing rail and a reload during production; the saved mine retained one cart and its progress advanced from `1107ms` to `4707ms` after reload.
+- Phase 3B browser: Playwright CLI verified the local production route at `http://127.0.0.1:5180/Minecraft-Idle-Game/`. The Mining drawer showed `3 cargo/trip`, the mine-local storage accumulated multiple resource types, `Collect` transferred them to Settlement Storage, reload preserved the active mine and progress, and a second east-facing short-rail mine rendered with one cart. Supabase authentication/save requests returned the environment's existing unavailable-service errors; no application exception was observed.
 
 ## Phase 2C-A completion record
 
@@ -228,7 +230,7 @@ Phase 3A: 82 tests passed; production build and `git diff --check` passed; brows
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 3B — Data-driven mine production and cart capacity.
+Next incomplete roadmap sub-phase: Phase 3C — Mine levels and upgrade ownership.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 
@@ -275,6 +277,35 @@ Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into co
 - Bumped the client save schema from 8 to 9. Schema 8 scalar mine storage migrates conservatively to cobblestone inventory while preserving mine timing, identity, orientation, rail length and upgrades; no Supabase table or RLS migration was required.
 - Updated the world storage visual and Mining drawer to show typed contents, local capacity/fullness and collection/paused state.
 - Added regression coverage for local delivery, partial collection, full-storage pause, typed inventory migration and schema 9 normalization.
+
+## Phase 3B implementation plan
+
+1. Replace the legacy every-X-trip cargo counters with a typed, data-driven ore-table registry and deterministic weighted selection helper.
+2. Use the existing global `undergroundLayer` as the temporary canonical production-tier input for this slice; map layers 0/1/2 to Shallow/Iron/Redstone and use the already-discovered Diamond node to select the Diamond table. Phase 3C will migrate this authority into mine-owned depth/level progression.
+3. Make the existing Automation Mine Cart Handling Skill Tree rank the sole current cart-capacity perk: rank 0 produces one weighted cargo roll and each rank adds one roll, while `cartCount` remains fixed at one physical cart per mine.
+4. Generate one complete cart manifest per completed trip, evaluate Emerald independently per cargo roll, and deposit only the deterministic prefix that fits remaining mine-local capacity.
+5. Refresh the existing discovery synchronization after accepted production so eligible Phase 2 discovery nodes remain the only discovery authority; do not add trader or Emerald purchase logic.
+6. Add focused tests for table selection, weights, capacity, partial/full storage, discovery refresh, Emerald separation and current-schema compatibility; browser-verify repeated production, local collection, reload and multiple mine orientations/configurations.
+
+## Phase 3B acceptance criteria
+
+- [x] Shallow, Iron, Redstone and Diamond ore tables are typed, data-driven and match the roadmap's 80/15/5, 60/15/10/15, 50/20/12/8/10 and 55/15/10/10/7/3 targets.
+- [x] Completed cart trips use weighted resource rolls instead of the removed every-X-trip reward counters.
+- [x] Cart capacity is authoritative, upgradeable through the existing Mine Cart Handling Skill Tree rank, and increases resources delivered per trip without spawning another cart.
+- [x] Production deposits into mine-local inventory only, respects remaining capacity with deterministic partial overflow handling, and preserves full-storage pause behavior.
+- [x] Emerald is not in any normal ore table and remains an independent rare bonus roll; no trader or Emerald-gated ordinary upgrade was added.
+- [x] Existing discovery synchronization is refreshed after mine production without creating a second discovery system or charging Crafting Points.
+- [x] Existing schema 9 saves remain compatible; no migration or Supabase schema change is required.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 3B completion record
+
+- Added the `MINE_PRODUCTION_TABLES` registry and pure weighted resource selector for Shallow Stone, Iron, Redstone and Diamond production tiers.
+- Removed the legacy base-resource and periodic Coal/Iron/Gold/Diamond counters. Each completed physical cart trip now generates a deterministic manifest from the active table, with one roll per cart-capacity slot.
+- Made the existing `automation-mine-carts` Skill Tree rank the single cart-capacity input (`1 + rank` cargo rolls) and updated its player-facing effect text; `cartCount` remains normalized to one.
+- Emerald remains a separate per-roll rare bonus and is deposited into mine-local inventory alongside accepted normal cargo; global resources still change only through `Collect`.
+- Added deterministic partial-capacity deposit behavior and retained full-storage pause/resume, save/load timing, discovery synchronization and one-cart visuals. No save or Supabase migration was required.
+- Added coverage for tier selection, weighted boundaries, multi-roll output, partial/full capacity, discovery refresh, Emerald separation and current schema behavior. Browser-verified changing local mine contents, collection, reload continuity, repeated production, and a second east-facing short-rail configuration.
 
 ## Phase 2B-A acceptance criteria
 

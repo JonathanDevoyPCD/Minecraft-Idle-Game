@@ -62,6 +62,9 @@ export const SKILL_TREE_BRANCH_ENTRY_IDS: Record<SkillBranchId, string> = {
   'mastery-long-term': 'branch-entry-mastery-long-term',
 };
 
+/** Skill Tree commitments allowed to spend the world-expansion currency. */
+export const WORLD_POWER_EXPANSION_NODE_IDS = ['world-surface-3x3'] as const;
+
 export const SKILL_TREE_BRANCHES: SkillBranchDefinition[] = [
   { id: 'harvesting', title: 'Harvesting', subtitle: 'Make every strike count', colour: '#d98c32' },
   { id: 'tools-crafting', title: 'Tools and Crafting', subtitle: 'Build better ways to harvest', colour: '#7a9d4a' },

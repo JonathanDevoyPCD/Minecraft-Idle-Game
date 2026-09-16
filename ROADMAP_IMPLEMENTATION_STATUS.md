@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2C-A complete; Phase 2C-B is next.
+Status: Phase 2C-B complete; Phase 2C-C is next.
 
 ## Current Sub-Phase
 
-**Phase 2C-A - Retire legacy direct upgrade routes and canonicalize runtime reads**
+**Phase 2C-B - Enforce the World Power boundary**
 
-Status: Complete; Phase 2C-B is next.
+Status: Complete; Phase 2C-C is next.
 
 ## Current-repo audit
 
@@ -95,13 +95,20 @@ The current code now has one serialized generic `constructionQueue` with builder
    - Audit remaining progress awards and retain them only for completed construction, Hub progression, or other roadmap-approved development milestones.
    - Keep Settlement Progress non-spendable and expose the authoritative next-goal state in the existing UI.
 
-## Phase 2C-A acceptance criteria
+## Phase 2C-B implementation plan
 
-- [x] No direct public Speed, Tool or World upgrade mutator remains active.
-- [x] The Skill Tree is the only active owner of automatic speed and tool knowledge effects; runtime reads do not depend on legacy counters.
-- [x] World expansion continues through the existing Skill Tree/construction path without changing world size, direction, or builder behavior.
-- [x] The hidden legacy upgrade panel is removed from production and staging shells.
-- [x] Legacy saves with prototype speed/tool counters still load into stable Skill Tree ranks without CP changes, refunds, or duplicate purchases.
+1. Define the data-driven set of Skill Tree nodes that represent World Power expansion commitments.
+2. Reject World Power costs on any ordinary Skill Tree node and verify the current registry contains no such costs.
+3. Keep Hub rewards and the existing Skill Tree/construction expansion commitment as the only active World Power flow; preserve world size, direction, builder and save behavior.
+4. Add regression coverage for expansion-only spending and for non-expansion upgrades remaining independent of World Power.
+
+## Phase 2C-B acceptance criteria
+
+- [x] World Power is spendable only by data-defined world/biome expansion commitments.
+- [x] Ordinary Skill Tree, tool, mine and building upgrades do not require or consume World Power.
+- [x] The existing World Power expansion commitment still queues through the generic construction system with its current world geometry and builder behavior.
+- [x] Hub rewards remain a progression source while Settlement Progress stays non-spendable.
+- [x] No save schema or Supabase migration is required; existing World Power balances remain intact.
 - [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
 
 ## Phase 1 Target Outcomes
@@ -160,6 +167,7 @@ Phase 2B-B: 75 tests passed; production build and `git diff --check` passed; bro
 Phase 2B-C: 77 tests passed; production build and `git diff --check` passed; browser verified current-rank Skill Tree costs in the Skill Tree node and inspector with no application console errors.
 Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; browser verified the migrated Skill Tree loads with preserved progression and no application console errors.
 Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; browser verified production and staging Skill Tree, Mining and Build Mode shells with no application console errors and confirmed the legacy upgrade panel is absent.
+Phase 2C-B: 80 tests passed; production build and `git diff --check` passed; browser verified the production Skill Tree and World Power summary with no application console errors.
 
 ## Test / Verification History
 
@@ -183,11 +191,19 @@ Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; bro
 - Preserved schema 8 and the existing migration: legacy `speedRank` and `toolRank` values still map into stable Skill Tree ranks without spending or refunding Crafting Points. No Supabase migration was required.
 - Added regression coverage proving stale legacy counters cannot override canonical Skill Tree runtime reads and converted legacy tests to canonical purchase paths.
 
+## Phase 2C-B completion record
+
+- Added the data-driven `WORLD_POWER_EXPANSION_NODE_IDS` registry so only explicit world-expansion commitments may spend World Power.
+- Added runtime validation that rejects World Power costs on ordinary Skill Tree, tool, mine and building routes, including invalid negative or non-finite costs.
+- Preserved the existing Hub reward source and Skill Tree/construction expansion flow, including world geometry, builder behavior and saved World Power balances.
+- Added registry, ordinary-upgrade and accidental-cost regression tests; no save schema or Supabase migration was required.
+- Browser-verified the production Skill Tree and World Power summary at `http://127.0.0.1:5180/Minecraft-Idle-Game/` with zero application console errors.
+
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2C-B — Enforce the World Power boundary.
+Next incomplete roadmap sub-phase: Phase 2C-C — Align Settlement Progress awards with meaningful construction.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D and 2C-A are complete and pushed.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A and 2C-B are complete and pushed.
 
 ## Phase 2B-A acceptance criteria
 

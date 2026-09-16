@@ -1,4 +1,4 @@
-import { getSkillNodeCraftingPointCost, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition, type SkillMilestoneRule } from './skill-tree';
+import { getSkillNodeCraftingPointCost, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, WORLD_POWER_EXPANSION_NODE_IDS, type SkillDiscoveryRule, type SkillNodeDefinition, type SkillMilestoneRule } from './skill-tree';
 
 export interface GameState {
   schemaVersion: number;
@@ -1682,7 +1682,10 @@ function hasSkillPrerequisites(state: GameState, node: SkillNodeDefinition): boo
 export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition): boolean {
   const currentRank = getSkillNodeRank(state, node.id);
   if (state.craftingPoints < getSkillNodeCraftingPointCost(node, currentRank)) return false;
-  if ((node.cost.worldPower ?? 0) > state.worldPower) return false;
+  const worldPowerCost = node.cost.worldPower ?? 0;
+  if (!Number.isFinite(worldPowerCost) || worldPowerCost < 0) return false;
+  if (worldPowerCost !== 0 && !WORLD_POWER_EXPANSION_NODE_IDS.includes(node.id as typeof WORLD_POWER_EXPANSION_NODE_IDS[number])) return false;
+  if (worldPowerCost > state.worldPower) return false;
   return Object.entries(node.cost.resources).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount);
 }
 

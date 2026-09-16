@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { syncAutomaticSkillNodes } from './game';
-import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
-import { SKILL_TREE_NODES } from './skill-tree';
+import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, calculateOfflineXp, canAffordSkillNode, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { SKILL_TREE_NODES, WORLD_POWER_EXPANSION_NODE_IDS } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
   it('uses the intended early level curve', () => {
@@ -555,6 +555,32 @@ describe('Villagers - Idle World Game progression', () => {
     completeConstructionProjects(state, now + 1 + CONSTRUCTION_DURATIONS_MS['chunk-upgrade']);
     expect(state.worldRank).toBe(1);
     expect(state.chunkSize).toBe(9);
+  });
+
+  it('keeps World Power costs limited to data-defined expansion commitments', () => {
+    const worldPowerNodes = SKILL_TREE_NODES.filter((node) => (node.cost.worldPower ?? 0) !== 0);
+    expect(worldPowerNodes.map((node) => node.id)).toEqual([...WORLD_POWER_EXPANSION_NODE_IDS]);
+    expect(worldPowerNodes.every((node) => node.branch === 'world-growth-biomes')).toBe(true);
+  });
+
+  it('keeps ordinary Skill Tree upgrades independent of World Power', () => {
+    const state = freshState();
+    state.craftingPoints = 1;
+    state.worldPower = 0;
+    expect(buySkillNode(state, 'harvesting-bare-hands')).toBe(true);
+    expect(state.worldPower).toBe(0);
+  });
+
+  it('rejects an accidental World Power cost on an ordinary Skill Tree node', () => {
+    const state = freshState();
+    state.craftingPoints = 1;
+    state.worldPower = 1;
+    const ordinaryNode = SKILL_TREE_NODES.find((node) => node.id === 'harvesting-bare-hands');
+    expect(ordinaryNode).toBeDefined();
+    expect(canAffordSkillNode(state, {
+      ...ordinaryNode!,
+      cost: { ...ordinaryNode!.cost, worldPower: 1 },
+    })).toBe(false);
   });
 
   it('queues the 9×9 build after perimeter planning', () => {

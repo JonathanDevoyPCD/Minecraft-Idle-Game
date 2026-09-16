@@ -1936,14 +1936,18 @@ function updateConstructionUi(now = Date.now()): void {
     constructionStatusEl.hidden = true;
     return;
   }
-  const duration = Math.max(1, project.completesAt - project.startedAt || CONSTRUCTION_DURATIONS_MS[project.kind]);
+  const duration = Math.max(1, project.completesAt - project.startedAt || project.durationMs || CONSTRUCTION_DURATIONS_MS[project.kind]);
   const elapsed = project.builderId ? Math.max(0, Math.min(duration, now - project.startedAt)) : 0;
   const remainingSeconds = project.builderId ? Math.max(0, Math.ceil((project.completesAt - now) / 1000)) : 0;
-  const label = project.kind === 'adjacent-cell'
+  let label = project.kind === 'adjacent-cell'
     ? 'Preparing perimeter'
     : project.kind === 'chunk-upgrade'
       ? `Expanding to ${state.chunkSize + 2}×${state.chunkSize + 2} chunk`
       : 'Expanding chunk';
+  const targetPlacement = project.targetKind === 'building'
+    ? state.placements.find((placement) => placement.id === project.targetId)
+    : undefined;
+  if (targetPlacement) label = `${project.action === 'upgrade' ? 'Upgrading' : 'Building'} ${targetPlacement.kind.replace('-', ' ')}`;
   constructionLabelEl.textContent = label;
   constructionTimeEl.textContent = !project.builderId
     ? 'Queued - waiting for builder'
@@ -2128,17 +2132,20 @@ function updateMiningUi(): void {
     state.mines.forEach((mine, index) => {
       const capacity = getMineStorageCapacity(mine);
       const fillState = getMineStorageFillState(mine.storageAmount, capacity);
+      const placement = state.placements.find((candidate) => candidate.id === mine.id);
       const tile = document.createElement('article');
       tile.className = 'mining-info-tile';
       const title = document.createElement('strong');
       title.textContent = `Mine ${index + 1}`;
+      const level = document.createElement('small');
+      level.textContent = `Building level ${placement?.level ?? 1}`;
       const speed = document.createElement('span');
       speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart${cartCount === 1 ? '' : 's'}`;
       const ore = document.createElement('small');
       ore.textContent = `Mining ${cargo}`;
       const storage = document.createElement('small');
       storage.textContent = `Storage ${Math.floor(mine.storageAmount)}/${capacity} · ${formatMineStorageState(fillState)}`;
-      tile.append(title, speed, ore, storage);
+      tile.append(title, level, speed, ore, storage);
       miningMineList.append(tile);
 
       const storageTile = document.createElement('article');

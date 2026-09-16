@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueConstruction, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -110,7 +110,7 @@ describe('Villagers - Idle World Game progression', () => {
 
   it('starts on a procedural 7×7 chunk with a three-tile path line and one free mine site', () => {
     const state = freshState();
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(6);
     expect(getBuilderSlotCount(state)).toBe(1);
     expect(getActiveBuilderCount(state)).toBe(0);
     expect(getAvailableBuilderSlots(state)).toBe(1);
@@ -172,6 +172,68 @@ describe('Villagers - Idle World Game progression', () => {
     expect(placeWorldPlacement(state, dwelling)).toBe(true);
     expect(canPlaceWorldPlacement(state, createWorldPlacement('well', 'well-1', 1, 1, 'south'))).toBe(false);
     expect(canPlaceWorldPlacement(state, createWorldPlacement('dwelling', 'dwelling-2', 1, 2, 'south'))).toBe(false);
+  });
+
+  it('stores every placed structure as a complete level-one building instance', () => {
+    const state = freshState();
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    expect(placeWorldPlacement(state, dwelling)).toBe(true);
+    expect(state.placements[0]).toMatchObject({ level: 1, constructionState: 'complete' });
+  });
+
+  it('routes a new building through the shared build project and timer', () => {
+    const state = freshState();
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    state.resources.dirt = 10;
+    const now = 1_000;
+    expect(queueBuildingConstruction(state, dwelling, now)).toBe(true);
+    expect(state.resources.dirt).toBe(0);
+    expect(state.placements[0]).toMatchObject({ level: 1, constructionState: 'building' });
+    expect(state.constructionQueue[0]).toMatchObject({ action: 'build', targetKind: 'building', targetId: dwelling.id, durationMs: 10_000 });
+    expect(completeConstructionProjects(state, now + 10_000)).toHaveLength(1);
+    expect(state.placements[0]).toMatchObject({ level: 1, constructionState: 'complete' });
+    expect(state.settlementProgress).toBe(100);
+  });
+
+  it('queues a data-driven building upgrade, deducts its cost, and completes it', () => {
+    const state = freshState();
+    const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    expect(placeWorldPlacement(state, dwelling)).toBe(true);
+    state.resources.cobblestone = 40;
+    const now = 2_000;
+
+    expect(getBuildingUpgradeCost(state, dwelling.id)).toEqual({ cobblestone: 40 });
+    expect(queueBuildingUpgrade(state, dwelling.id, now)).toBe(true);
+    expect(state.resources.cobblestone).toBe(0);
+    expect(state.placements[0]).toMatchObject({ level: 1, constructionState: 'upgrading' });
+    expect(state.constructionQueue[0]).toMatchObject({
+      action: 'upgrade', targetKind: 'building', targetId: dwelling.id, builderId: 'builder-1', durationMs: 15_000,
+    });
+
+    expect(completeConstructionProjects(state, now + 14_999)).toHaveLength(0);
+    expect(completeConstructionProjects(state, now + 15_000)).toHaveLength(1);
+    expect(state.placements[0]).toMatchObject({ level: 2, constructionState: 'complete' });
+    expect(state.settlementProgress).toBe(50);
+    expect(getActiveBuilderCount(state)).toBe(0);
+    expect(queueBuildingUpgrade(state, dwelling.id, now + 15_001)).toBe(false);
+  });
+
+  it('keeps building upgrades queued independently when the builder is busy', () => {
+    const state = freshState();
+    const first = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    const second = createWorldPlacement('dwelling', 'dwelling-2', -1, 1, 'south');
+    expect(placeWorldPlacement(state, first)).toBe(true);
+    expect(placeWorldPlacement(state, second)).toBe(true);
+    state.resources.cobblestone = 80;
+    const now = 3_000;
+    expect(queueBuildingUpgrade(state, first.id, now)).toBe(true);
+    expect(queueBuildingUpgrade(state, second.id, now + 1)).toBe(true);
+    expect(state.constructionQueue[1]).toMatchObject({ targetId: second.id, builderId: null, startedAt: 0, completesAt: 0 });
+
+    completeConstructionProjects(state, now + 15_000);
+    expect(state.constructionQueue[0]).toMatchObject({ targetId: second.id, builderId: 'builder-1', startedAt: now + 15_000 });
+    completeConstructionProjects(state, now + 30_000);
+    expect(state.placements.map((placement) => placement.level)).toEqual([2, 2]);
   });
 
   it('moves and destroys a mine without resetting its runtime state', () => {
@@ -343,7 +405,7 @@ describe('Villagers - Idle World Game progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state).toMatchObject({ schemaVersion: 5, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1 });
+    expect(state).toMatchObject({ schemaVersion: 6, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1 });
     expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
   });
 
@@ -355,9 +417,18 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(6);
     expect(state.constructionQueue[0]).toMatchObject({ action: 'expand', targetKind: 'world', targetId: 'adjacent-cell-north', builderId: 'builder-1', cost: {} });
     expect(state.constructionQueue[0].completesAt).toBe(11000);
+  });
+
+  it('migrates schema 5 placements without building metadata into complete level-one instances', () => {
+    const placement = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
+    const saved = { ...freshState(0), schemaVersion: 5, placements: [{ ...placement, level: undefined, constructionState: undefined }] };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 1000);
+    expect(state.schemaVersion).toBe(6);
+    expect(state.placements[0]).toMatchObject({ id: placement.id, level: 1, constructionState: 'complete' });
   });
 
   it('preserves a spent World Power balance when loading a current save', () => {

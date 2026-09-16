@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { SAVE_KEY, SAVE_SCHEMA_VERSION, type GameState } from './game';
+import { LEGACY_SAVE_SCHEMA_VERSIONS, SAVE_KEY, SAVE_SCHEMA_VERSION, type GameState } from './game';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? 'https://edtsxeytaamidpaewdah.supabase.co';
 // This is a publishable browser key. Never replace it with the secret key.
@@ -15,7 +15,7 @@ interface RemoteSaveRow {
 function isGameState(value: unknown): value is GameState {
   return Boolean(value)
     && typeof value === 'object'
-    && [SAVE_SCHEMA_VERSION, SAVE_SCHEMA_VERSION - 1].includes(Number((value as Partial<GameState>).schemaVersion));
+    && [SAVE_SCHEMA_VERSION, ...LEGACY_SAVE_SCHEMA_VERSIONS].includes(Number((value as Partial<GameState>).schemaVersion));
 }
 
 export class PlayerSaveSync {

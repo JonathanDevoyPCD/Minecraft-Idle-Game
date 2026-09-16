@@ -44,6 +44,7 @@ export interface PathCell {
 }
 
 export type WorldPlacementKind = 'mine' | 'dwelling' | 'well' | 'farm' | 'tree' | 'animal-pen';
+export type BuildingConstructionState = 'complete' | 'building' | 'upgrading';
 
 export interface WorldPlacement {
   id: string;
@@ -53,6 +54,8 @@ export interface WorldPlacement {
   width: number;
   depth: number;
   direction: WorldDirection;
+  level: number;
+  constructionState: BuildingConstructionState;
 }
 
 export interface MineSite {
@@ -107,7 +110,7 @@ export interface LivingEntityPlan {
   role?: 'unassigned' | 'miner' | 'farmer' | 'toolsmith';
 }
 
-export type ConstructionKind = 'adjacent-cell' | 'surface-3x3' | 'chunk-upgrade';
+export type ConstructionKind = 'adjacent-cell' | 'surface-3x3' | 'chunk-upgrade' | 'building-build' | 'building-upgrade';
 export type ConstructionAction = 'build' | 'upgrade' | 'expand';
 export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world';
 export type ResourceCost = Record<string, number>;
@@ -121,9 +124,50 @@ export interface ConstructionProject {
   kind: ConstructionKind;
   startedAt: number;
   completesAt: number;
+  durationMs: number;
   cost: ResourceCost;
   direction?: WorldDirection;
 }
+
+export interface BuildingDefinition {
+  kind: WorldPlacementKind;
+  name: string;
+  maxLevel: number;
+  buildCost: ResourceCost;
+  upgradeCosts: readonly ResourceCost[];
+  buildDurationMs: number;
+  upgradeDurationMs: number;
+  settlementProgressOnBuild: number;
+  settlementProgressOnUpgrade: number;
+}
+
+/** Shared building data for the generic construction and upgrade flow. */
+export const BUILDING_DEFINITIONS: Readonly<Record<WorldPlacementKind, BuildingDefinition>> = {
+  mine: {
+    kind: 'mine', name: 'Mine', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+  dwelling: {
+    kind: 'dwelling', name: 'Dwelling', maxLevel: 3, buildCost: { dirt: 10 }, upgradeCosts: [{ cobblestone: 40 }, { cobblestone: 80 }],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+  well: {
+    kind: 'well', name: 'Well', maxLevel: 3, buildCost: { cobblestone: 10 }, upgradeCosts: [{ cobblestone: 40 }, { cobblestone: 80 }],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+  farm: {
+    kind: 'farm', name: 'Farm', maxLevel: 3, buildCost: { dirt: 20 }, upgradeCosts: [{ dirt: 20 }, { dirt: 40 }],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+  tree: {
+    kind: 'tree', name: 'Tree', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 25, settlementProgressOnUpgrade: 0,
+  },
+  'animal-pen': {
+    kind: 'animal-pen', name: 'Animal Pen', maxLevel: 3, buildCost: { dirt: 20 }, upgradeCosts: [{ dirt: 20 }, { dirt: 40 }],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+};
 
 export interface BlockMiningProgress {
   type: BlockType;
@@ -188,8 +232,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 5;
-export const LEGACY_SAVE_SCHEMA_VERSION = 4;
+export const SAVE_SCHEMA_VERSION = 6;
+export const LEGACY_SAVE_SCHEMA_VERSION = 5;
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -278,6 +323,8 @@ const SETTLEMENT_PROGRESS_BY_CONSTRUCTION: Record<ConstructionKind, number> = {
   'adjacent-cell': 100,
   'surface-3x3': 400,
   'chunk-upgrade': 400,
+  'building-build': 0,
+  'building-upgrade': 0,
 };
 
 const AUTO_STRIKE_NODE_ID = 'automation-auto-strike';
@@ -438,6 +485,8 @@ export function createWorldPlacement(
     width: definition.width,
     depth: kind === 'mine' ? railLength : definition.depth,
     direction,
+    level: 1,
+    constructionState: 'complete',
   };
 }
 
@@ -938,6 +987,8 @@ export const CONSTRUCTION_DURATIONS_MS: Record<ConstructionKind, number> = {
   'adjacent-cell': 10_000,
   'surface-3x3': 30_000,
   'chunk-upgrade': 45_000,
+  'building-build': 10_000,
+  'building-upgrade': 15_000,
 };
 
 /** Resource costs are owned by the construction registry, not by the UI. */
@@ -945,7 +996,61 @@ export const CONSTRUCTION_COSTS: Readonly<Record<ConstructionKind, ResourceCost>
   'adjacent-cell': {},
   'surface-3x3': {},
   'chunk-upgrade': {},
+  'building-build': {},
+  'building-upgrade': {},
 };
+
+export function getBuildingDefinition(kind: WorldPlacementKind): BuildingDefinition {
+  return BUILDING_DEFINITIONS[kind];
+}
+
+export function canAffordResourceCost(resources: Readonly<Record<string, number>>, cost: ResourceCost): boolean {
+  return Object.entries(cost).every(([resource, amount]) => (resources[resource] ?? 0) >= amount);
+}
+
+export function payResourceCost(resources: Record<string, number>, cost: ResourceCost): void {
+  Object.entries(cost).forEach(([resource, amount]) => {
+    resources[resource] = Math.max(0, (resources[resource] ?? 0) - amount);
+  });
+}
+
+export function getBuildingUpgradeCost(
+  state: Pick<GameState, 'placements'>,
+  placementId: string,
+): ResourceCost | null {
+  const placement = state.placements.find((candidate) => candidate.id === placementId);
+  if (!placement || placement.constructionState !== 'complete') return null;
+  const definition = getBuildingDefinition(placement.kind);
+  const cost = definition.upgradeCosts[placement.level - 1];
+  return cost ? { ...cost } : null;
+}
+
+/**
+ * Add a non-mine placement through the shared builder-backed construction
+ * queue. Mine placement keeps its established skill/site flow because it
+ * also creates the mine runtime record and rail relationship.
+ */
+export function queueBuildingConstruction(state: GameState, placement: WorldPlacement, now = Date.now()): boolean {
+  if (placement.kind === 'mine' || state.placements.some((candidate) => candidate.id === placement.id)) return false;
+  if (!canPlaceWorldPlacement(state, placement)) return false;
+  const definition = getBuildingDefinition(placement.kind);
+  if (!canAffordResourceCost(state.resources, definition.buildCost)) return false;
+  const building = { ...placement, level: 1, constructionState: 'building' as const };
+  state.placements.push(building);
+  const queued = queueConstruction(state, 'building-build', now, undefined, {
+    action: 'build',
+    targetKind: 'building',
+    targetId: placement.id,
+    cost: definition.buildCost,
+    durationMs: definition.buildDurationMs,
+  });
+  if (!queued) {
+    state.placements.pop();
+    return false;
+  }
+  payResourceCost(state.resources, definition.buildCost);
+  return true;
+}
 
 export function getBuilderSlotCount(state: Pick<GameState, 'builderSlots'>): number {
   return Math.max(0, Math.floor(Number(state.builderSlots) || 0));
@@ -984,7 +1089,7 @@ function assignQueuedConstruction(state: GameState, now: number): void {
     if (!builderId) continue;
     project.builderId = builderId;
     project.startedAt = now;
-    project.completesAt = now + CONSTRUCTION_DURATIONS_MS[project.kind];
+    project.completesAt = now + project.durationMs;
     assignedBuilderIds.add(builderId);
   }
   state.constructionQueue.sort((a, b) => {
@@ -998,26 +1103,65 @@ export function queueConstruction(
   kind: ConstructionKind,
   now = Date.now(),
   direction?: WorldDirection,
-  metadata?: Partial<Pick<ConstructionProject, 'action' | 'targetKind' | 'targetId' | 'cost'>>,
+  metadata?: Partial<Pick<ConstructionProject, 'action' | 'targetKind' | 'targetId' | 'cost' | 'durationMs'>>,
 ): boolean {
-  if (state.constructionQueue.some((project) => project.kind === kind)) return false;
+  const action = metadata?.action ?? 'expand';
+  const targetKind = metadata?.targetKind ?? 'world';
   const targetId = metadata?.targetId ?? (direction ? `${kind}-${direction}` : kind);
+  if (state.constructionQueue.some((project) => project.action === action && project.targetKind === targetKind && project.targetId === targetId)) return false;
   const hasBuilder = getAvailableBuilderSlots(state) > 0;
+  const durationMs = metadata?.durationMs ?? CONSTRUCTION_DURATIONS_MS[kind];
   const project: ConstructionProject = {
     id: getNextConstructionId(state, kind, targetId),
-    action: metadata?.action ?? 'expand',
-    targetKind: metadata?.targetKind ?? 'world',
+    action,
+    targetKind,
     targetId,
     builderId: hasBuilder ? null : null,
     kind,
     startedAt: hasBuilder ? now : 0,
-    completesAt: hasBuilder ? now + CONSTRUCTION_DURATIONS_MS[kind] : 0,
+    completesAt: hasBuilder ? now + durationMs : 0,
+    durationMs,
     cost: { ...(CONSTRUCTION_COSTS[kind] ?? {}), ...(metadata?.cost ?? {}) },
     direction,
   };
   state.constructionQueue.push(project);
   assignQueuedConstruction(state, now);
   return true;
+}
+
+/** Queue one level upgrade for a placed building and reserve its resources. */
+export function queueBuildingUpgrade(state: GameState, placementId: string, now = Date.now()): boolean {
+  const placement = state.placements.find((candidate) => candidate.id === placementId);
+  const cost = getBuildingUpgradeCost(state, placementId);
+  if (!placement || !cost || !canAffordResourceCost(state.resources, cost)) return false;
+  const definition = getBuildingDefinition(placement.kind);
+  if (!queueConstruction(state, 'building-upgrade', now, undefined, {
+    action: 'upgrade',
+    targetKind: 'building',
+    targetId: placementId,
+    cost,
+    durationMs: definition.upgradeDurationMs,
+  })) return false;
+  payResourceCost(state.resources, cost);
+  placement.constructionState = 'upgrading';
+  return true;
+}
+
+function completeBuildingConstruction(state: GameState, project: ConstructionProject): void {
+  const placement = state.placements.find((candidate) => candidate.id === project.targetId);
+  if (!placement || project.targetKind !== 'building') return;
+  const definition = getBuildingDefinition(placement.kind);
+  if (project.action === 'build') {
+    placement.level = 1;
+    placement.constructionState = 'complete';
+    addSettlementProgress(state, definition.settlementProgressOnBuild);
+    return;
+  }
+  if (project.action === 'upgrade') {
+    placement.level = Math.min(definition.maxLevel, placement.level + 1);
+    placement.constructionState = 'complete';
+    addSettlementProgress(state, definition.settlementProgressOnUpgrade);
+  }
 }
 
 export function completeConstructionProjects(state: GameState, now = Date.now()): ConstructionProject[] {
@@ -1031,7 +1175,8 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
     state.constructionQueue.splice(projectIndex, 1);
     if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
     if (project.kind === 'surface-3x3' || project.kind === 'chunk-upgrade') expandToNextChunk(state);
-    addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
+    if (project.targetKind === 'building') completeBuildingConstruction(state, project);
+    if (project.targetKind !== 'building') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   });
   assignQueuedConstruction(state, now);
@@ -1364,7 +1509,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   try {
     const parsed = JSON.parse(raw) as Partial<GameState>;
     const parsedSchemaVersion = Number(parsed.schemaVersion);
-    if (parsedSchemaVersion !== SAVE_SCHEMA_VERSION && parsedSchemaVersion !== LEGACY_SAVE_SCHEMA_VERSION) return freshState(now);
+    if (parsedSchemaVersion !== SAVE_SCHEMA_VERSION && !LEGACY_SAVE_SCHEMA_VERSIONS.includes(parsedSchemaVersion)) return freshState(now);
     const base = freshState(now);
     const skillRanks = migrateSkillRanks(parsed);
     const parsedWorldPower = Number(parsed.worldPower);
@@ -1509,14 +1654,18 @@ function parseWorldPlacements(value: unknown): WorldPlacement[] {
     const depth = Number(entry.depth);
     if (![x, z, width, depth].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(z) || width < 1 || depth < 1) return;
     seen.add(entry.id);
+    const kind = entry.kind as WorldPlacementKind;
+    const definition = getBuildingDefinition(kind);
     placements.push({
       id: entry.id,
-      kind: entry.kind as WorldPlacementKind,
+      kind,
       x,
       z,
       width: Math.min(5, Math.floor(width)),
       depth: Math.min(5, Math.floor(depth)),
       direction: WORLD_DIRECTIONS.includes(entry.direction as WorldDirection) ? entry.direction as WorldDirection : 'south',
+      level: Math.min(definition.maxLevel, Math.max(1, Math.floor(Number(entry.level) || 1))),
+      constructionState: entry.constructionState === 'building' || entry.constructionState === 'upgrading' ? entry.constructionState : 'complete',
     });
   });
   return placements;
@@ -1527,7 +1676,7 @@ function parseConstructionQueue(value: unknown, builderSlots: number): Construct
   const projects = value.flatMap((candidate): ConstructionProject[] => {
     if (!candidate || typeof candidate !== 'object') return [];
     const entry = candidate as Partial<ConstructionProject>;
-    if (entry.kind !== 'adjacent-cell' && entry.kind !== 'surface-3x3' && entry.kind !== 'chunk-upgrade') return [];
+    if (entry.kind !== 'adjacent-cell' && entry.kind !== 'surface-3x3' && entry.kind !== 'chunk-upgrade' && entry.kind !== 'building-build' && entry.kind !== 'building-upgrade') return [];
     const startedAt = Number(entry.startedAt);
     const completesAt = Number(entry.completesAt);
     if (!Number.isFinite(startedAt) || !Number.isFinite(completesAt) || completesAt < startedAt) return [];
@@ -1546,6 +1695,9 @@ function parseConstructionQueue(value: unknown, builderSlots: number): Construct
       kind: entry.kind,
       startedAt,
       completesAt,
+      durationMs: Number.isFinite(Number(entry.durationMs)) && Number(entry.durationMs) > 0
+        ? Number(entry.durationMs)
+        : CONSTRUCTION_DURATIONS_MS[entry.kind],
       cost: entry.cost && typeof entry.cost === 'object'
         ? Object.fromEntries(Object.entries(entry.cost).filter(([, amount]) => Number.isFinite(Number(amount)) && Number(amount) >= 0).map(([resource, amount]) => [resource, Number(amount)]))
         : { ...(CONSTRUCTION_COSTS[entry.kind] ?? {}) },

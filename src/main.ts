@@ -43,6 +43,8 @@ import {
   getMineTripDuration,
   getActiveBuilderCount,
   getBuilderSlotCount,
+  getSettlementHubUpgrade,
+  getSettlementHubUpgradeStatus,
   getLivingEntityPlan,
   getMineCargoKind,
   getMeadowFeaturePlan,
@@ -53,6 +55,7 @@ import {
   getSkillNodeRank,
   movePathCell,
   moveWorldPlacement,
+  queueSettlementHubUpgrade,
   // debugUnlockFullSkillTree,
   loadState,
   saveState as saveLocalState,
@@ -1513,6 +1516,14 @@ const settlementStageEl = document.querySelector('#settlement-stage')!;
 const settlementProgressLabelEl = document.querySelector('#settlement-progress-label')!;
 const builderCountEl = document.querySelector('#builder-count')!;
 const settlementFillEl = document.querySelector<HTMLElement>('#settlement-fill')!;
+const settlementHubButton = document.querySelector<HTMLButtonElement>('#settlement-hub-button')!;
+const settlementHubTitle = document.querySelector<HTMLElement>('#settlement-hub-title')!;
+const settlementHubDescription = document.querySelector<HTMLElement>('#settlement-hub-description')!;
+const settlementHubStage = document.querySelector<HTMLElement>('#settlement-hub-stage')!;
+const settlementHubNextStage = document.querySelector<HTMLElement>('#settlement-hub-next-stage')!;
+const settlementHubRequirements = document.querySelector<HTMLElement>('#settlement-hub-requirements')!;
+const settlementHubUpgradeButton = document.querySelector<HTMLButtonElement>('#settlement-hub-upgrade')!;
+const settlementHubStatus = document.querySelector<HTMLElement>('#settlement-hub-status')!;
 const totalXpEl = document.querySelector('#total-xp')!;
 const resourceEmeraldEl = document.querySelector('#resource-emerald')!;
 const resourceDiamondEl = document.querySelector('#resource-diamond')!;
@@ -1939,7 +1950,9 @@ function updateConstructionUi(now = Date.now()): void {
   const duration = Math.max(1, project.completesAt - project.startedAt || project.durationMs || CONSTRUCTION_DURATIONS_MS[project.kind]);
   const elapsed = project.builderId ? Math.max(0, Math.min(duration, now - project.startedAt)) : 0;
   const remainingSeconds = project.builderId ? Math.max(0, Math.ceil((project.completesAt - now) / 1000)) : 0;
-  let label = project.kind === 'adjacent-cell'
+  let label = project.targetKind === 'hub'
+    ? 'Upgrading Settlement Hub'
+    : project.kind === 'adjacent-cell'
     ? 'Preparing perimeter'
     : project.kind === 'chunk-upgrade'
       ? `Expanding to ${state.chunkSize + 2}×${state.chunkSize + 2} chunk`
@@ -2259,6 +2272,38 @@ function purchaseSelectedSkillNode(): void {
   if (branch) showSkillNodeDetails(node, branch);
 }
 
+function updateSettlementHubUi(): void {
+  const stage = getSettlementStage(state);
+  const nextStage = getNextSettlementStage(state);
+  const upgrade = getSettlementHubUpgrade(state);
+  const status = getSettlementHubUpgradeStatus(state);
+  settlementHubTitle.textContent = `Settlement Hub Level ${state.settlementHub.level}`;
+  settlementHubDescription.textContent = stage.description;
+  settlementHubStage.textContent = stage.name;
+  settlementHubNextStage.textContent = nextStage ? `Next: ${nextStage.name}` : 'Maximum era reached';
+  settlementHubRequirements.replaceChildren();
+  if (!upgrade || !nextStage) {
+    const item = document.createElement('li');
+    item.textContent = 'The settlement has reached its current limit.';
+    settlementHubRequirements.append(item);
+    settlementHubUpgradeButton.disabled = true;
+    settlementHubUpgradeButton.textContent = 'Fully Upgraded';
+    settlementHubStatus.textContent = 'No further Hub upgrades are currently defined.';
+    return;
+  }
+  const requirementItems = status.missing.length > 0 ? status.missing : ['All requirements met'];
+  requirementItems.forEach((requirement) => {
+    const item = document.createElement('li');
+    item.textContent = requirement;
+    settlementHubRequirements.append(item);
+  });
+  settlementHubUpgradeButton.disabled = !status.ready;
+  settlementHubUpgradeButton.textContent = status.ready ? `Upgrade to ${nextStage.name}` : `Upgrade to ${nextStage.name}`;
+  settlementHubStatus.textContent = status.ready
+    ? `Ready · ${Math.ceil(upgrade.durationMs / 1000)}s construction`
+    : 'Meet every requirement to assign a builder.';
+}
+
 function updateUi(): void {
   const rate = state.mines.length > 0 ? getMineCartCount(state) * 1000 / getMineTripDuration(state) : 0;
   const settlementStage = getSettlementStage(state);
@@ -2275,6 +2320,7 @@ function updateUi(): void {
     settlementProgressLabelEl.textContent = `${state.settlementProgress.toLocaleString()} Growth`;
     settlementFillEl.style.width = '100%';
   }
+  updateSettlementHubUi();
   totalXpEl.textContent = state.totalXp.toLocaleString();
   autoRateEl.textContent = rate.toFixed(2);
   resourceEmeraldEl.textContent = (state.resources.emerald ?? 0).toLocaleString();
@@ -2936,6 +2982,12 @@ traderEmeraldButton.addEventListener('click', () => {
   saveState(localStorage, state);
 });
 storyButton.addEventListener('click', () => openWorldModal('story-modal'));
+settlementHubButton.addEventListener('click', () => openWorldModal('settlement-hub-modal'));
+settlementHubUpgradeButton.addEventListener('click', () => {
+  if (!queueSettlementHubUpgrade(state)) return;
+  updateUi();
+  saveState(localStorage, state);
+});
 pauseMenuButton.addEventListener('click', () => openWorldModal('pause-modal'));
 /* Debug Menu temporarily disabled. Keep the wiring for later development use.
 debugMenuButton.addEventListener('click', () => {

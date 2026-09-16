@@ -12,6 +12,9 @@ export interface GameState {
   worldPower: number;
   worldSeed: number;
   settlementProgress: number;
+  settlementHub: SettlementHubInstance;
+  population: number;
+  completedStoryMilestones: string[];
   chunkSize: number;
   worldCells: WorldCell[];
   pathCells: PathCell[];
@@ -54,6 +57,12 @@ export interface WorldPlacement {
   width: number;
   depth: number;
   direction: WorldDirection;
+  level: number;
+  constructionState: BuildingConstructionState;
+}
+
+export interface SettlementHubInstance {
+  id: 'settlement-hub';
   level: number;
   constructionState: BuildingConstructionState;
 }
@@ -112,7 +121,7 @@ export interface LivingEntityPlan {
 
 export type ConstructionKind = 'adjacent-cell' | 'surface-3x3' | 'chunk-upgrade' | 'building-build' | 'building-upgrade';
 export type ConstructionAction = 'build' | 'upgrade' | 'expand';
-export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world';
+export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world' | 'hub';
 export type ResourceCost = Record<string, number>;
 
 export interface ConstructionProject {
@@ -139,6 +148,27 @@ export interface BuildingDefinition {
   upgradeDurationMs: number;
   settlementProgressOnBuild: number;
   settlementProgressOnUpgrade: number;
+}
+
+export interface SettlementHubBuildingRequirement {
+  kind: WorldPlacementKind;
+  count: number;
+  minimumLevel: number;
+}
+
+export interface SettlementHubUpgradeDefinition {
+  fromLevel: number;
+  toLevel: number;
+  targetStageId: SettlementStageId;
+  requiredSettlementProgress: number;
+  requiredPopulation: number;
+  requiredBuildings: readonly SettlementHubBuildingRequirement[];
+  requiredResources: ResourceCost;
+  requiredStoryMilestones: readonly string[];
+  durationMs: number;
+  settlementProgressReward: number;
+  worldPowerReward: number;
+  builderSlots: number;
 }
 
 /** Shared building data for the generic construction and upgrade flow. */
@@ -232,9 +262,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 6;
-export const LEGACY_SAVE_SCHEMA_VERSION = 5;
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5];
+export const SAVE_SCHEMA_VERSION = 7;
+export const LEGACY_SAVE_SCHEMA_VERSION = 6;
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -319,6 +349,49 @@ export const SETTLEMENT_STAGES: readonly SettlementStageDefinition[] = [
   { id: 'endless', name: 'Endless Mode', requiredProgress: 500_000, requiredWorldRank: 2, description: 'The settlement loop continues without a final cap.' },
 ] as const;
 
+/**
+ * Hub requirements are intentionally data rather than stage-threshold logic.
+ * Later slices can add storage, population and story systems without adding
+ * another progression path to the game loop.
+ */
+export const SETTLEMENT_HUB_UPGRADES: readonly SettlementHubUpgradeDefinition[] = [
+  {
+    fromLevel: 1, toLevel: 2, targetStageId: 'hamlet', requiredSettlementProgress: 500, requiredPopulation: 0,
+    requiredBuildings: [{ kind: 'mine', count: 1, minimumLevel: 1 }], requiredResources: { dirt: 50, cobblestone: 50 },
+    requiredStoryMilestones: [], durationMs: 30_000, settlementProgressReward: 500, worldPowerReward: 1, builderSlots: 2,
+  },
+  {
+    fromLevel: 2, toLevel: 3, targetStageId: 'village', requiredSettlementProgress: 2_000, requiredPopulation: 1,
+    requiredBuildings: [{ kind: 'dwelling', count: 1, minimumLevel: 1 }, { kind: 'well', count: 1, minimumLevel: 1 }, { kind: 'farm', count: 1, minimumLevel: 1 }],
+    requiredResources: { dirt: 100, cobblestone: 200 }, requiredStoryMilestones: ['chapter-3-place-to-stay'], durationMs: 120_000, settlementProgressReward: 750, worldPowerReward: 1, builderSlots: 2,
+  },
+  {
+    fromLevel: 3, toLevel: 4, targetStageId: 'small-town', requiredSettlementProgress: 7_500, requiredPopulation: 4,
+    requiredBuildings: [{ kind: 'mine', count: 2, minimumLevel: 1 }, { kind: 'farm', count: 2, minimumLevel: 1 }, { kind: 'animal-pen', count: 1, minimumLevel: 1 }],
+    requiredResources: { dirt: 250, cobblestone: 500 }, requiredStoryMilestones: ['chapter-7-deep-world'], durationMs: 300_000, settlementProgressReward: 1_000, worldPowerReward: 1, builderSlots: 3,
+  },
+  {
+    fromLevel: 4, toLevel: 5, targetStageId: 'town', requiredSettlementProgress: 25_000, requiredPopulation: 8,
+    requiredBuildings: [{ kind: 'dwelling', count: 4, minimumLevel: 1 }, { kind: 'farm', count: 2, minimumLevel: 2 }, { kind: 'well', count: 1, minimumLevel: 2 }],
+    requiredResources: { dirt: 500, cobblestone: 1_000 }, requiredStoryMilestones: ['chapter-5-iron-below'], durationMs: 600_000, settlementProgressReward: 1_500, worldPowerReward: 1, builderSlots: 3,
+  },
+  {
+    fromLevel: 5, toLevel: 6, targetStageId: 'city', requiredSettlementProgress: 75_000, requiredPopulation: 16,
+    requiredBuildings: [{ kind: 'mine', count: 3, minimumLevel: 1 }, { kind: 'dwelling', count: 6, minimumLevel: 2 }, { kind: 'farm', count: 3, minimumLevel: 2 }],
+    requiredResources: { dirt: 1_000, cobblestone: 2_500 }, requiredStoryMilestones: ['chapter-8-diamonds'], durationMs: 1_200_000, settlementProgressReward: 2_000, worldPowerReward: 1, builderSlots: 3,
+  },
+  {
+    fromLevel: 6, toLevel: 7, targetStageId: 'large-city', requiredSettlementProgress: 200_000, requiredPopulation: 30,
+    requiredBuildings: [{ kind: 'dwelling', count: 10, minimumLevel: 2 }, { kind: 'farm', count: 5, minimumLevel: 3 }, { kind: 'animal-pen', count: 3, minimumLevel: 2 }],
+    requiredResources: { dirt: 2_000, cobblestone: 5_000 }, requiredStoryMilestones: ['chapter-9-living-world'], durationMs: 2_400_000, settlementProgressReward: 3_000, worldPowerReward: 1, builderSlots: 4,
+  },
+  {
+    fromLevel: 7, toLevel: 8, targetStageId: 'endless', requiredSettlementProgress: 500_000, requiredPopulation: 50,
+    requiredBuildings: [{ kind: 'dwelling', count: 15, minimumLevel: 3 }, { kind: 'farm', count: 8, minimumLevel: 3 }, { kind: 'well', count: 3, minimumLevel: 3 }],
+    requiredResources: { dirt: 5_000, cobblestone: 10_000 }, requiredStoryMilestones: ['chapter-10-beyond-horizon'], durationMs: 3_600_000, settlementProgressReward: 5_000, worldPowerReward: 1, builderSlots: 5,
+  },
+] as const;
+
 const SETTLEMENT_PROGRESS_BY_CONSTRUCTION: Record<ConstructionKind, number> = {
   'adjacent-cell': 100,
   'surface-3x3': 400,
@@ -367,6 +440,9 @@ export function freshState(now = Date.now()): GameState {
     worldPower: 0,
     worldSeed: 184731,
     settlementProgress: 0,
+    settlementHub: { id: 'settlement-hub', level: 1, constructionState: 'complete' },
+    population: 0,
+    completedStoryMilestones: [],
     chunkSize: STARTING_CHUNK_SIZE,
     worldCells,
     pathCells: STARTING_PATH_CELLS.map((cell) => ({ ...cell })),
@@ -1147,6 +1223,22 @@ export function queueBuildingUpgrade(state: GameState, placementId: string, now 
   return true;
 }
 
+/** Queue the next Settlement Hub era after all of its requirements are met. */
+export function queueSettlementHubUpgrade(state: GameState, now = Date.now()): boolean {
+  const status = getSettlementHubUpgradeStatus(state);
+  if (!status.definition || !status.ready || !canAffordResourceCost(state.resources, status.definition.requiredResources)) return false;
+  if (!queueConstruction(state, 'building-upgrade', now, undefined, {
+    action: 'upgrade',
+    targetKind: 'hub',
+    targetId: state.settlementHub.id,
+    cost: status.definition.requiredResources,
+    durationMs: status.definition.durationMs,
+  })) return false;
+  payResourceCost(state.resources, status.definition.requiredResources);
+  state.settlementHub.constructionState = 'upgrading';
+  return true;
+}
+
 function completeBuildingConstruction(state: GameState, project: ConstructionProject): void {
   const placement = state.placements.find((candidate) => candidate.id === project.targetId);
   if (!placement || project.targetKind !== 'building') return;
@@ -1164,6 +1256,17 @@ function completeBuildingConstruction(state: GameState, project: ConstructionPro
   }
 }
 
+function completeSettlementHubUpgrade(state: GameState, project: ConstructionProject): void {
+  if (project.targetKind !== 'hub' || project.action !== 'upgrade' || project.targetId !== state.settlementHub.id) return;
+  const definition = SETTLEMENT_HUB_UPGRADES.find((upgrade) => upgrade.fromLevel === state.settlementHub.level);
+  if (!definition) return;
+  state.settlementHub.level = definition.toLevel;
+  state.settlementHub.constructionState = 'complete';
+  state.builderSlots = Math.max(state.builderSlots, definition.builderSlots);
+  state.worldPower += definition.worldPowerReward;
+  addSettlementProgress(state, definition.settlementProgressReward);
+}
+
 export function completeConstructionProjects(state: GameState, now = Date.now()): ConstructionProject[] {
   const completed: ConstructionProject[] = [];
   const dueProjects = state.constructionQueue
@@ -1175,8 +1278,9 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
     state.constructionQueue.splice(projectIndex, 1);
     if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
     if (project.kind === 'surface-3x3' || project.kind === 'chunk-upgrade') expandToNextChunk(state);
+    if (project.targetKind === 'hub') completeSettlementHubUpgrade(state, project);
     if (project.targetKind === 'building') completeBuildingConstruction(state, project);
-    if (project.targetKind !== 'building') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
+    if (project.targetKind !== 'building' && project.targetKind !== 'hub') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   });
   assignQueuedConstruction(state, now);
@@ -1191,24 +1295,60 @@ export function addSettlementProgress(state: GameState, amount: number): number 
   return safeAmount;
 }
 
-export function getSettlementStage(state: Pick<GameState, 'settlementProgress' | 'worldRank'>): SettlementStageDefinition {
-  let current = SETTLEMENT_STAGES[0];
-  SETTLEMENT_STAGES.forEach((stage) => {
-    if (state.settlementProgress >= stage.requiredProgress && state.worldRank >= stage.requiredWorldRank) current = stage;
-  });
-  return current;
+export function getSettlementStage(state: Pick<GameState, 'settlementHub'>): SettlementStageDefinition {
+  const hubLevel = Math.max(1, Math.floor(Number(state.settlementHub.level) || 1));
+  return SETTLEMENT_STAGES[Math.min(SETTLEMENT_STAGES.length - 1, hubLevel - 1)];
 }
 
-export function getSettlementStageIndex(state: Pick<GameState, 'settlementProgress' | 'worldRank'>): number {
-  const index = SETTLEMENT_STAGES.findIndex((stage) => stage.id === getSettlementStage(state).id);
-  return Math.max(0, index);
+export function getSettlementStageIndex(state: Pick<GameState, 'settlementHub'>): number {
+  return Math.max(0, Math.min(SETTLEMENT_STAGES.length - 1, Math.floor(Number(state.settlementHub.level) || 1) - 1));
+}
+
+export interface SettlementHubUpgradeStatus {
+  definition: SettlementHubUpgradeDefinition | null;
+  ready: boolean;
+  missing: string[];
+}
+
+export function getSettlementHubUpgrade(state: Pick<GameState, 'settlementHub'>): SettlementHubUpgradeDefinition | null {
+  return SETTLEMENT_HUB_UPGRADES.find((upgrade) => upgrade.fromLevel === state.settlementHub.level) ?? null;
+}
+
+export function getSettlementHubUpgradeStatus(
+  state: Pick<GameState, 'settlementHub' | 'settlementProgress' | 'population' | 'resources' | 'placements' | 'completedStoryMilestones'>,
+): SettlementHubUpgradeStatus {
+  const definition = getSettlementHubUpgrade(state);
+  if (!definition) return { definition: null, ready: false, missing: [] };
+  const missing: string[] = [];
+  if (state.settlementHub.constructionState !== 'complete') missing.push('Current Hub upgrade must finish');
+  if (state.settlementProgress < definition.requiredSettlementProgress) {
+    missing.push(`${definition.requiredSettlementProgress.toLocaleString()} Settlement XP`);
+  }
+  if (state.population < definition.requiredPopulation) missing.push(`${definition.requiredPopulation} population`);
+  definition.requiredBuildings.forEach((requirement) => {
+    const count = state.placements.filter((placement) => (
+      placement.kind === requirement.kind
+      && placement.constructionState === 'complete'
+      && placement.level >= requirement.minimumLevel
+    )).length;
+    if (count < requirement.count) {
+      missing.push(`${requirement.count} level ${requirement.minimumLevel}+ ${requirement.kind.replace('-', ' ')}`);
+    }
+  });
+  Object.entries(definition.requiredResources).forEach(([resource, amount]) => {
+    if ((state.resources[resource] ?? 0) < amount) missing.push(`${amount} ${resource}`);
+  });
+  definition.requiredStoryMilestones.forEach((milestone) => {
+    if (!state.completedStoryMilestones.includes(milestone)) missing.push(`Story milestone: ${milestone}`);
+  });
+  return { definition, ready: missing.length === 0, missing };
 }
 
 /**
  * One starter slot, one slot for each of the two mine-site skill unlocks, and
  * one more slot for every settlement stage reached after Dwelling.
  */
-export function getMineSiteCapacity(state: Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>): number {
+export function getMineSiteCapacity(state: Pick<GameState, 'settlementHub' | 'skillRanks'>): number {
   return 1
     + getSkillNodeRank(state, 'world-second-mine-site')
     + getSkillNodeRank(state, 'world-third-mine-site')
@@ -1217,12 +1357,12 @@ export function getMineSiteCapacity(state: Pick<GameState, 'settlementProgress' 
 
 export function getAvailableMineSites(
   state: Pick<GameState, 'mines' | 'availableMineSites'>
-    & Partial<Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>>,
+    & Partial<Pick<GameState, 'settlementHub' | 'skillRanks'>>,
 ): number {
-  if (state.settlementProgress === undefined || state.worldRank === undefined || state.skillRanks === undefined) {
+  if (state.settlementHub === undefined || state.skillRanks === undefined) {
     return Math.max(0, state.availableMineSites);
   }
-  return Math.max(0, getMineSiteCapacity(state as Pick<GameState, 'settlementProgress' | 'worldRank' | 'skillRanks'>) - state.mines.length);
+  return Math.max(0, getMineSiteCapacity(state as Pick<GameState, 'settlementHub' | 'skillRanks'>) - state.mines.length);
 }
 
 function syncAvailableMineSites(state: GameState): void {
@@ -1230,7 +1370,7 @@ function syncAvailableMineSites(state: GameState): void {
 }
 
 export function getBuildItemUnlockStatus(
-  state: Pick<GameState, 'level' | 'settlementProgress' | 'worldRank' | 'skillRanks' | 'resources'>,
+  state: Pick<GameState, 'level' | 'settlementHub' | 'settlementProgress' | 'worldRank' | 'skillRanks' | 'resources'>,
   itemId: BuildItemId,
 ): { unlocked: boolean; missing: UnlockPrerequisite[] } {
   const definition = BUILD_ITEM_UNLOCKS.find((entry) => entry.id === itemId);
@@ -1546,6 +1686,16 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       settlementProgress: Number.isFinite(parsedSettlementProgress)
         ? Math.max(0, Math.floor(parsedSettlementProgress))
         : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
+      // Schema 7 is the first save format that persisted an authoritative Hub.
+      // Older saves retain their existing world/progress data but begin at the
+      // conservative Dwelling authority until the player completes the Hub flow.
+      settlementHub: parsedSchemaVersion === SAVE_SCHEMA_VERSION
+        ? parseSettlementHub(parsed.settlementHub)
+        : base.settlementHub,
+      population: Math.max(0, Math.floor(Number(parsed.population) || 0)),
+      completedStoryMilestones: Array.isArray(parsed.completedStoryMilestones)
+        ? Array.from(new Set(parsed.completedStoryMilestones.filter((milestone): milestone is string => typeof milestone === 'string').slice(0, 100)))
+        : [],
       chunkSize: Math.max(STARTING_CHUNK_SIZE, Math.floor(Number(parsed.chunkSize) || base.chunkSize)),
       worldCells,
       pathCells,
@@ -1572,6 +1722,16 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
   } catch {
     return freshState(now);
   }
+}
+
+function parseSettlementHub(value: unknown): SettlementHubInstance {
+  if (!value || typeof value !== 'object') return { id: 'settlement-hub', level: 1, constructionState: 'complete' };
+  const entry = value as Partial<SettlementHubInstance>;
+  return {
+    id: 'settlement-hub',
+    level: Math.min(SETTLEMENT_STAGES.length, Math.max(1, Math.floor(Number(entry.level) || 1))),
+    constructionState: entry.constructionState === 'upgrading' || entry.constructionState === 'building' ? entry.constructionState : 'complete',
+  };
 }
 
 function parseMineUpgradeRanks(value: unknown): Record<string, number> {
@@ -1687,7 +1847,7 @@ function parseConstructionQueue(value: unknown, builderSlots: number): Construct
     const genericProject = {
       id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : `${entry.kind}-${targetId}`,
       action: entry.action === 'build' || entry.action === 'upgrade' || entry.action === 'expand' ? entry.action : 'expand' as const,
-      targetKind: entry.targetKind === 'building' || entry.targetKind === 'mine' || entry.targetKind === 'path' || entry.targetKind === 'world'
+      targetKind: entry.targetKind === 'building' || entry.targetKind === 'mine' || entry.targetKind === 'path' || entry.targetKind === 'world' || entry.targetKind === 'hub'
         ? entry.targetKind
         : 'world' as const,
       targetId,

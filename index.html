@@ -87,7 +87,7 @@
         <section class="player-card panel" aria-label="Player progress">
           <div class="level-badge"><span>LVL</span><strong id="level">1</strong></div>
           <div class="progress-copy">
-            <div class="row"><strong>Settlement</strong><span id="settlement-stage">Dwelling</span></div>
+            <div class="row"><button id="settlement-hub-button" class="settlement-hub-button" type="button" aria-haspopup="dialog"><strong>Settlement Hub</strong><span id="settlement-stage">Dwelling</span></button></div>
             <div class="row settlement-progress-row"><small id="settlement-progress-label">0 / 500 Growth</small><small id="builder-count">Builders 0/1</small></div>
             <div class="xp-track"><div id="settlement-fill" class="xp-fill"></div></div>
           </div>
@@ -246,6 +246,20 @@
           <p class="eyebrow">NEXT CHAPTER</p>
           <h2 id="story-title">Build a settlement, not an XP machine</h2>
           <p>Use the story as a clear growth guide: place homes, provide water, assign workers, then expand farming and trade.</p>
+        </div>
+      </section>
+
+      <section id="settlement-hub-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-hub-title" hidden>
+        <div class="modal-card panel">
+          <button class="modal-close" type="button" data-close-modal="settlement-hub-modal" aria-label="Close Settlement Hub">×</button>
+          <p class="eyebrow">SETTLEMENT HUB</p>
+          <h2 id="settlement-hub-title">Settlement Hub Level 1</h2>
+          <p id="settlement-hub-description">The central authority for your settlement's next era.</p>
+          <div class="hub-stage-summary"><strong id="settlement-hub-stage">Dwelling</strong><small id="settlement-hub-next-stage">Next: Hamlet</small></div>
+          <p class="eyebrow hub-requirements-heading">NEXT UPGRADE REQUIREMENTS</p>
+          <ul id="settlement-hub-requirements" class="hub-requirements"></ul>
+          <button id="settlement-hub-upgrade" type="button" disabled>Upgrade Hub</button>
+          <small id="settlement-hub-status" class="trader-status" aria-live="polite"></small>
         </div>
       </section>
 

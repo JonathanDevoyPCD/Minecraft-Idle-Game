@@ -41,11 +41,11 @@ import {
   getMineStorageUpgradeStatus,
   getMineLevel,
   getMineLevelUpgradeStatus,
+  getMineOperationsSummary,
   queueMineLevelUpgrade,
   queueMineRailUpgrade,
   queueMineStorageUpgrade,
   getMineTripDuration,
-  getMineCartCapacity,
   getMineProductionDefinition,
   getActiveBuilderCount,
   addSettlementResource,
@@ -2190,8 +2190,6 @@ function formatMineStorageTime(durationMs: number): string {
 
 function updateMiningUi(): void {
   syncMiningModeDrawer();
-  const cartCount = getMineCartCount(state);
-  const cartCapacity = getMineCartCapacity(state);
 
   miningMineList.replaceChildren();
   miningRailList.replaceChildren();
@@ -2236,11 +2234,14 @@ function updateMiningUi(): void {
     miningRailList.append(railEmpty);
   } else {
     state.mines.forEach((mine, index) => {
-      const tripDuration = getMineTripDuration(state, mine);
-      const rate = cartCount * cartCapacity * 1000 / tripDuration;
-      const capacity = getMineStorageCapacity(mine);
-      const amount = getMineStorageAmount(mine);
-      const fillState = getMineStorageFillState(amount, capacity);
+      const summary = getMineOperationsSummary(state, mine);
+      const tripDuration = summary.tripDurationMs;
+      const rate = summary.cargoRatePerSecond;
+      const cartCount = summary.cartCount;
+      const cartCapacity = summary.cartCapacity;
+      const capacity = summary.storageCapacity;
+      const amount = summary.storageAmount;
+      const fillState = summary.storageFillState;
       const placement = state.placements.find((candidate) => candidate.id === mine.id);
       const tile = document.createElement('article');
        tile.className = 'mining-info-tile mining-info-tile--mine';
@@ -2249,6 +2250,8 @@ function updateMiningUi(): void {
        const level = document.createElement('small');
        level.textContent = `Mine level ${getMineLevel(mine)} Â· ${placement?.constructionState === 'upgrading' ? 'Upgrading' : 'Ready'}`;
       const speed = document.createElement('span');
+      const depth = document.createElement('small');
+      depth.textContent = `Depth: ${summary.depthName}`;
       speed.textContent = `${rate.toFixed(2)}/s · ${cartCount} cart · ${cartCapacity} cargo/trip`;
        const ore = document.createElement('small');
        ore.textContent = `Table: ${getMineProductionDefinition(state, mine).name}`;
@@ -2271,7 +2274,7 @@ function updateMiningUi(): void {
          : 'Mine is fully upgraded';
       const storage = document.createElement('small');
       storage.textContent = `Storage ${amount}/${capacity} · ${formatMineStorageState(fillState)}`;
-       tile.append(title, level, speed, ore, storage, mineLevelUpgrade);
+       tile.append(title, level, depth, speed, ore, storage, mineLevelUpgrade);
       miningMineList.append(tile);
 
       const railTile = document.createElement('article');
@@ -2282,6 +2285,8 @@ function updateMiningUi(): void {
       railLevel.textContent = `Rail level ${getMineRailLevel(mine)} · ${mine.railLength === 4 ? 'Long' : mine.railLength === 3 ? 'Medium' : 'Short'} route`;
       const railSpeed = document.createElement('small');
       railSpeed.textContent = `Trip cycle ${formatMineStorageTime(tripDuration)}`;
+      const railSummary = document.createElement('small');
+      railSummary.textContent = `Level ${summary.mineLevel} ${summary.depthName} - ${summary.cartCount} cart - ${summary.cartCapacity} cargo/trip`;
       const railUpgrade = document.createElement('button');
       railUpgrade.className = 'storage-upgrade-button';
       railUpgrade.type = 'button';
@@ -2299,7 +2304,7 @@ function updateMiningUi(): void {
           ? `Upgrade this mine's rails to level ${railStatus.definition.toLevel}`
           : `Locked: ${railStatus.missing.join(' · ')}`
         : 'This mine has the maximum rail level';
-      railTile.append(railTitle, railLevel, railSpeed, railUpgrade);
+      railTile.append(railTitle, railLevel, railSpeed, railSummary, railUpgrade);
       miningRailList.append(railTile);
 
       const storageTile = document.createElement('article');
@@ -2313,6 +2318,10 @@ function updateMiningUi(): void {
         .map(([resource, stored]) => `${resource} ${stored}`)
         .join(' · ');
       storageContents.textContent = contents ? `Contents: ${contents}` : 'Contents: Empty';
+      const storageSummary = document.createElement('small');
+      storageSummary.textContent = `Mine level ${summary.mineLevel} ${summary.depthName} - Rail ${summary.railLevel} - ${summary.cartCount} cart - ${summary.cartCapacity} cargo/trip`;
+      const storageTarget = document.createElement('small');
+      storageTarget.textContent = `Target fill ${formatMineStorageTime(summary.storageFillDurationMs)} for ${summary.storageFillTarget} ore`;
       const storageTime = document.createElement('small');
       storageTime.textContent = fillState === 'full' ? 'Production paused · collect to resume' : `Trip cycle ${formatMineStorageTime(tripDuration)}`;
       const collectButton = document.createElement('button');
@@ -2343,7 +2352,7 @@ function updateMiningUi(): void {
           ? `Upgrade this mine storage to ${storageStatus.definition.capacity}`
           : `Locked: ${storageStatus.missing.join(' · ')}`
         : 'Mine storage is fully upgraded';
-      storageTile.append(storageTitle, storageAmount, storageContents, storageTime, collectButton, storageUpgrade);
+      storageTile.append(storageTitle, storageAmount, storageContents, storageSummary, storageTarget, storageTime, collectButton, storageUpgrade);
       miningStorageList.append(storageTile);
     });
   }

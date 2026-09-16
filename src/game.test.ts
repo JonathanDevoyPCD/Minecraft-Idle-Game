@@ -4,6 +4,7 @@ import { getMineLevel, getMineLevelUpgradeStatus, MINE_LEVELS, queueMineLevelUpg
 import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineUpgrade, buySkillNode, calculateOfflineXp, canAffordSkillNode, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, generateMineCartCargo, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCartCapacity, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineProductionDefinition, getMineProductionTier, getMineRailLevel, getMineRailUpgradeStatus, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillState, getMineStorageUpgradeCost, getMineStorageUpgradeStatus, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_PRODUCTION_TABLES, MINE_RAIL_UPGRADES, MINE_STORAGE_UPGRADES, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueMineRailUpgrade, queueMineStorageUpgrade, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, selectWeightedMineResource, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES, WORLD_POWER_EXPANSION_NODE_IDS } from './skill-tree';
 import { collectMineStorage, getMineStorageAmount } from './game';
+import { getMineOperationsSummary, getMineStorageFillDuration } from './game';
 
 describe('Villagers - Idle World Game progression', () => {
   it('uses the intended early level curve', () => {
@@ -1182,5 +1183,51 @@ describe('Villagers - Idle World Game progression', () => {
     expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS * 3, () => 0.01)).toMatchObject({ trips: 0, xp: 0 });
     expect(collectMineStorage(state, mine.id, 1000 + MINE_TRIP_DURATION_MS * 3).transferred).toEqual({ cobblestone: 100 });
     expect(advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS * 4, () => 0.01).trips).toBe(1);
+  });
+
+  it('tunes mine storage fill targets by mine level without changing the cart cycle', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    expect(MINE_LEVELS.map((definition) => definition.storageFillDurationMs)).toEqual([
+      720_000,
+      695_000,
+      670_000,
+      645_000,
+      620_000,
+      595_000,
+    ]);
+    expect(getMineStorageFillDuration(mine)).toBe(720_000);
+    expect(getMineTripDuration(state, mine)).toBe(MINE_TRIP_DURATION_MS);
+    mine.mineLevel = 4;
+    expect(getMineStorageFillDuration(mine)).toBe(645_000);
+  });
+
+  it('provides one consistent mine operations summary for all Mining panels', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    mine.inventory = { cobblestone: 60, coal: 2 };
+    const summary = getMineOperationsSummary(state, mine);
+    expect(summary).toMatchObject({
+      mineId: mine.id,
+      mineLevel: 1,
+      depthName: 'Shallow Tunnel',
+      productionTableName: 'Shallow Stone Mine',
+      railLevel: 0,
+      railLength: 4,
+      cartCount: 1,
+      cartCapacity: 1,
+      tripDurationMs: MINE_TRIP_DURATION_MS,
+      storageLevel: 0,
+      storageAmount: 62,
+      storageCapacity: 100,
+      storageFillState: 'medium',
+      storageFillDurationMs: 720_000,
+      storageFillTarget: 100,
+      productionPaused: false,
+    });
+    expect(summary.cargoRatePerSecond).toBeCloseTo(0.125);
+    expect(summary.storageContents).toEqual({ cobblestone: 60, coal: 2 });
   });
 });

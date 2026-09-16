@@ -284,8 +284,13 @@ export interface MineLevelDefinition {
   requiredHubLevel: number;
   requiredResources: ResourceCost;
   durationMs: number;
+  /** Balance target for filling the base 100-unit mine storage. */
+  storageFillDurationMs: number;
   settlementProgressReward: number;
 }
+
+export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
+export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
 
 /**
  * The active mine production tables. Weights are balance targets from the
@@ -342,12 +347,12 @@ export const MINE_PRODUCTION_TABLES: readonly MineProductionDefinition[] = [
  * improvements without inventing a second resource table prematurely.
  */
 export const MINE_LEVELS: readonly MineLevelDefinition[] = [
-  { level: 1, name: 'Shallow Tunnel', productionTier: 'shallow', requiredHubLevel: 1, requiredResources: {}, durationMs: 0, settlementProgressReward: 0 },
-  { level: 2, name: 'Reinforced Mine', productionTier: 'iron', requiredHubLevel: 3, requiredResources: { cobblestone: 250, planks: 100, iron: 20 }, durationMs: 30_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
-  { level: 3, name: 'Deep Shaft', productionTier: 'redstone', requiredHubLevel: 4, requiredResources: { cobblestone: 500, copper: 50, iron: 100 }, durationMs: 60_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
-  { level: 4, name: 'Deep Mine', productionTier: 'redstone', requiredHubLevel: 5, requiredResources: { cobblestone: 1_000, gold: 50, iron: 250 }, durationMs: 120_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
-  { level: 5, name: 'Diamond Depth', productionTier: 'diamond', requiredHubLevel: 6, requiredResources: { cobblestone: 2_000, gold: 100, iron: 500 }, durationMs: 240_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
-  { level: 6, name: 'Ancient Depth', productionTier: 'diamond', requiredHubLevel: 7, requiredResources: { cobblestone: 4_000, diamond: 50, gold: 250, iron: 1_000 }, durationMs: 480_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 1, name: 'Shallow Tunnel', productionTier: 'shallow', requiredHubLevel: 1, requiredResources: {}, durationMs: 0, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS, settlementProgressReward: 0 },
+  { level: 2, name: 'Reinforced Mine', productionTier: 'iron', requiredHubLevel: 3, requiredResources: { cobblestone: 250, planks: 100, iron: 20 }, durationMs: 30_000, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS - MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 3, name: 'Deep Shaft', productionTier: 'redstone', requiredHubLevel: 4, requiredResources: { cobblestone: 500, copper: 50, iron: 100 }, durationMs: 60_000, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS - (MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS * 2), settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 4, name: 'Deep Mine', productionTier: 'redstone', requiredHubLevel: 5, requiredResources: { cobblestone: 1_000, gold: 50, iron: 250 }, durationMs: 120_000, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS - (MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS * 3), settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 5, name: 'Diamond Depth', productionTier: 'diamond', requiredHubLevel: 6, requiredResources: { cobblestone: 2_000, gold: 100, iron: 500 }, durationMs: 240_000, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS - (MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS * 4), settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 6, name: 'Ancient Depth', productionTier: 'diamond', requiredHubLevel: 7, requiredResources: { cobblestone: 4_000, diamond: 50, gold: 250, iron: 1_000 }, durationMs: 480_000, storageFillDurationMs: MINE_STORAGE_BASE_FILL_DURATION_MS - (MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS * 5), settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
 ];
 
 /** Capacity is a Skill Tree perk: rank 0 is the baseline one-roll cart. */
@@ -398,8 +403,6 @@ export const MINE_STORAGE_UPGRADE_COSTS: readonly ResourceCost[] = [
   { cobblestone: 300 },
 ];
 export const MINE_STORAGE_UPGRADE_SETTLEMENT_PROGRESS = SETTLEMENT_DEVELOPMENT_REWARDS.mineStorageUpgrade;
-export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
-export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
 
 export interface MineStorageUpgradeDefinition {
   fromLevel: number;
@@ -1281,9 +1284,10 @@ export function getMineStorageCargoKind(
   return visualResource === 'diamond' ? 'diamond' : visualResource === 'gold' ? 'gold' : 'stone';
 }
 
-export function getMineStorageFillDuration(mine: Pick<MineSite, 'railLevel'>): number {
-  const upgrades = Math.max(0, Math.floor(Number(mine.railLevel) || 0));
-  return Math.max(60_000, MINE_STORAGE_BASE_FILL_DURATION_MS - upgrades * MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS);
+export function getMineStorageFillDuration(mine: Pick<MineSite, 'mineLevel'>): number {
+  const mineLevel = getMineLevel(mine);
+  const definition = MINE_LEVELS[mineLevel - 1] ?? MINE_LEVELS[0];
+  return Math.max(60_000, definition.storageFillDurationMs);
 }
 
 export function getMineStorageFillState(
@@ -1296,6 +1300,65 @@ export function getMineStorageFillState(
   if (ratio < 0.6) return 'low';
   if (ratio < 1) return 'medium';
   return 'full';
+}
+
+export interface MineOperationsSummary {
+  mineId: string;
+  mineLevel: number;
+  depthName: string;
+  productionTableName: string;
+  railLevel: number;
+  railLength: MineRailLength;
+  cartCount: number;
+  cartCapacity: number;
+  tripDurationMs: number;
+  cargoRatePerSecond: number;
+  storageLevel: number;
+  storageAmount: number;
+  storageCapacity: number;
+  storageFillState: MineStorageFillState;
+  storageFillDurationMs: number;
+  storageFillTarget: number;
+  storageContents: Record<string, number>;
+  productionPaused: boolean;
+}
+
+/**
+ * The shared read model for Mining panels. Runtime systems keep their own
+ * authorities, but presentation must not recompute mine values differently in
+ * Mines, Rails and Storage views.
+ */
+export function getMineOperationsSummary(
+  state: Pick<GameState, 'mines' | 'skillRanks' | 'undergroundLayer'>,
+  mine: MineSite,
+): MineOperationsSummary {
+  const mineLevel = getMineLevel(mine);
+  const levelDefinition = MINE_LEVELS[mineLevel - 1] ?? MINE_LEVELS[0];
+  const storageAmount = getMineStorageAmount(mine);
+  const storageCapacity = getMineStorageCapacity(mine);
+  const cartCount = getMineCartCount(state);
+  const cartCapacity = getMineCartCapacity(state);
+  const tripDurationMs = getMineTripDuration(state, mine);
+  return {
+    mineId: mine.id,
+    mineLevel,
+    depthName: levelDefinition.name,
+    productionTableName: getMineProductionDefinition(state, mine).name,
+    railLevel: getMineRailLevel(mine),
+    railLength: mine.railLength,
+    cartCount,
+    cartCapacity,
+    tripDurationMs,
+    cargoRatePerSecond: cartCount * cartCapacity * 1000 / tripDurationMs,
+    storageLevel: Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)),
+    storageAmount,
+    storageCapacity,
+    storageFillState: getMineStorageFillState(storageAmount, storageCapacity),
+    storageFillDurationMs: getMineStorageFillDuration(mine),
+    storageFillTarget: MINE_STORAGE_BASE_CAPACITY,
+    storageContents: getMineStorageContents(mine),
+    productionPaused: storageAmount >= storageCapacity,
+  };
 }
 
 export interface MineUpgradeStatus<T> {
@@ -1408,7 +1471,7 @@ export function buyMineUpgrade(state: GameState, id: MineUpgradeId): boolean {
   return false;
 }
 
-export function getMineCartCount(_state: GameState): number {
+export function getMineCartCount(_state: Pick<GameState, 'mines'>): number {
   // A mine has one physical cart. Cart-related progression can improve the
   // route later, but it must never spawn additional carts on the same mine.
   return 1;

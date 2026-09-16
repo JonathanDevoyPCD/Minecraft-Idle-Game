@@ -9,13 +9,13 @@
 
 **Phase 3 — Real Mine Economy**
 
-Status: Phase 3C-B complete; Phase 3C-C is next.
+Status: Phase 3C-C complete; Phase 3D is next.
 
 ## Current Sub-Phase
 
-**Phase 3C-B - Mine-owned rail and storage upgrade definitions**
+**Phase 3C-C - Mine progression presentation and balancing**
 
-Status: Complete; Phase 3C-C is next.
+Status: Complete; Phase 3D is next.
 
 ## Current-repo audit
 
@@ -234,7 +234,7 @@ Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 3C-C — Mine progression presentation and balancing.
+Next incomplete roadmap sub-phase: Phase 3D — Offline mine economy and final Mining UI.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 
@@ -375,6 +375,30 @@ Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into co
 - Converted rail and mine-storage upgrades into mine-targeted generic construction projects with builder contention, normal-resource costs, completion-time application and Settlement Progress rewards.
 - Bumped saves from schema 10 to schema 11. Legacy rail ranks are copied into each mine during migration; current saves retain the global field only for compatibility and no Supabase table or RLS migration was required.
 - Replaced the single global Powered Rails Mining action with per-mine Rails cards and updated Storage cards to use per-mine queued actions. Browser verification confirmed independent mine cards, one-mine rail queuing, storage queuing and builder feedback.
+
+## Phase 3C-C implementation plan
+
+1. Tune the Mine Level registry with an explicit base storage-fill target that decreases by 25 seconds per completed mine-level upgrade, while preserving the roadmap's eight-second level-one cart cycle.
+2. Add one data-driven per-mine operations summary for depth, production table, rail route, cart capacity, trip rate, storage state and pause state so all Mining panels read the same values.
+3. Update the Mines, Rails and Storage panels to expose those summaries consistently, including the mine's expected base-capacity fill target and current local inventory.
+4. Add focused tests for the tuned level targets, mine-owned fill timing and summary consistency; preserve schema 11 and the existing local/Supabase save payload contract.
+
+## Phase 3C-C acceptance criteria
+
+- [x] Mine levels expose explicit, data-driven storage-fill targets: 12 minutes at level 1, reduced by 25 seconds per mine-level upgrade.
+- [x] The established level-one cart cycle remains 8 seconds and rail upgrades remain the only cart-speed input.
+- [x] Mines, Rails and Storage panels consistently show each mine's depth/table, rail level/route, one-cart capacity/rate and local storage state.
+- [x] Full local storage is visibly identified as paused, while non-full storage shows the expected fill target and current trip rate.
+- [x] No save schema, Supabase contract or mine-cart runtime migration is required.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 3C-C completion record
+
+- Added explicit storage-fill targets to the Mine Level registry: 12 minutes at level 1, reduced by 25 seconds for each mine-level upgrade. The existing eight-second level-one cart cycle remains unchanged; rail level remains the only cart-speed authority.
+- Added `getMineOperationsSummary`, a shared data-driven read model for per-mine depth, production table, rail route, one-cart capacity/rate, local storage and pause state.
+- Updated Mines, Rails and Storage panels to use the shared mine summary and show depth, route, cart capacity/rate, local contents, fullness and the expected base-capacity fill target.
+- Corrected the storage-fill target calculation to use mine level rather than rail level. No save schema, Supabase contract or runtime minecart migration was required.
+- Added regression coverage for all six fill targets and summary consistency. Browser verification confirmed the three Mining panels and zero application console errors.
 
 ## Phase 2B-A acceptance criteria
 

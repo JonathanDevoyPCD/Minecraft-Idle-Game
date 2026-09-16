@@ -13,7 +13,7 @@ Status: In progress
 
 ## Current Sub-Phase
 
-**Phase 1D-A - Global settlement storage**
+**Phase 1D-B - Storage upgrades and progression feedback**
 
 Status: Complete.
 
@@ -105,6 +105,7 @@ Phase 1B: 57 tests passed; production build and `git diff --check` passed; brows
 Phase 1C-A: 59 tests passed; production build and `git diff --check` passed; browser verified the Hub trigger/modal and disabled first upgrade on fresh production and staging pages. Staging also verified clean shared-script startup; production retained only the pre-existing favicon 404.
 Phase 1C-B: 60 tests passed; production build and `git diff --check` passed; browser verified Hub-driven category locks, the fresh Dwelling Hub modal, staging separation and the supplied favicon on production and staging routes.
 Phase 1D-A: 63 tests passed; production build and `git diff --check` passed; browser verified global storage usage in the resource brief/modal on production and staging routes.
+Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; browser verified the independent Mining storage drawer, Settlement Storage upgrade blocker and next-goal/builder feedback at desktop and compact viewport sizes with no application console errors.
 
 ## Test / Verification History
 
@@ -114,10 +115,42 @@ Phase 1D-A: 63 tests passed; production build and `git diff --check` passed; bro
 - Phase 1C-B browser: local production and staging pages loaded without application errors. Fresh UI showed Mining, Farm, Smithing, Houses and Animals build categories disabled while Paths remained available; the Hub modal showed Dwelling and Hamlet requirements; both route-relative favicon requests returned HTTP 200 with `image/x-icon`.
 - Phase 1D-A: `npm test` — 63 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. Schema 7 saves migrate to schema 8 with a default level-one Settlement Storage while preserving existing resources and Hub/runtime data.
 - Phase 1D-A browser: local production and staging pages loaded at `http://localhost:5174/Minecraft-Idle-Game/` and `/testing/` with zero application errors. The resource brief and Resources modal both displayed `Storage 0 / 500`; staging remained isolated and retained its banner.
+- Phase 1D-B: `npm test` — 67 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
+- Phase 1D-B browser: Playwright CLI verified `http://127.0.0.1:5176/Minecraft-Idle-Game/` and `/testing/` at 1280x720 and 390x844. Mining and Build Mode remained independent; Mining > Storage showed Settlement Storage at `0/500`, the data-driven upgrade action and disabled missing-resource feedback; the HUD showed next-goal and builder availability text; staging retained its isolation banner. Console error checks returned zero errors on both routes.
 
 ## Next Work
 
-Implement Phase 1D-B: storage upgrade flow and broader next-goal/builder feedback, beginning with a data-driven settlement storage upgrade through the existing construction system.
+Next incomplete sub-phase: Phase 1D-C — offline/cloud construction reconciliation and final responsive Phase 1 hardening.
+
+Phase 1D-C will audit saved active storage/Hub timers across local and Supabase restore paths, verify offline completion and builder release end-to-end, and close the remaining desktop/mobile browser acceptance evidence without changing the established progression authority.
+
+## Phase 1D-B implementation plan
+
+1. Extend the existing settlement-storage registry with data-driven upgrade costs, durations and progression rewards; keep storage capacity derived from the serialized Settlement Storage instance.
+2. Route Settlement Storage upgrades through the shared generic construction queue with a `storage` target, one-builder contention, resource payment and completion-only level changes.
+3. Preserve schema 8 compatibility by defaulting older/current storage records to `complete` and retaining any valid saved upgrade state/timer; no new Supabase schema or duplicate storage authority is required.
+4. Add a data-driven next-goal summary derived from the authoritative Hub upgrade requirements, including the first actionable missing requirement and builder availability/queue feedback.
+5. Integrate the storage upgrade and next-goal/builder feedback into the existing Mining storage panel, Settlement Hub card and construction status without changing the isometric scene or placement behavior.
+6. Add business-logic and UI-facing tests for storage upgrade affordability, builder contention, completion, migration and next-goal messaging; browser-verify the production and staging routes.
+
+## Phase 1D-B acceptance criteria
+
+- [x] Settlement Storage upgrade levels, capacities, costs, durations and rewards are defined in one data registry.
+- [x] A Settlement Storage upgrade uses the shared construction queue, consumes its configured resources once, occupies one builder and applies the new capacity only on completion.
+- [x] Queued storage upgrades wait for a builder and saved active storage upgrades resume safely after loading.
+- [x] Existing schema 8 saves without storage construction metadata remain valid with a complete level-one storage instance; no Supabase migration is required.
+- [x] The Settlement Hub card exposes the current next goal and a concise blocker/action, while builder feedback distinguishes active, available and queued work.
+- [x] Mining storage exposes the Settlement Storage upgrade and its current capacity/level without duplicating mine-local storage upgrades.
+- [x] Existing placement, mine/path, one-cart, local save, Supabase compatibility and responsive UI behavior remain intact.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 1D-B completion record
+
+- Added a data-driven Settlement Storage upgrade registry with level, capacity, resource cost, timer and Settlement Progress reward; capacity remains derived from the serialized storage level.
+- Routed storage upgrades through the existing generic construction queue with one-builder contention, one-time resource payment, saved upgrade state and completion-only capacity/progress changes.
+- Added schema 8 normalization for older storage records without construction metadata while preserving valid in-progress storage upgrades; no Supabase schema migration was required.
+- Added authoritative next-goal and builder feedback to the Settlement Hub card and construction status, and added a separate Settlement Storage upgrade tile to Mining > Storage without changing mine-local upgrades.
+- Added coverage for storage affordability, completion, builder contention, save/load resumption, schema normalization and next-goal blocker messaging.
 
 ## Phase 1D-A implementation plan
 

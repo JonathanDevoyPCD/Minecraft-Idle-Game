@@ -71,6 +71,7 @@ export interface SettlementHubInstance {
 export interface SettlementStorageInstance {
   id: 'settlement-storage';
   level: number;
+  constructionState: BuildingConstructionState;
 }
 
 export interface MineSite {
@@ -132,7 +133,7 @@ export interface LivingEntityPlan {
 
 export type ConstructionKind = 'adjacent-cell' | 'surface-3x3' | 'chunk-upgrade' | 'building-build' | 'building-upgrade';
 export type ConstructionAction = 'build' | 'upgrade' | 'expand';
-export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world' | 'hub';
+export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world' | 'hub' | 'storage';
 export type ResourceCost = Record<string, number>;
 
 export interface ConstructionProject {
@@ -180,6 +181,15 @@ export interface SettlementHubUpgradeDefinition {
   settlementProgressReward: number;
   worldPowerReward: number;
   builderSlots: number;
+}
+
+export interface SettlementStorageUpgradeDefinition {
+  fromLevel: number;
+  toLevel: number;
+  capacity: number;
+  requiredResources: ResourceCost;
+  durationMs: number;
+  settlementProgressReward: number;
 }
 
 /** Shared building data for the generic construction and upgrade flow. */
@@ -257,6 +267,41 @@ export function getSettlementStorageCapacity(state: Pick<GameState, 'settlementS
   return definition.capacity;
 }
 
+export function getSettlementStorageUpgrade(
+  state: Pick<GameState, 'settlementStorage'>,
+): SettlementStorageUpgradeDefinition | null {
+  const fromLevel = Math.max(1, Math.floor(Number(state.settlementStorage.level) || 1));
+  const target = SETTLEMENT_STORAGE_LEVELS.find((definition) => definition.level === fromLevel + 1);
+  if (!target?.upgradeCost || !target.upgradeDurationMs) return null;
+  return {
+    fromLevel,
+    toLevel: target.level,
+    capacity: target.capacity,
+    requiredResources: { ...target.upgradeCost },
+    durationMs: target.upgradeDurationMs,
+    settlementProgressReward: target.settlementProgressReward ?? 0,
+  };
+}
+
+export interface SettlementStorageUpgradeStatus {
+  definition: SettlementStorageUpgradeDefinition | null;
+  ready: boolean;
+  missing: string[];
+}
+
+export function getSettlementStorageUpgradeStatus(
+  state: Pick<GameState, 'settlementStorage' | 'resources'>,
+): SettlementStorageUpgradeStatus {
+  const definition = getSettlementStorageUpgrade(state);
+  if (!definition) return { definition: null, ready: false, missing: [] };
+  const missing: string[] = [];
+  if (state.settlementStorage.constructionState !== 'complete') missing.push('Current storage upgrade must finish');
+  Object.entries(definition.requiredResources).forEach(([resource, amount]) => {
+    if ((state.resources[resource] ?? 0) < amount) missing.push(`${amount.toLocaleString()} ${resource}`);
+  });
+  return { definition, ready: missing.length === 0, missing };
+}
+
 export function getStoredResourceTotal(state: Pick<GameState, 'resources'>): number {
   return Object.values(state.resources).reduce((total, value) => total + Math.max(0, Math.floor(Number(value) || 0)), 0);
 }
@@ -328,10 +373,10 @@ export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; r
 ];
 export const DIRT_PATH_BUILD_COST = 2;
 export const SETTLEMENT_STORAGE_LEVELS = [
-  { level: 1, capacity: 500 },
-  { level: 2, capacity: 1_500 },
-  { level: 3, capacity: 5_000 },
-  { level: 4, capacity: 10_000 },
+  { level: 1, capacity: 500, upgradeCost: null, upgradeDurationMs: 0, settlementProgressReward: 0 },
+  { level: 2, capacity: 1_500, upgradeCost: { dirt: 100, cobblestone: 100 }, upgradeDurationMs: 30_000, settlementProgressReward: 100 },
+  { level: 3, capacity: 5_000, upgradeCost: { dirt: 250, cobblestone: 500 }, upgradeDurationMs: 60_000, settlementProgressReward: 250 },
+  { level: 4, capacity: 10_000, upgradeCost: { dirt: 1_000, cobblestone: 2_500 }, upgradeDurationMs: 120_000, settlementProgressReward: 500 },
 ] as const;
 export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { width: number; depth: number; requiresPath: boolean }>> = {
   mine: { width: 1, depth: 4, requiresPath: true },
@@ -515,7 +560,7 @@ export function freshState(now = Date.now()): GameState {
     worldSeed: 184731,
     settlementProgress: 0,
     settlementHub: { id: 'settlement-hub', level: 1, constructionState: 'complete' },
-    settlementStorage: { id: 'settlement-storage', level: 1 },
+    settlementStorage: { id: 'settlement-storage', level: 1, constructionState: 'complete' },
     population: 0,
     completedStoryMilestones: [],
     chunkSize: STARTING_CHUNK_SIZE,
@@ -1314,6 +1359,22 @@ export function queueSettlementHubUpgrade(state: GameState, now = Date.now()): b
   return true;
 }
 
+/** Queue the next global Settlement Storage capacity upgrade through a builder. */
+export function queueSettlementStorageUpgrade(state: GameState, now = Date.now()): boolean {
+  const status = getSettlementStorageUpgradeStatus(state);
+  if (!status.definition || !status.ready || !canAffordResourceCost(state.resources, status.definition.requiredResources)) return false;
+  if (!queueConstruction(state, 'building-upgrade', now, undefined, {
+    action: 'upgrade',
+    targetKind: 'storage',
+    targetId: state.settlementStorage.id,
+    cost: status.definition.requiredResources,
+    durationMs: status.definition.durationMs,
+  })) return false;
+  payResourceCost(state.resources, status.definition.requiredResources);
+  state.settlementStorage.constructionState = 'upgrading';
+  return true;
+}
+
 function completeBuildingConstruction(state: GameState, project: ConstructionProject): void {
   const placement = state.placements.find((candidate) => candidate.id === project.targetId);
   if (!placement || project.targetKind !== 'building') return;
@@ -1342,6 +1403,15 @@ function completeSettlementHubUpgrade(state: GameState, project: ConstructionPro
   addSettlementProgress(state, definition.settlementProgressReward);
 }
 
+function completeSettlementStorageUpgrade(state: GameState, project: ConstructionProject): void {
+  if (project.targetKind !== 'storage' || project.action !== 'upgrade' || project.targetId !== state.settlementStorage.id) return;
+  const definition = getSettlementStorageUpgrade(state);
+  if (!definition) return;
+  state.settlementStorage.level = definition.toLevel;
+  state.settlementStorage.constructionState = 'complete';
+  addSettlementProgress(state, definition.settlementProgressReward);
+}
+
 export function completeConstructionProjects(state: GameState, now = Date.now()): ConstructionProject[] {
   const completed: ConstructionProject[] = [];
   const dueProjects = state.constructionQueue
@@ -1354,8 +1424,9 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
     if (project.kind === 'adjacent-cell') expandToFirstAdjacentCell(state, project.direction ?? 'north');
     if (project.kind === 'surface-3x3' || project.kind === 'chunk-upgrade') expandToNextChunk(state);
     if (project.targetKind === 'hub') completeSettlementHubUpgrade(state, project);
+    if (project.targetKind === 'storage') completeSettlementStorageUpgrade(state, project);
     if (project.targetKind === 'building') completeBuildingConstruction(state, project);
-    if (project.targetKind !== 'building' && project.targetKind !== 'hub') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
+    if (project.targetKind !== 'building' && project.targetKind !== 'hub' && project.targetKind !== 'storage') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   });
   assignQueuedConstruction(state, now);
@@ -1426,6 +1497,39 @@ export function getSettlementHubUpgradeStatus(
     if (!state.completedStoryMilestones.includes(milestone)) missing.push(`Story milestone: ${milestone}`);
   });
   return { definition, ready: missing.length === 0, missing };
+}
+
+export interface SettlementNextGoal {
+  kind: 'hub' | 'storage' | 'complete';
+  title: string;
+  detail: string;
+  ready: boolean;
+}
+
+/** Summarize the first actionable progression goal without creating a second authority. */
+export function getSettlementNextGoal(
+  state: Pick<GameState, 'settlementHub' | 'settlementStorage' | 'settlementProgress' | 'population' | 'resources' | 'placements' | 'completedStoryMilestones'>,
+): SettlementNextGoal {
+  const hubStatus = getSettlementHubUpgradeStatus(state);
+  if (hubStatus.definition) {
+    const nextStage = SETTLEMENT_STAGES.find((stage) => stage.id === hubStatus.definition?.targetStageId);
+    return {
+      kind: 'hub',
+      title: `Upgrade to ${nextStage?.name ?? 'next era'}`,
+      detail: hubStatus.missing[0] ?? `Ready · ${Math.ceil(hubStatus.definition.durationMs / 1000)}s construction`,
+      ready: hubStatus.ready,
+    };
+  }
+  const storageStatus = getSettlementStorageUpgradeStatus(state);
+  if (storageStatus.definition) {
+    return {
+      kind: 'storage',
+      title: `Upgrade Storage to ${storageStatus.definition.capacity.toLocaleString()}`,
+      detail: storageStatus.missing[0] ?? `Ready · ${Math.ceil(storageStatus.definition.durationMs / 1000)}s construction`,
+      ready: storageStatus.ready,
+    };
+  }
+  return { kind: 'complete', title: 'Settlement fully upgraded', detail: 'Keep building and expanding your world.', ready: false };
 }
 
 /**
@@ -1819,11 +1923,12 @@ function parseSettlementHub(value: unknown): SettlementHubInstance {
 }
 
 function parseSettlementStorage(value: unknown): SettlementStorageInstance {
-  if (!value || typeof value !== 'object') return { id: 'settlement-storage', level: 1 };
+  if (!value || typeof value !== 'object') return { id: 'settlement-storage', level: 1, constructionState: 'complete' };
   const entry = value as Partial<SettlementStorageInstance>;
   return {
     id: 'settlement-storage',
     level: Math.min(SETTLEMENT_STORAGE_LEVELS.length, Math.max(1, Math.floor(Number(entry.level) || 1))),
+    constructionState: entry.constructionState === 'upgrading' || entry.constructionState === 'building' ? entry.constructionState : 'complete',
   };
 }
 
@@ -1940,7 +2045,7 @@ function parseConstructionQueue(value: unknown, builderSlots: number): Construct
     const genericProject = {
       id: typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : `${entry.kind}-${targetId}`,
       action: entry.action === 'build' || entry.action === 'upgrade' || entry.action === 'expand' ? entry.action : 'expand' as const,
-      targetKind: entry.targetKind === 'building' || entry.targetKind === 'mine' || entry.targetKind === 'path' || entry.targetKind === 'world' || entry.targetKind === 'hub'
+      targetKind: entry.targetKind === 'building' || entry.targetKind === 'mine' || entry.targetKind === 'path' || entry.targetKind === 'world' || entry.targetKind === 'hub' || entry.targetKind === 'storage'
         ? entry.targetKind
         : 'world' as const,
       targetId,

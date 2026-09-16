@@ -45,7 +45,9 @@ import {
   getActiveBuilderCount,
   addSettlementResource,
   getBuilderSlotCount,
+  getAvailableBuilderSlots,
   getSettlementStorageCapacity,
+  getSettlementStorageUpgradeStatus,
   getStoredResourceTotal,
   getSettlementHubUpgrade,
   getSettlementHubUpgradeStatus,
@@ -55,6 +57,7 @@ import {
   getMeadowFeaturePlan,
   getNextPathTier,
   getNextSettlementStage,
+  getSettlementNextGoal,
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
@@ -62,6 +65,7 @@ import {
   movePathCell,
   moveWorldPlacement,
   queueSettlementHubUpgrade,
+  queueSettlementStorageUpgrade,
   // debugUnlockFullSkillTree,
   loadState,
   saveState as saveLocalState,
@@ -1531,6 +1535,8 @@ const settlementHubNextStage = document.querySelector<HTMLElement>('#settlement-
 const settlementHubRequirements = document.querySelector<HTMLElement>('#settlement-hub-requirements')!;
 const settlementHubUpgradeButton = document.querySelector<HTMLButtonElement>('#settlement-hub-upgrade')!;
 const settlementHubStatus = document.querySelector<HTMLElement>('#settlement-hub-status')!;
+const nextGoalTitleEl = document.querySelector<HTMLElement>('#next-goal-title')!;
+const nextGoalDetailEl = document.querySelector<HTMLElement>('#next-goal-detail')!;
 const totalXpEl = document.querySelector('#total-xp')!;
 const resourceEmeraldEl = document.querySelector('#resource-emerald')!;
 const resourceDiamondEl = document.querySelector('#resource-diamond')!;
@@ -1961,6 +1967,8 @@ function updateConstructionUi(now = Date.now()): void {
   const remainingSeconds = project.builderId ? Math.max(0, Math.ceil((project.completesAt - now) / 1000)) : 0;
   let label = project.targetKind === 'hub'
     ? 'Upgrading Settlement Hub'
+    : project.targetKind === 'storage'
+      ? 'Upgrading Settlement Storage'
     : project.kind === 'adjacent-cell'
     ? 'Preparing perimeter'
     : project.kind === 'chunk-upgrade'
@@ -2161,6 +2169,31 @@ function updateMiningUi(): void {
 
   miningMineList.replaceChildren();
   miningStorageList.replaceChildren();
+  const settlementStorageStatus = getSettlementStorageUpgradeStatus(state);
+  const settlementStorageTile = document.createElement('article');
+  settlementStorageTile.className = 'mining-info-tile mining-info-tile--storage settlement-storage-tile';
+  const settlementStorageTitle = document.createElement('strong');
+  settlementStorageTitle.textContent = 'Settlement Storage';
+  const settlementStorageAmount = document.createElement('span');
+  const settlementStorageCapacity = getSettlementStorageCapacity(state);
+  settlementStorageAmount.textContent = `${Math.floor(getStoredResourceTotal(state))}/${settlementStorageCapacity} materials`;
+  const settlementStorageState = document.createElement('small');
+  settlementStorageState.textContent = `Level ${state.settlementStorage.level} Â· ${state.settlementStorage.constructionState === 'upgrading' ? 'Upgrading' : 'Ready'}`;
+  const settlementStorageUpgrade = document.createElement('button');
+  settlementStorageUpgrade.className = 'storage-upgrade-button';
+  settlementStorageUpgrade.type = 'button';
+  settlementStorageUpgrade.dataset.settlementStorageUpgrade = 'true';
+  settlementStorageUpgrade.textContent = settlementStorageStatus.definition
+    ? `Upgrade Â· ${Object.entries(settlementStorageStatus.definition.requiredResources).map(([resource, amount]) => `${amount} ${resource}`).join(' + ')}`
+    : 'Fully upgraded';
+  settlementStorageUpgrade.disabled = !settlementStorageStatus.ready;
+  settlementStorageUpgrade.title = settlementStorageStatus.definition
+    ? settlementStorageStatus.ready
+      ? `Upgrade settlement storage to ${settlementStorageStatus.definition.capacity.toLocaleString()}`
+      : `Locked: ${settlementStorageStatus.missing.join(' Â· ')}`
+    : 'Settlement storage is fully upgraded';
+  settlementStorageTile.append(settlementStorageTitle, settlementStorageAmount, settlementStorageState, settlementStorageUpgrade);
+  miningStorageList.append(settlementStorageTile);
   if (state.mines.length === 0) {
     const empty = document.createElement('article');
     empty.className = 'mining-info-tile mining-info-tile--empty';
@@ -2339,7 +2372,11 @@ function updateUi(): void {
   const nextSettlementStage = getNextSettlementStage(state);
   levelEl.textContent = String(state.level);
   settlementStageEl.textContent = settlementStage.name;
-  builderCountEl.textContent = `Builders ${getActiveBuilderCount(state)}/${getBuilderSlotCount(state)}`;
+  const activeBuilders = getActiveBuilderCount(state);
+  const builderSlots = getBuilderSlotCount(state);
+  const availableBuilders = getAvailableBuilderSlots(state);
+  const queuedProjects = state.constructionQueue.filter((project) => !project.builderId).length;
+  builderCountEl.textContent = `Builders ${activeBuilders}/${builderSlots} Â· ${availableBuilders} free${queuedProjects > 0 ? ` Â· ${queuedProjects} queued` : ''}`;
   if (nextSettlementStage) {
     settlementProgressLabelEl.textContent = `${state.settlementProgress.toLocaleString()} / ${nextSettlementStage.requiredProgress.toLocaleString()} Growth`;
     const stageSpan = Math.max(1, nextSettlementStage.requiredProgress - settlementStage.requiredProgress);
@@ -2350,6 +2387,9 @@ function updateUi(): void {
     settlementFillEl.style.width = '100%';
   }
   updateSettlementHubUi();
+  const nextGoal = getSettlementNextGoal(state);
+  nextGoalTitleEl.textContent = nextGoal.title;
+  nextGoalDetailEl.textContent = `${nextGoal.detail} Â· ${availableBuilders > 0 ? `${availableBuilders} builder${availableBuilders === 1 ? '' : 's'} free` : queuedProjects > 0 ? `${queuedProjects} project${queuedProjects === 1 ? '' : 's'} queued` : 'All builders busy'}`;
   totalXpEl.textContent = state.totalXp.toLocaleString();
   autoRateEl.textContent = rate.toFixed(2);
   resourceEmeraldEl.textContent = (state.resources.emerald ?? 0).toLocaleString();
@@ -2994,6 +3034,13 @@ miningUpgradeButtons.forEach((button) => {
 miningDrawer.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
+  const settlementStorageButton = target.closest<HTMLButtonElement>('[data-settlement-storage-upgrade]');
+  if (settlementStorageButton) {
+    if (!queueSettlementStorageUpgrade(state)) return;
+    updateUi();
+    saveState(localStorage, state);
+    return;
+  }
   const button = target.closest<HTMLButtonElement>('[data-mine-storage-upgrade]');
   if (!button) return;
   const mineId = button.dataset.mineStorageUpgrade;

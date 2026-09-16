@@ -9,13 +9,13 @@
 
 **Phase 3 — Real Mine Economy**
 
-Status: Phase 3C-A complete; Phase 3C-B is next.
+Status: Phase 3C-B complete; Phase 3C-C is next.
 
 ## Current Sub-Phase
 
-**Phase 3C-A - Mine-owned levels and production depth**
+**Phase 3C-B - Mine-owned rail and storage upgrade definitions**
 
-Status: Complete; Phase 3C-B is next.
+Status: Complete; Phase 3C-C is next.
 
 ## Current-repo audit
 
@@ -154,15 +154,15 @@ Existing mine/path placement, mine storage behavior, one-cart animation and Supa
 
 ## Save Migration Notes
 
-Current schema version: 10.
+Current schema version: 11.
 
-Schema 4, schema 5, schema 6, schema 7, schema 8 and schema 9 saves are accepted and normalized into schema 10 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1. Schema 8 mine storage scalars migrate into typed local cobblestone inventory without changing mine clocks, IDs, orientation or upgrade ranks. Schema 9 mines without `mineLevel` inherit the effective production tier represented by their saved underground layer and discoveries, then persist as Mine level 1, 2, 3 or 5 as appropriate.
+Schema 4 through schema 10 saves are accepted and normalized into schema 11 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1. Schema 8 mine storage scalars migrate into typed local cobblestone inventory without changing mine clocks, IDs, orientation, rail length, storage capacity or effective tier. Schema 9 mines without `mineLevel` inherit the effective production tier represented by their saved underground layer and discoveries, then persist as Mine level 1, 2, 3 or 5 as appropriate. Schema 10's global `mineUpgradeRanks['rail-speed']` mirror is copied into each mine's `railLevel` when needed; schema 11 runtime never reads that global mirror.
 
 Legacy expansion-only projects are assigned stable IDs, `action: expand`, world targets, no resource cost and an available builder when loaded.
 
 Legacy cloud rows remain readable because the client accepts the previous save version and passes the payload through the same local migration before use. No Supabase table or RLS change is needed.
 
-Fresh schema 10 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot and no active projects. Each mine starts at Mine level 1 with an empty typed local inventory.
+Fresh schema 11 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot and no active projects. Each mine starts at Mine level 1, rail level 0 and storage capacity level 0 with an empty typed local inventory.
 
 ## Completed Slices
 
@@ -188,6 +188,7 @@ Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; bro
 Phase 3A: 82 tests passed; production build and `git diff --check` passed; browser verified local mine storage presentation, manual collection controls, save normalization and no application console errors. The existing cart projection remains the sole transform owner.
 Phase 3B: 87 tests passed; production build and `git diff --check` passed; browser verified weighted local production, multi-resource storage, collection, reload continuity, repeated trips and two mine orientations/rail configurations. Supabase requests were unavailable in the isolated browser session; local gameplay remained functional.
 Phase 3C-A: 91 tests passed; production build and `git diff --check` passed; browser verified mine-level upgrade feedback, builder-backed completion, per-mine production-table transition and save/reload continuity with one cart and local inventory intact.
+Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; browser verified per-mine Rails and Storage panels, independent mine-targeted queues, normal-resource payment, builder feedback and no cross-mine side effects.
 
 ## Test / Verification History
 
@@ -204,6 +205,7 @@ Phase 3C-A: 91 tests passed; production build and `git diff --check` passed; bro
 - Minecart regression: render-loop optimization had left two transform writers active: routine scene/UI reconciliation and the frame animator both positioned the same cart. The renderer is now the sole transform owner, using a shared pure projection of persisted `progressMs` and `lastUpdatedAt`. Playwright verified normal repeated travel, an east-facing rail and a reload during production; the saved mine retained one cart and its progress advanced from `1107ms` to `4707ms` after reload.
 - Phase 3B browser: Playwright CLI verified the local production route at `http://127.0.0.1:5180/Minecraft-Idle-Game/`. The Mining drawer showed `3 cargo/trip`, the mine-local storage accumulated multiple resource types, `Collect` transferred them to Settlement Storage, reload preserved the active mine and progress, and a second east-facing short-rail mine rendered with one cart. Supabase authentication/save requests returned the environment's existing unavailable-service errors; no application exception was observed.
 - Phase 3C-A browser: Playwright CLI verified the local production route at `http://127.0.0.1:5180/Minecraft-Idle-Game/`. Mining showed Mine level 1, the Reinforced Mine normal-resource cost and Shallow Stone Mine table; clicking queued a 30-second mine-targeted builder project without changing the level, completion changed the mine to level 2 and Iron Layer, and reload preserved the completed level, active local inventory and one cart. Console error checks returned zero errors.
+- Phase 3C-B browser: Playwright CLI verified the local production route at `http://127.0.0.1:5180/Minecraft-Idle-Game/` with two seeded mines. Rails showed separate Long and Medium route cards; upgrading Mine 1 queued only its rail project and completed at Rail level 1 with a 6-second cycle while Mine 2 remained at Rail level 0 with an 8-second cycle. Storage showed separate mine cards; Mine 1 storage queued independently and the builder-blocked state was visible. No application console errors were observed.
 
 ## Phase 2C-A completion record
 
@@ -232,7 +234,7 @@ Phase 3C-A: 91 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 3C-B — Mine-owned rail and storage upgrade definitions.
+Next incomplete roadmap sub-phase: Phase 3C-C — Mine progression presentation and balancing.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 
@@ -347,6 +349,32 @@ Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into co
 - Routed Mine Level upgrades through the generic builder-backed construction queue with one-time resource payment, builder contention, saved timers and completion-only level changes.
 - Bumped saves from schema 9 to schema 10. Older saves conservatively map their effective global production tier to each mine's owned level while preserving mine clocks, identity, inventory, orientation, rail length and storage capacity. No Supabase table or RLS migration was required.
 - Added Mining-menu Mine level/table/upgrade feedback and regression coverage for fresh state, level authority, upgrade affordability, queue/completion, builder contention and schema migration. Existing rail and storage upgrade ownership remains the scope of Phase 3C-B.
+
+## Phase 3C-B implementation plan
+
+1. Define rail-speed and mine-storage capacity upgrade registries owned by each `MineSite`, retaining the old global rail rank only as a migration mirror.
+2. Route both upgrade types through the generic builder-backed construction queue with target mine IDs, one-time normal-resource payment and completion-only level changes.
+3. Make per-mine rail level the sole runtime input for trip duration, Emerald chance and Mining summaries; keep physical rail length as the saved route configuration.
+4. Expose independent Rails and Storage Mining panels for every mine, with builder/resource blockers and no cross-mine side effects.
+5. Add schema 10-to-11 migration coverage for legacy global rail ranks, current mine-owned round trips, upgrade contention and unchanged Phase 3 local inventory behavior.
+
+## Phase 3C-B acceptance criteria
+
+- [x] Rail speed and Emerald chance read each mine's serialized `railLevel`; the global compatibility mirror is not used by runtime production or animation.
+- [x] Rail length remains the mine's physical route configuration and is shown per mine without changing the one-cart rule.
+- [x] Mine storage capacity remains a separate mine-owned `storageCapacityLevel` registry and does not affect other mines.
+- [x] Rail and storage actions target one mine, use normal resources and the shared builder queue, deduct once and apply only on completion.
+- [x] Schema 10 saves migrate the legacy global rail mirror into each mine without losing mine timing, identity, orientation, inventory or storage capacity.
+- [x] Phase 3A/3B behavior remains intact: local inventory, collection, full-storage pause, discoveries and weighted cargo are unchanged.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 3C-B completion record
+
+- Added `MINE_RAIL_UPGRADES` and `MINE_STORAGE_UPGRADES` as separate data-driven registries owned by each mine.
+- Made `MineSite.railLevel` authoritative for trip duration and the rare Emerald chance; removed the runtime write/read dependency on the global `mineUpgradeRanks['rail-speed']` mirror.
+- Converted rail and mine-storage upgrades into mine-targeted generic construction projects with builder contention, normal-resource costs, completion-time application and Settlement Progress rewards.
+- Bumped saves from schema 10 to schema 11. Legacy rail ranks are copied into each mine during migration; current saves retain the global field only for compatibility and no Supabase table or RLS migration was required.
+- Replaced the single global Powered Rails Mining action with per-mine Rails cards and updated Storage cards to use per-mine queued actions. Browser verification confirmed independent mine cards, one-mine rail queuing, storage queuing and builder feedback.
 
 ## Phase 2B-A acceptance criteria
 

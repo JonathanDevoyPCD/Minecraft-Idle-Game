@@ -1,4 +1,4 @@
-import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition, type SkillMilestoneRule } from './skill-tree';
+import { getSkillNodeCraftingPointCost, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition, type SkillMilestoneRule } from './skill-tree';
 
 export interface GameState {
   schemaVersion: number;
@@ -1678,7 +1678,8 @@ function hasSkillPrerequisites(state: GameState, node: SkillNodeDefinition): boo
 }
 
 export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition): boolean {
-  if (state.craftingPoints < node.cost.craftingPoints) return false;
+  const currentRank = getSkillNodeRank(state, node.id);
+  if (state.craftingPoints < getSkillNodeCraftingPointCost(node, currentRank)) return false;
   if ((node.cost.worldPower ?? 0) > state.worldPower) return false;
   return Object.entries(node.cost.resources).every(([resource, amount]) => (state.resources[resource] ?? 0) >= amount);
 }
@@ -1691,10 +1692,11 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (node.milestone && !isSkillNodeMilestoneUnlocked(state, node.milestone)) return false;
   const currentRank = getSkillNodeRank(state, node.id);
   if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
+  const craftingPointCost = getSkillNodeCraftingPointCost(node, currentRank);
   const constructionKind = node.id === SURFACE_3X3_NODE_ID ? 'chunk-upgrade' : null;
   if (constructionKind && state.constructionQueue.some((project) => project.kind === constructionKind)) return false;
 
-  state.craftingPoints -= node.cost.craftingPoints;
+  state.craftingPoints -= craftingPointCost;
   state.worldPower -= node.cost.worldPower ?? 0;
   Object.entries(node.cost.resources).forEach(([resource, amount]) => {
     state.resources[resource] = (state.resources[resource] ?? 0) - amount;

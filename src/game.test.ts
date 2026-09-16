@@ -54,6 +54,19 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.craftingPoints).toBe(0);
   });
 
+  it('charges increasing Crafting Point costs for rank upgrades', () => {
+    const state = freshState();
+    state.craftingPoints = 6;
+
+    expect(buySkillNode(state, 'harvesting-bare-hands')).toBe(true);
+    expect(state.craftingPoints).toBe(5);
+    expect(buySkillNode(state, 'harvesting-bare-hands')).toBe(true);
+    expect(state.craftingPoints).toBe(3);
+    expect(buySkillNode(state, 'harvesting-bare-hands')).toBe(true);
+    expect(state.craftingPoints).toBe(0);
+    expect(buySkillNode(state, 'harvesting-bare-hands')).toBe(false);
+  });
+
   it('levels up and carries excess XP', () => {
     const state = freshState();
     expect(addXp(state, 110)).toBe(1);

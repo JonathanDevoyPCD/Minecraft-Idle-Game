@@ -89,6 +89,7 @@ import {
   type WorldDirection,
 } from './game';
 import {
+  getSkillNodeCraftingPointCost,
   getSkillTreeBranch,
   SKILL_TREE_BRANCH_ENTRY_IDS,
   SKILL_TREE_BRANCHES,
@@ -1919,7 +1920,8 @@ function renderSkillTree(): void {
     nodeOrb.style.top = `${position.y}px`;
     nodeOrb.style.setProperty('--branch-colour', branch.colour);
     const rank = getSkillNodeRank(state, node.id);
-    nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. Rank ${rank} of ${node.maxRank}. ${stateName}. Cost ${node.cost.craftingPoints} Crafting Points.`);
+    const craftingPointCost = getSkillNodeCraftingPointCost(node, rank);
+    nodeOrb.setAttribute('aria-label', `${node.title}. ${node.description}. Rank ${rank} of ${node.maxRank}. ${stateName}. Cost ${craftingPointCost} Crafting Points.`);
     nodeOrb.title = `${node.title} · ${node.effect}${node.prerequisites.length > 0 ? ` · Requires ${node.prerequisites.map(getSkillNodeTitle).join(', ')}` : ''}`;
 
     const icon = document.createElement('img');
@@ -1956,7 +1958,8 @@ function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TR
   skillTreeInspectorState.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
   const resourceCost = Object.entries(node.cost.resources).map(([resource, amount]) => `${amount} ${resource}`).join(' · ');
   const worldPowerCost = (node.cost.worldPower ?? 0) > 0 ? `${node.cost.worldPower} World Power` : '';
-  skillTreeInspectorCost.textContent = [node.cost.craftingPoints > 0 ? `${node.cost.craftingPoints} CP` : '', resourceCost, worldPowerCost].filter(Boolean).join(' · ') || 'No cost';
+  const craftingPointCost = getSkillNodeCraftingPointCost(node, rank);
+  skillTreeInspectorCost.textContent = [craftingPointCost > 0 ? `${craftingPointCost} CP` : '', resourceCost, worldPowerCost].filter(Boolean).join(' · ') || 'No cost';
   skillTreeInspector.dataset.state = stateName;
   skillTreePurchaseButton.disabled = stateName !== 'ready';
   skillTreePurchaseButton.textContent = stateName === 'ready'

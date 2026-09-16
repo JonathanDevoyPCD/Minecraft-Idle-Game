@@ -39,6 +39,8 @@ export interface SkillNodeDefinition {
   maxRank: number;
   prerequisites: string[];
   cost: SkillNodeCost;
+  /** Crafting Point cost for each rank, indexed from rank 0 (the next rank). */
+  craftingPointCosts: readonly number[];
   discovery?: SkillDiscoveryRule;
   milestone?: SkillMilestoneRule;
 }
@@ -72,6 +74,16 @@ export const SKILL_TREE_BRANCHES: SkillBranchDefinition[] = [
 
 const EMPTY_RESOURCES: Record<string, number> = {};
 
+export const SKILL_RANK_CRAFTING_POINT_COSTS = [1, 2, 3] as const;
+
+function getCraftingPointCosts(kind: SkillNodeKind, maxRank: number): readonly number[] {
+  if (kind === 'discovery') return [0];
+  if (kind === 'capstone') return [5];
+  return Array.from({ length: maxRank }, (_, rank) =>
+    SKILL_RANK_CRAFTING_POINT_COSTS[Math.min(rank, SKILL_RANK_CRAFTING_POINT_COSTS.length - 1)],
+  );
+}
+
 function node(
   branch: SkillBranchId,
   id: string,
@@ -84,6 +96,7 @@ function node(
   worldConsequence = 'No immediate terrain change.',
   discovery?: SkillDiscoveryRule,
 ): SkillNodeDefinition {
+  const craftingPointCosts = getCraftingPointCosts(kind, maxRank);
   const definition: SkillNodeDefinition = {
     id,
     branch,
@@ -94,11 +107,13 @@ function node(
     kind,
     maxRank,
     prerequisites,
-    cost: { craftingPoints: kind === 'capstone' ? 5 : 1, resources: EMPTY_RESOURCES },
+    cost: { craftingPoints: craftingPointCosts[0] ?? 0, resources: EMPTY_RESOURCES },
+    craftingPointCosts,
   };
   if (discovery) {
     definition.discovery = discovery;
     definition.cost = { craftingPoints: 0, resources: EMPTY_RESOURCES };
+    definition.craftingPointCosts = [0];
   }
   return definition;
 }
@@ -130,6 +145,7 @@ function branchEntry(branch: SkillBranchId, title: string, requiredHubLevel: num
   );
   definition.milestone = { trigger: 'settlement-hub', required: requiredHubLevel };
   definition.cost = { craftingPoints: 0, resources: EMPTY_RESOURCES };
+  definition.craftingPointCosts = [0];
   return definition;
 }
 
@@ -285,4 +301,11 @@ export const SKILL_TREE_BY_ID = new Map(SKILL_TREE_NODES.map((skillNode) => [ski
 
 export function getSkillTreeBranch(branch: SkillBranchId): SkillNodeDefinition[] {
   return SKILL_TREE_NODES.filter((skillNode) => skillNode.branch === branch);
+}
+
+export function getSkillNodeCraftingPointCost(node: SkillNodeDefinition, rank: number): number {
+  const nextRank = Math.max(0, Math.floor(rank));
+  if (nextRank >= node.maxRank) return 0;
+  const costs = node.craftingPointCosts;
+  return costs[nextRank] ?? costs[costs.length - 1] ?? node.cost.craftingPoints;
 }

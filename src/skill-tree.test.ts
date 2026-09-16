@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SKILL_TREE_BRANCHES, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES } from './skill-tree';
+import { getSkillNodeCraftingPointCost, SKILL_TREE_BRANCHES, SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game skill tree model', () => {
   it('contains all seven planned branches', () => {
@@ -84,5 +84,16 @@ describe('Villagers - Idle World Game skill tree model', () => {
       expect(node?.cost.craftingPoints, id).toBe(0);
       expect(node?.discovery, id).toBeDefined();
     });
+  });
+
+  it('scales Crafting Point costs by purchased rank', () => {
+    const rankedNode = SKILL_TREE_BY_ID.get('harvesting-resource-yield');
+    const capstone = SKILL_TREE_BY_ID.get('harvesting-mastery');
+    const discovery = SKILL_TREE_BY_ID.get('materials-dirt-grass');
+
+    expect(rankedNode).toBeDefined();
+    expect([0, 1, 2].map((rank) => getSkillNodeCraftingPointCost(rankedNode!, rank))).toEqual([1, 2, 3]);
+    expect(getSkillNodeCraftingPointCost(capstone!, 0)).toBe(5);
+    expect(getSkillNodeCraftingPointCost(discovery!, 0)).toBe(0);
   });
 });

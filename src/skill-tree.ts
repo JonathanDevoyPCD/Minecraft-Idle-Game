@@ -7,7 +7,15 @@ export type SkillBranchId =
   | 'life-settlement'
   | 'mastery-long-term';
 
-export type SkillNodeKind = 'rank' | 'unlock' | 'milestone' | 'choice' | 'capstone';
+export type SkillNodeKind = 'rank' | 'unlock' | 'milestone' | 'choice' | 'capstone' | 'discovery';
+
+export type SkillDiscoveryTrigger = 'surface' | 'mine' | 'mine-layer' | 'biome';
+
+export interface SkillDiscoveryRule {
+  trigger: SkillDiscoveryTrigger;
+  required: number;
+  biome?: string;
+}
 
 export interface SkillNodeCost {
   craftingPoints: number;
@@ -26,6 +34,7 @@ export interface SkillNodeDefinition {
   maxRank: number;
   prerequisites: string[];
   cost: SkillNodeCost;
+  discovery?: SkillDiscoveryRule;
 }
 
 export interface SkillBranchDefinition {
@@ -67,8 +76,9 @@ function node(
   prerequisites: string[] = [],
   maxRank = 1,
   worldConsequence = 'No immediate terrain change.',
+  discovery?: SkillDiscoveryRule,
 ): SkillNodeDefinition {
-  return {
+  const definition: SkillNodeDefinition = {
     id,
     branch,
     title,
@@ -80,6 +90,24 @@ function node(
     prerequisites,
     cost: { craftingPoints: kind === 'capstone' ? 5 : 1, resources: EMPTY_RESOURCES },
   };
+  if (discovery) {
+    definition.discovery = discovery;
+    definition.cost = { craftingPoints: 0, resources: EMPTY_RESOURCES };
+  }
+  return definition;
+}
+
+function discoveryNode(
+  branch: SkillBranchId,
+  id: string,
+  title: string,
+  description: string,
+  effect: string,
+  prerequisites: string[],
+  discovery: SkillDiscoveryRule,
+  worldConsequence = 'No immediate terrain change.',
+): SkillNodeDefinition {
+  return node(branch, id, title, description, effect, 'discovery', prerequisites, 1, worldConsequence, discovery);
 }
 
 function branchEntry(branch: SkillBranchId, title: string): SkillNodeDefinition {
@@ -131,22 +159,22 @@ const toolsCrafting: SkillNodeDefinition[] = [
 
 const materialsDeepMining: SkillNodeDefinition[] = [
   branchEntry('materials-deep-mining', 'Materials and Deep Mining'),
-  node('materials-deep-mining', 'materials-dirt-grass', 'Dirt and Grass', 'Understand the first living surface.', 'Unlocks dirt and grass drops.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['materials-deep-mining']], 1, 'The starting surface becomes a registered material pool.'),
-  node('materials-deep-mining', 'materials-stone', 'Stone', 'Expose the first solid layer beneath the grass.', 'Unlocks stone and cobblestone drops.', 'unlock', ['materials-dirt-grass'], 1, 'Reveals the first underground layer.'),
-  node('materials-deep-mining', 'materials-sand', 'Sand', 'Find loose material for beaches and glass.', 'Unlocks sand drops and recipes.', 'unlock', ['materials-dirt-grass']),
-  node('materials-deep-mining', 'materials-gravel', 'Gravel', 'Harvest coarse aggregate from rough ground.', 'Unlocks gravel drops.', 'unlock', ['materials-stone']),
-  node('materials-deep-mining', 'materials-clay', 'Clay', 'Collect workable earth for building.', 'Unlocks clay drops and recipes.', 'unlock', ['materials-sand']),
-  node('materials-deep-mining', 'materials-logs-planks', 'Logs and Planks', 'Turn a forest harvest into a building material.', 'Unlocks logs, planks, and wood recipes.', 'unlock', ['materials-dirt-grass', 'world-forest-patch'], 1, 'Adds trees to eligible surface chunks.'),
-  node('materials-deep-mining', 'materials-leaves-vines', 'Leaves and Vines', 'Harvest the living parts of a forest.', 'Unlocks leaves, vines, and plant drops.', 'unlock', ['materials-logs-planks', 'tools-wooden-axe']),
-  node('materials-deep-mining', 'materials-coal', 'Coal', 'Find the first fuel-bearing ore.', 'Unlocks coal drops and fuel recipes.', 'unlock', ['materials-stone', 'tools-wooden-pickaxe']),
-  node('materials-deep-mining', 'materials-copper', 'Copper', 'Reveal a versatile early metal.', 'Unlocks copper drops and recipes.', 'unlock', ['materials-coal']),
-  node('materials-deep-mining', 'materials-iron', 'Iron', 'Reach the metal that improves every tool branch.', 'Unlocks iron drops and recipes.', 'milestone', ['materials-copper', 'tools-wooden-pickaxe']),
-  node('materials-deep-mining', 'materials-lapis', 'Lapis', 'Collect a rare blue mineral for future infusions.', 'Unlocks lapis drops.', 'unlock', ['materials-iron']),
-  node('materials-deep-mining', 'materials-redstone', 'Redstone', 'Find the material that powers mechanisms.', 'Unlocks redstone drops and automation recipes.', 'unlock', ['materials-lapis', 'automation-workshop-production']),
-  node('materials-deep-mining', 'materials-gold', 'Gold', 'Reach a valuable soft metal for advanced recipes.', 'Unlocks gold drops.', 'unlock', ['materials-iron', 'tools-iron-pickaxe']),
-  node('materials-deep-mining', 'materials-diamond', 'Diamond', 'Find the material for the strongest conventional tools.', 'Unlocks diamond drops.', 'milestone', ['materials-gold', 'materials-deep-layer']),
-  node('materials-deep-mining', 'materials-emerald', 'Emerald', 'Discover a settlement-focused rare resource.', 'Unlocks emerald drops and trade value.', 'unlock', ['materials-gold', 'life-first-villager']),
-  node('materials-deep-mining', 'materials-obsidian', 'Obsidian', 'Reach the hardest ordinary material.', 'Unlocks obsidian drops and endgame recipes.', 'unlock', ['materials-diamond', 'world-cave-entrance']),
+  discoveryNode('materials-deep-mining', 'materials-dirt-grass', 'Dirt and Grass', 'Understand the first living surface.', 'Unlocks dirt and grass drops.', [SKILL_TREE_BRANCH_ENTRY_IDS['materials-deep-mining']], { trigger: 'surface', required: 1 }, 'The starting surface becomes a registered material pool.'),
+  discoveryNode('materials-deep-mining', 'materials-stone', 'Stone', 'Expose the first solid layer beneath the grass.', 'Unlocks stone and cobblestone drops.', ['materials-dirt-grass'], { trigger: 'mine', required: 1 }, 'Reveals the first underground layer.'),
+  discoveryNode('materials-deep-mining', 'materials-sand', 'Sand', 'Find loose material for beaches and glass.', 'Unlocks sand drops and recipes.', ['materials-dirt-grass'], { trigger: 'biome', required: 1, biome: 'desert' }),
+  discoveryNode('materials-deep-mining', 'materials-gravel', 'Gravel', 'Harvest coarse aggregate from rough ground.', 'Unlocks gravel drops.', ['materials-stone'], { trigger: 'mine-layer', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-clay', 'Clay', 'Collect workable earth for building.', 'Unlocks clay drops and recipes.', ['materials-sand'], { trigger: 'biome', required: 1, biome: 'swamp' }),
+  discoveryNode('materials-deep-mining', 'materials-logs-planks', 'Logs and Planks', 'Turn a forest harvest into a building material.', 'Unlocks logs, planks, and wood recipes.', ['materials-dirt-grass', 'world-forest-patch'], { trigger: 'biome', required: 1, biome: 'forest' }, 'Adds trees to eligible surface chunks.'),
+  discoveryNode('materials-deep-mining', 'materials-leaves-vines', 'Leaves and Vines', 'Harvest the living parts of a forest.', 'Unlocks leaves, vines, and plant drops.', ['materials-logs-planks', 'tools-wooden-axe'], { trigger: 'biome', required: 1, biome: 'forest' }),
+  discoveryNode('materials-deep-mining', 'materials-coal', 'Coal', 'Find the first fuel-bearing ore.', 'Unlocks coal drops and fuel recipes.', ['materials-stone', 'tools-wooden-pickaxe'], { trigger: 'mine', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-copper', 'Copper', 'Reveal a versatile early metal.', 'Unlocks copper drops and recipes.', ['materials-coal'], { trigger: 'mine', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-iron', 'Iron', 'Reach the metal that improves every tool branch.', 'Unlocks iron drops and recipes.', ['materials-copper', 'tools-wooden-pickaxe'], { trigger: 'mine-layer', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-lapis', 'Lapis', 'Collect a rare blue mineral for future infusions.', 'Unlocks lapis drops.', ['materials-iron'], { trigger: 'mine-layer', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-redstone', 'Redstone', 'Find the material that powers mechanisms.', 'Unlocks redstone drops and automation recipes.', ['materials-lapis', 'automation-workshop-production'], { trigger: 'mine-layer', required: 1 }),
+  discoveryNode('materials-deep-mining', 'materials-gold', 'Gold', 'Reach a valuable soft metal for advanced recipes.', 'Unlocks gold drops.', ['materials-iron', 'tools-iron-pickaxe'], { trigger: 'mine-layer', required: 2 }),
+  discoveryNode('materials-deep-mining', 'materials-diamond', 'Diamond', 'Find the material for the strongest conventional tools.', 'Unlocks diamond drops.', ['materials-gold', 'materials-deep-layer'], { trigger: 'mine-layer', required: 2 }),
+  discoveryNode('materials-deep-mining', 'materials-emerald', 'Emerald', 'Discover a settlement-focused rare resource.', 'Unlocks emerald drops and trade value.', ['materials-gold', 'life-first-villager'], { trigger: 'mine-layer', required: 2 }),
+  discoveryNode('materials-deep-mining', 'materials-obsidian', 'Obsidian', 'Reach the hardest ordinary material.', 'Unlocks obsidian drops and endgame recipes.', ['materials-diamond', 'world-cave-entrance'], { trigger: 'mine-layer', required: 2 }),
   node('materials-deep-mining', 'materials-deep-layer', 'Deep Mining Layer', 'Open a deeper stratum with new resource tables.', 'Unlocks deeper terrain and mining depth.', 'milestone', ['materials-stone', 'world-underground-layer'], 1, 'Adds a visible lower layer beneath the island.'),
   node('materials-deep-mining', 'materials-rare-ore-veins', 'Rare Ore Veins', 'Increase the chance of valuable veins appearing.', '+25% rare ore vein frequency.', 'unlock', ['materials-deep-layer', 'materials-diamond']),
   node('materials-deep-mining', 'materials-bedrock-boundary', 'Bedrock Boundary', 'Mark the permanent bottom of the world.', 'Unlocks the unbreakable depth boundary.', 'capstone', ['materials-obsidian', 'materials-rare-ore-veins'], 1, 'Adds bedrock as the final visible world boundary.'),

@@ -61,6 +61,7 @@ import {
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
+  syncDiscoveredSkillNodes,
   isTraderUnlocked,
   movePathCell,
   moveWorldPlacement,
@@ -1638,6 +1639,11 @@ const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-b
 let hoveredOre: OreNode | null = null;
 type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
 type BuildAction = 'move' | 'destroy' | null;
+const BUILD_ITEM_MODES: Partial<Record<BuildItemId, Exclude<BuildMode, null>>> = {
+  mine: 'mine',
+  path: 'path',
+  'path-upgrade': 'path-upgrade',
+};
 type PlacedItemTarget = { kind: 'mine'; id: string } | { kind: 'path'; x: number; z: number };
 type ActionVisualMode = 'none' | 'hover' | 'move' | 'move-invalid' | 'destroy';
 type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
@@ -1711,6 +1717,7 @@ function updateAudioUi(): void {
 function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' | 'maxed' {
   if (getSkillNodeRank(state, node.id) >= node.maxRank) return 'maxed';
   if (!node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0)) return 'locked';
+  if (node.kind === 'discovery') return 'available';
   return canAffordSkillNode(state, node) ? 'ready' : 'available';
 }
 
@@ -1794,6 +1801,7 @@ function changeSkillTreeZoom(direction: number): void {
 }
 
 function renderSkillTree(): void {
+  syncDiscoveredSkillNodes(state);
   setSkillTreeBranchFocus(null);
   skillTreeGraph.replaceChildren();
   skillTreeInspector.hidden = true;
@@ -1949,7 +1957,7 @@ function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TR
   skillTreePurchaseButton.disabled = stateName !== 'ready';
   skillTreePurchaseButton.textContent = stateName === 'ready'
     ? rank > 0 ? `Upgrade Rank ${rank + 1}` : 'Unlock Node'
-    : stateName === 'maxed' ? 'Fully Unlocked' : stateName === 'locked' ? 'Requires Previous Nodes' : 'Need More Resources';
+    : stateName === 'maxed' ? 'Fully Unlocked' : stateName === 'locked' ? 'Requires Previous Nodes' : node.kind === 'discovery' ? 'Awaiting Discovery' : 'Need More Resources';
   selectedSkillNodeId = node.id;
   skillTreeViewport.classList.add('has-inspector');
   skillTreeInspector.hidden = false;
@@ -2047,7 +2055,11 @@ function updateBuildUi(): void {
     const itemId = category ? buildCategoryItems[category] : undefined;
     const unlock = itemId ? getBuildItemUnlockStatus(state, itemId) : { unlocked: true, missing: [] };
     const isSelected = buildDrawerView === 'categories' && button.dataset.buildCategory === buildDrawerCategory;
-    button.disabled = !unlock.unlocked;
+    // Locked categories remain clickable so their submenu can explain the
+    // data-driven requirements instead of becoming dead controls.
+    button.disabled = false;
+    button.setAttribute('aria-disabled', 'false');
+    button.classList.toggle('is-locked', !unlock.unlocked);
     button.title = unlock.unlocked
       ? `Open ${button.textContent?.trim() ?? 'build'} category`
       : `Locked: ${unlock.missing.map((entry) => entry.label).join(' · ')}`;
@@ -2070,8 +2082,10 @@ function updateBuildUi(): void {
       ? getBuildItemUnlockStatus(state, item as BuildItemId)
       : { unlocked: true, missing: [] };
     const isMineLocked = item === 'mine' && (getAvailableMineSites(state) <= 0 || !itemUnlock.unlocked);
+    const isUnsupported = Boolean(item && item !== 'back' && !isEmpty && !BUILD_ITEM_MODES[item as BuildItemId]);
     button.hidden = !isVisible;
-    button.disabled = isEmpty || isMineLocked;
+    button.disabled = isEmpty || isMineLocked || isUnsupported || (item !== 'back' && !isEmpty && !itemUnlock.unlocked);
+    button.setAttribute('aria-disabled', String(button.disabled));
     if (item === 'mine') {
       if (isMineLocked) {
         button.title = itemUnlock.missing.length > 0
@@ -2081,6 +2095,10 @@ function updateBuildUi(): void {
         const available = getAvailableMineSites(state);
         button.title = `${available} mine blueprint${available === 1 ? '' : 's'} available`;
       }
+    } else if (item && !isEmpty && item !== 'back' && !itemUnlock.unlocked) {
+      button.title = `Locked: ${itemUnlock.missing.map((entry) => entry.label).join(' Â· ')}`;
+    } else if (isUnsupported) {
+      button.title = 'Available in a later build slice';
     }
     button.setAttribute('aria-pressed', String(item === activeBuildItem));
     button.classList.toggle('selected', item === activeBuildItem);
@@ -2379,6 +2397,7 @@ function updateSettlementHubUi(): void {
 }
 
 function updateUi(): void {
+  syncDiscoveredSkillNodes(state);
   const rate = state.mines.length > 0 ? getMineCartCount(state) * 1000 / getMineTripDuration(state) : 0;
   const settlementStage = getSettlementStage(state);
   const nextSettlementStage = getNextSettlementStage(state);
@@ -3020,9 +3039,10 @@ buildCategoryItemButtons.forEach((button) => {
       updateUi();
       return;
     }
-    if (item === 'mine') beginNewMinePlacement();
-    if (item === 'path') pathButton.click();
-    if (item === 'path-upgrade') pathUpgradeButton.click();
+    const mode = item ? BUILD_ITEM_MODES[item as BuildItemId] : undefined;
+    if (mode === 'mine') beginNewMinePlacement();
+    if (mode === 'path') pathButton.click();
+    if (mode === 'path-upgrade') pathUpgradeButton.click();
   });
 });
 miningCategoryButtons.forEach((button) => {

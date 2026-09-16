@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2A complete; Phase 2B is next.
+Status: Phase 2B in progress; Phase 2B-A complete.
 
 ## Current Sub-Phase
 
-**Phase 2A - Mine upgrade consolidation and Emerald deadlock removal**
+**Phase 2B-A - Automatic material discoveries and Build Mode navigation**
 
-Status: Complete.
+Status: Complete; Phase 2B-B is next.
 
 ## Current-repo audit
 
@@ -70,9 +70,10 @@ The current code now has one serialized generic `constructionQueue` with builder
 
 ### Phase 2B - Skill Tree currency and discovery ownership
 
-- Make branch entries free Settlement-Hub milestones and introduce increasing Crafting Point rank costs.
-- Convert material nodes from purchased unlocks to data-driven discoveries triggered by eligible world/mining conditions.
-- Migrate existing purchased material/branch ranks conservatively so no player loses discovered content.
+- Phase 2B-A: Convert natural material nodes into free, data-driven discoveries triggered by eligible surface, mine, layer and biome conditions; preserve legacy purchased ranks.
+- Phase 2B-B: Make branch entries free Settlement-Hub milestones and expose branch availability from Hub progression.
+- Phase 2B-C: Introduce increasing Crafting Point rank costs for Skill Tree skills and blueprints.
+- Phase 2B-D: Migrate any remaining purchased material/branch ranks conservatively so no player loses discovered content.
 
 ### Phase 2C - Legacy authority retirement and World Power boundary
 
@@ -131,6 +132,7 @@ Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; bro
 Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; browser verified local and cloud-shaped restore reconciliation, offline progress feedback, independent drawers and responsive production/staging shells at desktop and compact viewport sizes with no application console errors.
 Minecart regression fix: 70 tests passed; production build and `git diff --check` passed; browser verified repeated long-rail travel, an east-facing short rail, and active save/reload continuity with exactly one cart per mine.
 Phase 2A: 72 tests passed; production build and `git diff --check` passed; browser verified the independent Mining drawer, normal-resource mine upgrade labels and the removal of the duplicate Storage Carts upgrade entry.
+Phase 2B-A: 74 tests passed; production build and `git diff --check` passed; browser verified locked Build Mode categories remain semantically clickable, open their submenus with lock feedback, and the existing mine/path item flow remains available.
 
 ## Test / Verification History
 
@@ -148,9 +150,26 @@ Phase 2A: 72 tests passed; production build and `git diff --check` passed; brows
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2B — Skill Tree currency and discovery ownership.
+Next incomplete roadmap sub-phase: Phase 2B-B — Free Hub-gated branch entries.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A is complete and pushed after the minecart regression fix.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A and 2B-A are complete and pushed.
+
+## Phase 2B-A acceptance criteria
+
+- [x] Natural material nodes are represented as free, data-driven discovery nodes rather than Crafting Point purchases.
+- [x] Surface, mine, mine-layer and biome conditions automatically grant eligible discoveries while preserving previously purchased legacy ranks.
+- [x] Discovery nodes cannot be manually purchased and are reflected as awaiting/discovered in the existing Skill Tree UI.
+- [x] Locked Build Mode categories remain semantically clickable, open their category page, and show locked item prerequisites instead of dead controls.
+- [x] Existing mine/path placement and save behavior remain intact.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 2B-A completion record
+
+- Added the data-driven `discovery` Skill Tree node kind and discovery rules for natural materials.
+- Added centralized discovery synchronization for fresh state, mine placement, mine operation, skill purchases and save loading; legacy positive ranks are retained.
+- Updated Skill Tree presentation so discoveries show `Awaiting Discovery` rather than a purchasable action.
+- Kept every Build Mode category navigable when locked and added visible category item previews with prerequisite feedback; implemented buildable items retain their existing mode handlers.
+- No save schema or Supabase migration was required; saved positive material ranks remain valid and unearned discoveries are not granted without their world condition.
 
 ## Phase 2A acceptance criteria
 

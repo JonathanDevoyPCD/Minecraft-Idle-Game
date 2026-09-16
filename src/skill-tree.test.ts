@@ -59,4 +59,26 @@ describe('Villagers - Idle World Game skill tree model', () => {
     ]));
     expect(capstones.length).toBeGreaterThanOrEqual(6);
   });
+
+  it('models natural materials as free discovery nodes', () => {
+    const discoveryIds = [
+      'materials-dirt-grass',
+      'materials-stone',
+      'materials-coal',
+      'materials-copper',
+      'materials-iron',
+      'materials-lapis',
+      'materials-redstone',
+      'materials-gold',
+      'materials-diamond',
+      'materials-emerald',
+      'materials-obsidian',
+    ];
+    discoveryIds.forEach((id) => {
+      const node = SKILL_TREE_BY_ID.get(id);
+      expect(node?.kind, id).toBe('discovery');
+      expect(node?.cost.craftingPoints, id).toBe(0);
+      expect(node?.discovery, id).toBeDefined();
+    });
+  });
 });

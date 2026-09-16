@@ -1,4 +1,4 @@
-import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillNodeDefinition } from './skill-tree';
+import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition } from './skill-tree';
 
 export interface GameState {
   schemaVersion: number;
@@ -544,7 +544,7 @@ export function getExpansionChunkOrigin(expansionNumber: number, direction: Worl
 
 export function freshState(now = Date.now()): GameState {
   const worldCells = createSquareChunkCells(STARTING_CHUNK_SIZE);
-  return {
+  const state: GameState = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     level: 1,
     xp: 0,
@@ -576,6 +576,8 @@ export function freshState(now = Date.now()): GameState {
     mineUpgradeRanks: {},
     lastSavedAt: now,
   };
+  syncDiscoveredSkillNodes(state);
+  return state;
 }
 
 export function createSquareChunkCells(size: number, biome: BiomeId = 'meadow'): WorldCell[] {
@@ -991,6 +993,7 @@ export function unlockStarterMine(
     : `mine-${state.mines.length + 1}`;
   state.mines.push(createMineSite(id, now, x, z, direction, railLength));
   state.placements.push(createWorldPlacement('mine', id, x, z, direction, railLength));
+  syncDiscoveredSkillNodes(state);
   syncAvailableMineSites(state);
   return true;
 }
@@ -1185,6 +1188,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
   });
   const transfer = transferResourcesToSettlement(state, result.resources);
   result.resources = transfer.transferred;
+  syncDiscoveredSkillNodes(state);
   return result;
 }
 
@@ -1622,6 +1626,23 @@ export function getSkillNodeRank(state: Pick<GameState, 'skillRanks'>, nodeId: s
   return Math.max(0, Math.floor(Number(state.skillRanks[nodeId]) || 0));
 }
 
+function satisfiesDiscoveryRule(state: GameState, rule: SkillDiscoveryRule): boolean {
+  if (rule.trigger === 'surface') return state.worldCells.length >= rule.required;
+  if (rule.trigger === 'mine') return state.mines.length >= rule.required;
+  if (rule.trigger === 'mine-layer') return state.undergroundLayer >= rule.required;
+  return state.worldCells.some((cell) => cell.biome === rule.biome);
+}
+
+/** Apply gameplay-earned material discoveries without charging Crafting Points. */
+export function syncDiscoveredSkillNodes(state: GameState): void {
+  SKILL_TREE_NODES.forEach((node) => {
+    if (node.kind !== 'discovery' || !node.discovery || getSkillNodeRank(state, node.id) > 0) return;
+    if (!satisfiesDiscoveryRule(state, node.discovery)) return;
+    if (!node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0)) return;
+    setSkillNodeRank(state, node.id, 1);
+  });
+}
+
 function setSkillNodeRank(state: GameState, nodeId: string, rank: number): void {
   if (rank <= 0) delete state.skillRanks[nodeId];
   else state.skillRanks[nodeId] = rank;
@@ -1640,6 +1661,8 @@ export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition):
 export function buySkillNode(state: GameState, nodeId: string, now = Date.now()): boolean {
   const node = SKILL_TREE_BY_ID.get(nodeId);
   if (!node) return false;
+  syncDiscoveredSkillNodes(state);
+  if (node.kind === 'discovery') return false;
   const currentRank = getSkillNodeRank(state, node.id);
   if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
   const constructionKind = node.id === SURFACE_3X3_NODE_ID ? 'chunk-upgrade' : null;
@@ -1662,6 +1685,7 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
+  syncDiscoveredSkillNodes(state);
   return true;
 }
 
@@ -1927,6 +1951,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
     assignQueuedConstruction(restored, now);
+    syncDiscoveredSkillNodes(restored);
     syncAvailableMineSites(restored);
     return restored;
   } catch {

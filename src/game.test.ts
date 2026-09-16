@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueConstruction, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -110,7 +110,10 @@ describe('Villagers - Idle World Game progression', () => {
 
   it('starts on a procedural 7×7 chunk with a three-tile path line and one free mine site', () => {
     const state = freshState();
-    expect(state.schemaVersion).toBe(4);
+    expect(state.schemaVersion).toBe(5);
+    expect(getBuilderSlotCount(state)).toBe(1);
+    expect(getActiveBuilderCount(state)).toBe(0);
+    expect(getAvailableBuilderSlots(state)).toBe(1);
     expect(state.chunkSize).toBe(STARTING_CHUNK_SIZE);
     expect(state.worldCells).toHaveLength(49);
     expect(state.pathCells.map((cell) => `${cell.x},${cell.z}`)).toEqual(['0,3', '1,3', '2,3']);
@@ -228,6 +231,23 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.settlementProgress).toBe(400);
   });
 
+  it('assigns one builder and starts queued projects when the builder is released', () => {
+    const state = freshState();
+    const now = 1_000;
+    expect(queueConstruction(state, 'adjacent-cell', now, 'north')).toBe(true);
+    expect(queueConstruction(state, 'surface-3x3', now, 'east')).toBe(true);
+    expect(getActiveBuilderCount(state)).toBe(1);
+    expect(getAvailableBuilderSlots(state)).toBe(0);
+    expect(state.constructionQueue[0]).toMatchObject({ action: 'expand', targetKind: 'world', builderId: 'builder-1', cost: {} });
+    expect(state.constructionQueue[1]).toMatchObject({ action: 'expand', targetKind: 'world', builderId: null, startedAt: 0, completesAt: 0 });
+
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'])).toHaveLength(1);
+    expect(state.constructionQueue[0].builderId).toBe('builder-1');
+    expect(state.constructionQueue[0].startedAt).toBe(now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
+    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell'] + CONSTRUCTION_DURATIONS_MS['surface-3x3'])).toHaveLength(1);
+    expect(getActiveBuilderCount(state)).toBe(0);
+  });
+
   it('progresses through deliberately spaced settlement stages', () => {
     const state = freshState();
     expect(SETTLEMENT_STAGES.map((stage) => stage.requiredProgress)).toEqual([0, 500, 2_000, 7_500, 25_000, 75_000, 200_000, 500_000]);
@@ -308,6 +328,7 @@ describe('Villagers - Idle World Game progression', () => {
   it('migrates prototype upgrade counters into stable tree nodes', () => {
     const storage = {
       getItem: () => JSON.stringify({
+        schemaVersion: 4,
         level: 6,
         xp: 0,
         totalXp: 900,
@@ -322,8 +343,21 @@ describe('Villagers - Idle World Game progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state).toMatchObject({ schemaVersion: 4, worldRank: 0, worldPower: 0, chunkSize: 7 });
-    expect(state.skillRanks).toEqual({});
+    expect(state).toMatchObject({ schemaVersion: 5, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1 });
+    expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
+  });
+
+  it('migrates schema 4 expansion projects into generic builder projects', () => {
+    const saved = {
+      ...freshState(0),
+      schemaVersion: 4,
+      constructionQueue: [{ kind: 'adjacent-cell', startedAt: 1000, completesAt: 11000, direction: 'north' }],
+    };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 2000);
+    expect(state.schemaVersion).toBe(5);
+    expect(state.constructionQueue[0]).toMatchObject({ action: 'expand', targetKind: 'world', targetId: 'adjacent-cell-north', builderId: 'builder-1', cost: {} });
+    expect(state.constructionQueue[0].completesAt).toBe(11000);
   });
 
   it('preserves a spent World Power balance when loading a current save', () => {

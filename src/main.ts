@@ -20,6 +20,7 @@ import {
   canAffordSkillNode,
   calculateOfflineXp,
   completeConstructionProjects,
+  CONSTRUCTION_DURATIONS_MS,
   collectOreBonus,
   dispatchMineCart,
   destroyPathCell,
@@ -40,6 +41,8 @@ import {
   getMineStorageFillState,
   getMineStorageUpgradeCost,
   getMineTripDuration,
+  getActiveBuilderCount,
+  getBuilderSlotCount,
   getLivingEntityPlan,
   getMineCargoKind,
   getMeadowFeaturePlan,
@@ -1508,6 +1511,7 @@ updateWorldScene();
 const levelEl = document.querySelector('#level')!;
 const settlementStageEl = document.querySelector('#settlement-stage')!;
 const settlementProgressLabelEl = document.querySelector('#settlement-progress-label')!;
+const builderCountEl = document.querySelector('#builder-count')!;
 const settlementFillEl = document.querySelector<HTMLElement>('#settlement-fill')!;
 const totalXpEl = document.querySelector('#total-xp')!;
 const resourceEmeraldEl = document.querySelector('#resource-emerald')!;
@@ -1932,16 +1936,18 @@ function updateConstructionUi(now = Date.now()): void {
     constructionStatusEl.hidden = true;
     return;
   }
-  const duration = Math.max(1, project.completesAt - project.startedAt);
-  const elapsed = Math.max(0, Math.min(duration, now - project.startedAt));
-  const remainingSeconds = Math.max(0, Math.ceil((project.completesAt - now) / 1000));
+  const duration = Math.max(1, project.completesAt - project.startedAt || CONSTRUCTION_DURATIONS_MS[project.kind]);
+  const elapsed = project.builderId ? Math.max(0, Math.min(duration, now - project.startedAt)) : 0;
+  const remainingSeconds = project.builderId ? Math.max(0, Math.ceil((project.completesAt - now) / 1000)) : 0;
   const label = project.kind === 'adjacent-cell'
     ? 'Preparing perimeter'
     : project.kind === 'chunk-upgrade'
       ? `Expanding to ${state.chunkSize + 2}×${state.chunkSize + 2} chunk`
       : 'Expanding chunk';
   constructionLabelEl.textContent = label;
-  constructionTimeEl.textContent = now < project.startedAt
+  constructionTimeEl.textContent = !project.builderId
+    ? 'Queued - waiting for builder'
+    : now < project.startedAt
     ? `Queued · starts in ${Math.ceil((project.startedAt - now) / 1000)}s`
     : `${remainingSeconds}s remaining`;
   constructionFillEl.style.width = `${elapsed / duration * 100}%`;
@@ -2252,6 +2258,7 @@ function updateUi(): void {
   const nextSettlementStage = getNextSettlementStage(state);
   levelEl.textContent = String(state.level);
   settlementStageEl.textContent = settlementStage.name;
+  builderCountEl.textContent = `Builders ${getActiveBuilderCount(state)}/${getBuilderSlotCount(state)}`;
   if (nextSettlementStage) {
     settlementProgressLabelEl.textContent = `${state.settlementProgress.toLocaleString()} / ${nextSettlementStage.requiredProgress.toLocaleString()} Growth`;
     const stageSpan = Math.max(1, nextSettlementStage.requiredProgress - settlementStage.requiredProgress);

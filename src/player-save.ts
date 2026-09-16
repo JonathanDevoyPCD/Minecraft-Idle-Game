@@ -15,7 +15,7 @@ interface RemoteSaveRow {
 function isGameState(value: unknown): value is GameState {
   return Boolean(value)
     && typeof value === 'object'
-    && Number((value as Partial<GameState>).schemaVersion) === SAVE_SCHEMA_VERSION;
+    && [SAVE_SCHEMA_VERSION, SAVE_SCHEMA_VERSION - 1].includes(Number((value as Partial<GameState>).schemaVersion));
 }
 
 export class PlayerSaveSync {

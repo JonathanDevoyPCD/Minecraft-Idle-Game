@@ -18,7 +18,6 @@ import {
   canMoveWorldPlacement,
   canPlaceMine,
   canAffordSkillNode,
-  calculateOfflineXp,
   completeConstructionProjects,
   CONSTRUCTION_DURATIONS_MS,
   collectOreBonus,
@@ -66,6 +65,7 @@ import {
   moveWorldPlacement,
   queueSettlementHubUpgrade,
   queueSettlementStorageUpgrade,
+  reconcileElapsedProgress,
   // debugUnlockFullSkillTree,
   loadState,
   saveState as saveLocalState,
@@ -1518,8 +1518,11 @@ const PAN_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown'
 let isOrbiting = false;
 let lastOrbitX = 0;
 let lastOrbitY = 0;
-const initialMineResult = advanceMineOperations(state, Date.now());
-const offlineXp = initialMineResult.trips > 0 ? initialMineResult.xp : calculateOfflineXp(state);
+const initialReconciliation = reconcileElapsedProgress(state, Date.now());
+const offlineXp = initialReconciliation.offlineXp;
+if (initialReconciliation.completedProjects.length > 0 || initialReconciliation.mineResult.trips > 0 || offlineXp > 0) {
+  saveState(localStorage, state);
+}
 updateWorldScene();
 
 const levelEl = document.querySelector('#level')!;
@@ -3188,6 +3191,12 @@ void playerSaveSync.initialize(state, hasLocalSave).then((remoteState) => {
   if (!hasLocalSave && localStorage.getItem(SAVE_KEY) !== null) return;
   localStorage.setItem(SAVE_KEY, JSON.stringify(remoteState));
   state = loadState(localStorage);
+  const remoteReconciliation = reconcileElapsedProgress(state, Date.now());
+  saveState(localStorage, state);
+  if (remoteReconciliation.offlineXp > 0) {
+    document.querySelector('#offline-xp')!.textContent = `${remoteReconciliation.offlineXp.toLocaleString()} XP`;
+    offlineModal.hidden = false;
+  }
   updateWorldScene();
   updateUi();
 }).catch((error: unknown) => {

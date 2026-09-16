@@ -9,11 +9,11 @@
 
 **Phase 1 — Progression Foundation**
 
-Status: In progress
+Status: Complete
 
 ## Current Sub-Phase
 
-**Phase 1D-B - Storage upgrades and progression feedback**
+**Phase 1D-C - Offline/cloud reconciliation and responsive hardening**
 
 Status: Complete.
 
@@ -69,7 +69,7 @@ The current code now has one serialized generic `constructionQueue` with builder
 - [x] Construction timers integrated with offline/save progression.
 - [x] Existing mine/path placement continues to function.
 - [x] Save migration is implemented and tested.
-- [ ] Desktop/mobile player flow is browser-verified.
+- [x] Desktop/mobile player flow is browser-verified.
 
 ## Implementation Notes
 
@@ -106,6 +106,7 @@ Phase 1C-A: 59 tests passed; production build and `git diff --check` passed; bro
 Phase 1C-B: 60 tests passed; production build and `git diff --check` passed; browser verified Hub-driven category locks, the fresh Dwelling Hub modal, staging separation and the supplied favicon on production and staging routes.
 Phase 1D-A: 63 tests passed; production build and `git diff --check` passed; browser verified global storage usage in the resource brief/modal on production and staging routes.
 Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; browser verified the independent Mining storage drawer, Settlement Storage upgrade blocker and next-goal/builder feedback at desktop and compact viewport sizes with no application console errors.
+Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; browser verified local and cloud-shaped restore reconciliation, offline progress feedback, independent drawers and responsive production/staging shells at desktop and compact viewport sizes with no application console errors.
 
 ## Test / Verification History
 
@@ -117,12 +118,37 @@ Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; bro
 - Phase 1D-A browser: local production and staging pages loaded at `http://localhost:5174/Minecraft-Idle-Game/` and `/testing/` with zero application errors. The resource brief and Resources modal both displayed `Storage 0 / 500`; staging remained isolated and retained its banner.
 - Phase 1D-B: `npm test` — 67 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
 - Phase 1D-B browser: Playwright CLI verified the production route `http://127.0.0.1:5176/Minecraft-Idle-Game/` at 1280x720 and 390x844, plus the staging route `/testing/` at 1280x720. Mining and Build Mode remained independent; Mining > Storage showed Settlement Storage at `0/500`, the data-driven upgrade action and disabled missing-resource feedback; the HUD showed next-goal and builder availability text; staging retained its isolation banner. Console error checks returned zero errors on both routes.
+- Phase 1D-C: `npm test` — 69 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
+- Phase 1D-C browser: Playwright CLI verified production at `http://127.0.0.1:5176/Minecraft-Idle-Game/` and staging at `/testing/` on desktop and compact viewports. Restored no-mine state displayed offline XP once; Mining and Build Mode stayed independent; next-goal, builder and storage feedback rendered; staging retained its isolation banner; console error checks returned zero errors.
 
 ## Next Work
 
-Next incomplete sub-phase: Phase 1D-C — offline/cloud construction reconciliation and final responsive Phase 1 hardening.
+Next incomplete roadmap sub-phase: Phase 2 — Economy Cleanup (not started).
 
-Phase 1D-C will audit saved active storage/Hub timers across local and Supabase restore paths, verify offline completion and builder release end-to-end, and close the remaining desktop/mobile browser acceptance evidence without changing the established progression authority.
+Phase 1 is complete. Phase 2 must remain a separate future slice covering duplicate upgrade-path removal, the Emerald/dependency cleanup, discovery ownership and economy migration; no Phase 2 implementation is included in this commit.
+
+## Phase 1D-C implementation plan
+
+1. Add one shared elapsed-progress reconciliation operation that completes due generic construction, advances mine production and awards no-mine offline XP while advancing the save watermark exactly once.
+2. Run that operation for the initial local save and again after a newer Supabase save is hydrated, then persist the reconciled cloud state so active timers and offline gains cannot be lost or replayed.
+3. Preserve the existing save schema and Supabase table contract; add focused tests for local/cloud-shaped restoration, construction completion, builder release, offline XP and idempotency.
+4. Browser-verify production and staging at desktop and compact viewports, including the next-goal/storage feedback and absence of runtime errors.
+
+## Phase 1D-C acceptance criteria
+
+- [x] A saved Hub or Settlement Storage construction project completes from elapsed wall-clock time after local restore, releases its builder and applies completion effects once.
+- [x] A newer Supabase-restored save receives the same elapsed construction and offline reconciliation as a local restore before it replaces the active state.
+- [x] No-mine offline XP is awarded once per save watermark, bounded by the existing offline-efficiency rule, and is not replayed by subsequent frames or saves.
+- [x] Reconciled state is persisted locally and queued for cloud sync without changing the schema or Supabase table/RLS contract.
+- [x] Desktop and compact production/staging flows remain responsive, show actionable progression feedback and produce no application console errors.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 1D-C completion record
+
+- Added the canonical `reconcileElapsedProgress` operation for due construction, mine production and no-mine offline XP, with a single save-watermark advance to prevent replay.
+- Applied the same reconciliation to initial local restore and newer Supabase state hydration, immediately persisting reconciled state and re-queuing it for cloud sync.
+- Added tests for elapsed storage construction completion, builder release, offline XP restoration and idempotency.
+- Browser-verified the restored offline-progress modal, Mining/Build independence, next-goal/storage feedback and desktop/compact production and staging layouts with zero console errors.
 
 ## Phase 1D-B implementation plan
 

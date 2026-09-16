@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -608,6 +608,35 @@ describe('Villagers - Idle World Game progression', () => {
   it('calculates offline gains at half efficiency', () => {
     const state = freshState(0);
     expect(calculateOfflineXp(state, 60_000)).toBe(30);
+  });
+
+  it('reconciles restored construction once and releases its builder', () => {
+    const state = freshState(1000);
+    state.resources = { dirt: 100, cobblestone: 100 };
+    expect(queueSettlementStorageUpgrade(state, 1000)).toBe(true);
+    expect(state.settlementStorage.constructionState).toBe('upgrading');
+
+    const restored = reconcileElapsedProgress(state, 31_000);
+    expect(restored.completedProjects).toHaveLength(1);
+    expect(restored.completedProjects[0].targetKind).toBe('storage');
+    expect(state.settlementStorage).toMatchObject({ level: 2, constructionState: 'complete' });
+    expect(getAvailableBuilderSlots(state)).toBe(1);
+    expect(state.lastSavedAt).toBe(31_000);
+
+    const replay = reconcileElapsedProgress(state, 31_000);
+    expect(replay.completedProjects).toHaveLength(0);
+    expect(replay.offlineXp).toBe(0);
+  });
+
+  it('awards no-mine offline XP once when a cloud-shaped save is restored', () => {
+    const state = freshState(0);
+    const restored = reconcileElapsedProgress(state, 60_000);
+    expect(restored.offlineXp).toBe(30);
+    expect(state.totalXp).toBe(30);
+    expect(state.lastSavedAt).toBe(60_000);
+
+    expect(reconcileElapsedProgress(state, 60_000).offlineXp).toBe(0);
+    expect(state.totalXp).toBe(30);
   });
 
   it('runs a permanent mine without changing the world cells', () => {

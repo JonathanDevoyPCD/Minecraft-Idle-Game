@@ -2138,3 +2138,23 @@ export function calculateOfflineXp(state: GameState, now = Date.now()): number {
   if (elapsedSeconds < 10) return 0;
   return Math.floor(elapsedSeconds * getAutoRate(state) * getHarvestPower(state) * 0.5);
 }
+
+export interface ElapsedProgressResult {
+  completedProjects: ConstructionProject[];
+  mineResult: MineProductionResult;
+  offlineXp: number;
+}
+
+/**
+ * Reconcile one restored save against wall-clock time before the render loop
+ * takes over. The save watermark is advanced here so a restored no-mine save
+ * cannot award the same offline XP again on the next frame.
+ */
+export function reconcileElapsedProgress(state: GameState, now = Date.now(), random = Math.random): ElapsedProgressResult {
+  const completedProjects = completeConstructionProjects(state, now);
+  const mineResult = advanceMineOperations(state, now, random);
+  const offlineXp = mineResult.trips > 0 ? mineResult.xp : calculateOfflineXp(state, now);
+  if (offlineXp > 0) addXp(state, offlineXp);
+  state.lastSavedAt = now;
+  return { completedProjects, mineResult, offlineXp };
+}

@@ -371,7 +371,7 @@ button { font: inherit; }
 .mining-info-tile span { color: #725f44; font-size: 9px; }
 .mining-info-tile small { color: #41682f; font-size: 9px; font-weight: 900; }
 .mining-info-tile--empty { color: #725f44; text-align: center; }
-.mining-info-tile--storage { align-content: center; }
+.mining-info-tile--storage { height: 104px; min-height: 104px; align-content: center; }
 .settlement-storage-tile { flex-basis: 190px; }
 .storage-upgrade-button { min-height: 18px; padding: 2px 4px; color: #173b49; border: 2px solid #b6a584; border-radius: 6px; background: #fff3c9; font: inherit; font-size: 8px; font-weight: 900; cursor: pointer; }
 .storage-upgrade-button:not(:disabled):hover, .storage-upgrade-button:not(:disabled):focus-visible { border-color: #41682f; outline: 0; background: #f4e242; }
@@ -506,6 +506,7 @@ button { font: inherit; }
   #mining-mode-toggle.is-expanded .mining-mode-drawer { width: 373px; }
   .mining-mine-list { gap: 5px; }
   .mining-info-tile { flex-basis: 118px; height: 62px; min-height: 62px; padding: 4px; border-width: 2px; border-radius: 12px; font-size: 8px; }
+  .mining-info-tile--storage { height: 92px; min-height: 92px; }
   .mining-info-tile strong, .mining-info-tile span, .mining-info-tile small { font-size: 8px; }
   .storage-upgrade-button { font-size: 7px; }
   .mining-upgrade-item .mining-item-icon { width: 28px; height: 28px; font-size: 22px; }

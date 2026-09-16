@@ -7,29 +7,29 @@
 
 ## Current Phase
 
-**Phase 2 — Economy Cleanup**
+**Phase 3 — Real Mine Economy**
 
-Status: Phase 2C-C complete; Phase 3 is next.
+Status: Phase 3A complete; Phase 3B is next.
 
 ## Current Sub-Phase
 
-**Phase 2C-C - Align Settlement Progress awards with meaningful construction**
+**Phase 3A - Canonical mine-local inventory and collection**
 
-Status: Complete; Phase 3 is next.
+Status: Complete; Phase 3B is next.
 
 ## Current-repo audit
 
 | Area | Retain | Migrate | Replace later in Phase 1 |
 |---|---|---|---|
 | Game state | Flat state object, deterministic world cells, mine/path records, local and cloud save entry points | Add explicit Settlement Hub instance, level and prerequisite progress; add Settlement Storage level | Add population and production systems in later Phase 1 slices |
-| Save schema | `loadState` sanitisation, timestamped local save, Supabase row ownership/RLS | Backward-compatible schema 4/5/6/7 to schema 8 normalization, including Hub and storage authority | Add migrations for remaining Hub requirements as those systems land |
+| Save schema | `loadState` sanitisation, timestamped local save, Supabase row ownership/RLS | Backward-compatible schema 4/5/6/7/8 to schema 9 normalization, including Hub, storage authority and typed mine inventory | Add migrations for remaining Hub requirements as those systems land |
 | Construction | Existing completion effects for world expansion and offline timestamps | Generalize projects with action, target, builder and cost metadata; preserve expansion kinds as compatibility/effect identifiers | Move all physical build/upgrade/expand actions onto the generic project model |
 | Placement | Integer grid, footprints, collision, path connection, mine/path relationship and one-cart rule | Normalize placement records into levelled, stateful building instances | Route normal placement through builder-backed construction |
 | Settlement | Settlement Progress remains the earned development metric; existing visual stage labels remain | Hub level is now the sole settlement-stage authority; requirements, upgrade queue and current-era consequences are data-driven | Add storage/population production requirements and deeper Hub consequences in later slices |
 | Resources/UI | Existing resource inventory, Mining/Build drawers, responsive HUD and visuals | Add one global storage summary to the existing resource brief/modal | Add broader next-goal UI and storage upgrade controls in later Phase 1D slices |
 | Tests | Vitest game, skill-tree and geometry coverage | Add Hub authority, requirements, builder construction, save migration and storage transfer tests | Add remaining population prerequisite tests with later slices |
 
-The current code now has one serialized generic `constructionQueue` with builder assignment, capacity, target/action/cost/duration metadata and compatibility expansion kinds. `WorldPlacement` is the persistent structure record and now carries level and construction state. Settlement stages are now derived solely from the serialized Settlement Hub level; Settlement Progress remains a requirement and development metric rather than a second stage authority. Current-era mine permits, trader availability, later build-category gates and living-entity visibility are derived from the Hub consequence registry without adding save fields. Mine output and the current one-cart mine/path visuals are outside this slice and remain unchanged.
+The current code now has one serialized generic `constructionQueue` with builder assignment, capacity, target/action/cost/duration metadata and compatibility expansion kinds. `WorldPlacement` is the persistent structure record and now carries level and construction state. Settlement stages are now derived solely from the serialized Settlement Hub level; Settlement Progress remains a requirement and development metric rather than a second stage authority. Current-era mine permits, trader availability, later build-category gates and living-entity visibility are derived from the Hub consequence registry without adding save fields. Mine production now owns typed local inventory and manual collection, while the existing one-cart mine/path visuals remain in place.
 
 ## Phase 1 sub-phases
 
@@ -154,15 +154,15 @@ Existing mine/path placement, mine storage behavior, one-cart animation and Supa
 
 ## Save Migration Notes
 
-Current schema version: 8.
+Current schema version: 9.
 
-Schema 4, schema 5, schema 6 and schema 7 saves are accepted and normalized into schema 8 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1.
+Schema 4, schema 5, schema 6, schema 7 and schema 8 saves are accepted and normalized into schema 9 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1. Schema 8 mine storage scalars migrate into typed local cobblestone inventory without changing mine clocks, IDs, orientation or upgrade ranks.
 
 Legacy expansion-only projects are assigned stable IDs, `action: expand`, world targets, no resource cost and an available builder when loaded.
 
 Legacy cloud rows remain readable because the client accepts the previous save version and passes the payload through the same local migration before use. No Supabase table or RLS change is needed.
 
-Fresh schema 8 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot and no active projects.
+Fresh schema 9 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot and no active projects. Each mine starts with an empty typed local inventory.
 
 ## Completed Slices
 
@@ -185,6 +185,7 @@ Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; bro
 Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; browser verified production and staging Skill Tree, Mining and Build Mode shells with no application console errors and confirmed the legacy upgrade panel is absent.
 Phase 2C-B: 80 tests passed; production build and `git diff --check` passed; browser verified the production Skill Tree and World Power summary with no application console errors.
 Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; browser verified Build Mode path flow, Settlement XP/next-goal UI and no application console errors.
+Phase 3A: 82 tests passed; production build and `git diff --check` passed; browser verified local mine storage presentation, manual collection controls, save normalization and no application console errors. The existing cart projection remains the sole transform owner.
 
 ## Test / Verification History
 
@@ -227,9 +228,53 @@ Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 3 — Real Mine Economy.
+Next incomplete roadmap sub-phase: Phase 3B — Data-driven mine production and cart capacity.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
+
+## Phase 3 implementation sub-phases
+
+1. **Phase 3A - Canonical mine-local inventory and collection**
+   - Replace the visual-only mine storage scalar with a typed local inventory on each mine.
+   - Route completed cart cargo into that inventory instead of settlement resources.
+   - Stop production when local storage reaches capacity and add an explicit partial `Collect` flow to settlement storage.
+   - Migrate legacy storage amounts conservatively and preserve cart clocks, mine identity, capacity upgrades and Supabase payload compatibility.
+2. **Phase 3B - Data-driven mine production and cart capacity**
+   - Add weighted per-trip ore tables, deterministic cargo generation and explicit cart capacity without introducing Emerald trading.
+   - Keep Emerald as a separate rare bonus and preserve one physical cart per mine.
+3. **Phase 3C - Mine levels and upgrade ownership**
+   - Move mine-specific production/depth progression into mine-owned levels and normal-resource costs.
+   - Keep rail speed/route upgrades and storage capacity as separate mine-owned upgrade definitions.
+4. **Phase 3D - Offline mine economy and final Mining UI**
+   - Reconcile offline trips using the same local-inventory, capacity and full-pause rules.
+   - Expose typed contents, capacity, fullness, pause state and collection feedback in the Mining menu.
+
+## Phase 3A implementation plan
+
+1. Add a canonical `inventory` resource map to `MineSite`; remove runtime dependence on the legacy `storageAmount` scalar.
+2. Bump the client save schema and migrate legacy scalar storage into a safe typed material entry without changing mine clocks, IDs, orientations or upgrade ranks.
+3. Change mine production to place accepted cargo in local inventory, pause at local capacity, and leave settlement resources unchanged until collection.
+4. Add a data-driven collection helper that transfers as much inventory as settlement storage can accept and leaves overflow in the mine.
+5. Update the mine world visual and Mining drawer to derive fill, contents and `Collect` availability from the canonical inventory.
+
+## Phase 3A acceptance criteria
+
+- [x] Each mine owns a typed local inventory; no mine production reward is directly added to settlement resources.
+- [x] A completed cart trip increases local inventory and XP, while `Collect` transfers inventory to settlement storage.
+- [x] Collection supports partial transfer and preserves the untransferred remainder.
+- [x] Full mine storage pauses production without resetting the persisted cart clock or spawning another cart.
+- [x] Legacy saves migrate their previous storage amount without losing quantity, and fresh/current saves round-trip the inventory.
+- [x] Mine identity, orientation, rail length, one-cart behavior, placement and existing Supabase save payloads remain compatible.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 3A completion record
+
+- Added typed `MineSite.inventory` as the sole local storage authority and removed runtime dependence on the former visual-only `storageAmount` field.
+- Mine deliveries now generate deterministic current cargo into local inventory, award XP, and leave settlement resources unchanged until the player presses `Collect`.
+- Added partial collection through settlement storage capacity; overflow remains in the mine and full local storage pauses the production clock without creating another cart.
+- Bumped the client save schema from 8 to 9. Schema 8 scalar mine storage migrates conservatively to cobblestone inventory while preserving mine timing, identity, orientation, rail length and upgrades; no Supabase table or RLS migration was required.
+- Updated the world storage visual and Mining drawer to show typed contents, local capacity/fullness and collection/paused state.
+- Added regression coverage for local delivery, partial collection, full-storage pause, typed inventory migration and schema 9 normalization.
 
 ## Phase 2B-A acceptance criteria
 

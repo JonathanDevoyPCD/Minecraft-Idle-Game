@@ -36,13 +36,16 @@ import {
   getBuildItemUnlockStatus,
   getMineSiteCapacity,
   getMineLayer,
+  getMineStorageAmount,
+  getMineStorageCargoKind,
   getMineStorageCapacity,
-  getMineStorageFillDuration,
+  getMineStorageContents,
   getMineStorageFillState,
   getMineStorageUpgradeCost,
   getMineTripDuration,
   getActiveBuilderCount,
   addSettlementResource,
+  getAvailableSettlementStorage,
   getBuilderSlotCount,
   getAvailableBuilderSlots,
   getSettlementStorageCapacity,
@@ -54,6 +57,7 @@ import {
   getLivingEntityPlan,
   getMineCargoKind,
   getMineCartTravelState,
+  collectMineStorage,
   getMeadowFeaturePlan,
   getNextPathTier,
   getNextSettlementStage,
@@ -911,8 +915,9 @@ function disposeObjectResources(root: THREE.Object3D): void {
 
 function updateMineStorageVisual(visual: MineVisual, mine: MineSite): void {
   const capacity = getMineStorageCapacity(mine);
-  const fillState = getMineStorageFillState(mine.storageAmount, capacity);
-  const cargoKind = getMineCargoKind(state);
+  const amount = getMineStorageAmount(mine);
+  const fillState = getMineStorageFillState(amount, capacity);
+  const cargoKind = getMineStorageCargoKind(state, mine);
   const storageVisualKey = `${fillState}:${cargoKind}:${visual.ghost}`;
   if (visual.storageVisualKey !== storageVisualKey) {
     visual.storage.children.forEach(disposeObjectResources);
@@ -921,7 +926,7 @@ function updateMineStorageVisual(visual: MineVisual, mine: MineSite): void {
     visual.storageVisualKey = storageVisualKey;
   }
   visual.storage.userData.storageState = fillState;
-  visual.storage.userData.storageAmount = mine.storageAmount;
+  visual.storage.userData.storageAmount = amount;
   visual.storage.userData.storageCapacity = capacity;
   visual.storage.visible = !visual.ghost;
 }
@@ -2231,7 +2236,8 @@ function updateMiningUi(): void {
   } else {
     state.mines.forEach((mine, index) => {
       const capacity = getMineStorageCapacity(mine);
-      const fillState = getMineStorageFillState(mine.storageAmount, capacity);
+      const amount = getMineStorageAmount(mine);
+      const fillState = getMineStorageFillState(amount, capacity);
       const placement = state.placements.find((candidate) => candidate.id === mine.id);
       const tile = document.createElement('article');
       tile.className = 'mining-info-tile';
@@ -2244,7 +2250,7 @@ function updateMiningUi(): void {
       const ore = document.createElement('small');
       ore.textContent = `Mining ${cargo}`;
       const storage = document.createElement('small');
-      storage.textContent = `Storage ${Math.floor(mine.storageAmount)}/${capacity} · ${formatMineStorageState(fillState)}`;
+      storage.textContent = `Storage ${amount}/${capacity} · ${formatMineStorageState(fillState)}`;
       tile.append(title, level, speed, ore, storage);
       miningMineList.append(tile);
 
@@ -2253,9 +2259,25 @@ function updateMiningUi(): void {
       const storageTitle = document.createElement('strong');
       storageTitle.textContent = `Mine ${index + 1}`;
       const storageAmount = document.createElement('span');
-      storageAmount.textContent = `${Math.floor(mine.storageAmount)}/${capacity} ore · ${formatMineStorageState(fillState)}`;
+      storageAmount.textContent = `${amount}/${capacity} ore · ${formatMineStorageState(fillState)}`;
+      const storageContents = document.createElement('small');
+      const contents = Object.entries(getMineStorageContents(mine))
+        .map(([resource, stored]) => `${resource} ${stored}`)
+        .join(' · ');
+      storageContents.textContent = contents ? `Contents: ${contents}` : 'Contents: Empty';
       const storageTime = document.createElement('small');
-      storageTime.textContent = `Full in ${formatMineStorageTime(getMineStorageFillDuration(mine))}`;
+      storageTime.textContent = fillState === 'full' ? 'Production paused · collect to resume' : `Trip cycle ${formatMineStorageTime(getMineTripDuration(state))}`;
+      const collectButton = document.createElement('button');
+      collectButton.className = 'storage-upgrade-button';
+      collectButton.type = 'button';
+      collectButton.dataset.mineStorageCollect = mine.id;
+      collectButton.textContent = amount > 0 ? 'Collect' : 'Nothing to collect';
+      collectButton.disabled = amount === 0 || getAvailableSettlementStorage(state) === 0;
+      collectButton.title = amount > 0
+        ? collectButton.disabled
+          ? 'Settlement storage is full'
+          : 'Transfer this mine storage to settlement storage'
+        : 'This mine storage is empty';
       const storageUpgrade = document.createElement('button');
       storageUpgrade.className = 'storage-upgrade-button';
       storageUpgrade.type = 'button';
@@ -2274,7 +2296,7 @@ function updateMiningUi(): void {
           ? `Upgrade this mine storage for ${storageCostLabel}`
           : `Need ${storageCostLabel} to upgrade this mine storage`
         : 'Mine storage is fully upgraded';
-      storageTile.append(storageTitle, storageAmount, storageTime, storageUpgrade);
+      storageTile.append(storageTitle, storageAmount, storageContents, storageTime, collectButton, storageUpgrade);
       miningStorageList.append(storageTile);
     });
   }
@@ -3076,6 +3098,17 @@ miningDrawer.addEventListener('click', (event) => {
   const settlementStorageButton = target.closest<HTMLButtonElement>('[data-settlement-storage-upgrade]');
   if (settlementStorageButton) {
     if (!queueSettlementStorageUpgrade(state)) return;
+    updateUi();
+    saveState(localStorage, state);
+    return;
+  }
+  const collectButton = target.closest<HTMLButtonElement>('[data-mine-storage-collect]');
+  if (collectButton) {
+    const mineId = collectButton.dataset.mineStorageCollect;
+    if (!mineId) return;
+    const collection = collectMineStorage(state, mineId);
+    if (Object.keys(collection.transferred).length === 0) return;
+    updateWorldScene();
     updateUi();
     saveState(localStorage, state);
     return;

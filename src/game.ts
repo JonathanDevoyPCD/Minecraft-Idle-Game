@@ -89,7 +89,8 @@ export interface MineSite {
   progressMs: number;
   lastUpdatedAt: number;
   completedTrips: number;
-  storageAmount: number;
+  /** Canonical mine-local inventory. Settlement resources are only changed by collection. */
+  inventory: Record<string, number>;
   storageCapacityLevel: number;
 }
 
@@ -106,6 +107,10 @@ export interface MineProductionResult {
 export interface ResourceTransferResult {
   transferred: Record<string, number>;
   overflow: Record<string, number>;
+}
+
+export interface MineCollectionResult extends ResourceTransferResult {
+  mineId: string;
 }
 
 export interface WorldCell {
@@ -368,9 +373,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 8;
+export const SAVE_SCHEMA_VERSION = 9;
 export const LEGACY_SAVE_SCHEMA_VERSION = 7;
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7];
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7, 8];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -993,7 +998,7 @@ function createMineSite(
     progressMs: 0,
     lastUpdatedAt: now,
     completedTrips: 0,
-    storageAmount: 0,
+    inventory: {},
     storageCapacityLevel: 0,
   };
 }
@@ -1033,6 +1038,37 @@ export function getMineCargoKind(state: Pick<GameState, 'undergroundLayer' | 'sk
 
 export function getMineStorageCapacity(mine: Pick<MineSite, 'storageCapacityLevel'>): number {
   return MINE_STORAGE_BASE_CAPACITY + Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)) * MINE_STORAGE_CAPACITY_PER_UPGRADE;
+}
+
+export function getMineStorageAmount(mine: Pick<MineSite, 'inventory'>): number {
+  return Object.values(mine.inventory).reduce((total, value) => total + Math.max(0, Math.floor(Number(value) || 0)), 0);
+}
+
+export function getMineStorageContents(mine: Pick<MineSite, 'inventory'>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(mine.inventory)
+      .map(([resource, amount]) => [resource, Math.max(0, Math.floor(Number(amount) || 0))] as const)
+      .filter(([, amount]) => amount > 0),
+  );
+}
+
+export function getMineStorageCargoKind(
+  state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+  mine: Pick<MineSite, 'inventory'>,
+): MineCargoKind {
+  const resourceKinds: ReadonlyArray<[string, MineCargoKind]> = [
+    ['diamond', 'diamond'],
+    ['gold', 'gold'],
+    ['iron', 'iron'],
+    ['coal', 'coal'],
+    ['deepslate', 'stone'],
+    ['cobblestone', 'stone'],
+    ['stone', 'stone'],
+  ];
+  for (const [resource, cargoKind] of resourceKinds) {
+    if ((mine.inventory[resource] ?? 0) > 0) return cargoKind;
+  }
+  return getMineCargoKind(state);
 }
 
 export function getMineStorageFillDuration(mine: Pick<MineSite, 'railLevel'>): number {
@@ -1147,6 +1183,7 @@ export function getMineEmeraldChance(state: GameState): number {
 }
 
 function addMineResource(result: MineProductionResult, resource: string, amount: number): void {
+  if (amount <= 0) return;
   result.resources[resource] = (result.resources[resource] ?? 0) + amount;
 }
 
@@ -1159,60 +1196,76 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     mine.storageCarts = 0;
     mine.railLevel = getMineUpgradeRank(state, 'rail-speed');
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
-    if (getAvailableSettlementStorage(state) <= 0) {
+    const storageCapacity = getMineStorageCapacity(mine);
+    const currentStorage = getMineStorageAmount(mine);
+    if (currentStorage >= storageCapacity) {
+      // Persist the pause watermark without rewinding the cart's phase. A
+      // collection action can resume from this exact delivery boundary.
       mine.lastUpdatedAt = now;
       return;
     }
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
-    const storageCapacity = getMineStorageCapacity(mine);
-    const storageWasStarted = mine.storageAmount > 0 || mine.completedTrips > 0;
-    if (storageWasStarted && mine.storageAmount < storageCapacity) {
-      mine.storageAmount = Math.min(
-        storageCapacity,
-        mine.storageAmount + elapsed * storageCapacity / getMineStorageFillDuration(mine),
-      );
-    }
     const totalProgress = mine.progressMs + elapsed;
     // The loop begins at the path: an empty cart travels to the mine, loads,
     // then delivers the ore back to the rail end. Credit the delivery only when
     // that full loop reaches the path-facing terminal.
     const completedArrivals = Math.floor(totalProgress / tripDuration);
-    mine.progressMs = totalProgress - completedArrivals * tripDuration;
     mine.lastUpdatedAt = now;
-    if (completedArrivals <= 0) return;
+    if (completedArrivals <= 0) {
+      mine.progressMs = totalProgress;
+      return;
+    }
 
-    const cartTrips = completedArrivals * mine.cartCount;
-    mine.completedTrips += cartTrips;
-    // The first returning cart starts the physical storage fill. Keep the
-    // existing resource rewards intact while the box provides a visible,
-    // capacity-limited stock indicator for the Mining menu and world view.
-    mine.storageAmount = Math.min(
-      storageCapacity,
-      Math.max(mine.storageAmount, cartTrips, Math.ceil(storageCapacity * 0.05)),
-    );
-    result.trips += cartTrips;
-    result.xp += cartTrips * (layer >= 1 ? 3 : 2);
-    addMineResource(result, layer >= 1 ? 'deepslate' : 'cobblestone', cartTrips);
-    if (getSkillNodeRank(state, 'materials-coal') > 0) {
-      addMineResource(result, 'coal', Math.floor(cartTrips / 4));
+    let acceptedTrips = 0;
+    let storageAmount = currentStorage;
+    for (let trip = 0; trip < completedArrivals; trip += 1) {
+      const tripNumber = mine.completedTrips + trip + 1;
+      const cargo: Record<string, number> = {};
+      const baseResource = layer >= 1 ? 'deepslate' : 'cobblestone';
+      cargo[baseResource] = 1;
+      if (getSkillNodeRank(state, 'materials-coal') > 0 && tripNumber % 4 === 0) cargo.coal = 1;
+      if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0 && tripNumber % 5 === 0) cargo.iron = 1;
+      if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0 && tripNumber % 6 === 0) cargo.gold = 1;
+      if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0 && tripNumber % 10 === 0) cargo.diamond = 1;
+      if (random() < getMineEmeraldChance(state)) cargo.emerald = 1;
+      const cargoAmount = Object.values(cargo).reduce((sum, amount) => sum + amount, 0);
+      if (storageAmount + cargoAmount > storageCapacity) break;
+      Object.entries(cargo).forEach(([resource, amount]) => {
+        mine.inventory[resource] = (mine.inventory[resource] ?? 0) + amount;
+        addMineResource(result, resource, amount);
+      });
+      storageAmount += cargoAmount;
+      acceptedTrips += 1;
     }
-    if (layer >= 1 && getSkillNodeRank(state, 'materials-iron') > 0) {
-      addMineResource(result, 'iron', Math.floor(cartTrips / 5));
-    }
-    if (layer >= 2 && getSkillNodeRank(state, 'materials-gold') > 0) {
-      addMineResource(result, 'gold', Math.floor(cartTrips / 6));
-    }
-    if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) {
-      addMineResource(result, 'diamond', Math.floor(cartTrips / 10));
-    }
-    for (let trip = 0; trip < cartTrips; trip += 1) {
-      if (random() < getMineEmeraldChance(state)) addMineResource(result, 'emerald', 1);
-    }
+    mine.completedTrips += acceptedTrips;
+    result.trips += acceptedTrips;
+    result.xp += acceptedTrips * (layer >= 1 ? 3 : 2);
+    // If storage filled during an elapsed interval, park at the delivery
+    // boundary rather than carrying unprocessed trips through the pause.
+    mine.progressMs = acceptedTrips < completedArrivals ? 0 : totalProgress - completedArrivals * tripDuration;
   });
-  const transfer = transferResourcesToSettlement(state, result.resources);
-  result.resources = transfer.transferred;
   syncAutomaticSkillNodes(state);
   return result;
+}
+
+export function collectMineStorage(state: GameState, mineId: string, now = Date.now()): MineCollectionResult {
+  const mine = state.mines.find((candidate) => candidate.id === mineId);
+  if (!mine) return { mineId, transferred: {}, overflow: {} };
+  const transferred: Record<string, number> = {};
+  const overflow: Record<string, number> = {};
+  Object.entries(getMineStorageContents(mine)).forEach(([resource, amount]) => {
+    const accepted = addSettlementResource(state, resource, amount);
+    if (accepted > 0) {
+      transferred[resource] = accepted;
+      mine.inventory[resource] -= accepted;
+    }
+    if (amount > accepted) overflow[resource] = amount - accepted;
+    if ((mine.inventory[resource] ?? 0) <= 0) delete mine.inventory[resource];
+  });
+  if (getMineStorageAmount(mine) < getMineStorageCapacity(mine)) {
+    mine.lastUpdatedAt = now;
+  }
+  return { mineId, transferred, overflow };
 }
 
 export function dispatchMineCart(state: GameState, now = Date.now()): MineProductionResult {
@@ -1927,13 +1980,14 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         ? Math.max(0, Math.floor(parsedSettlementProgress))
         : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
       // Schema 7 is the first save format that persisted an authoritative Hub;
-      // schema 8 adds the Settlement Storage instance.
+      // schema 8 adds the Settlement Storage instance; schema 9 adds typed
+      // mine-local inventories.
       // Older saves retain their existing world/progress data but begin at the
       // conservative Dwelling authority until the player completes the Hub flow.
       settlementHub: parsedSchemaVersion >= LEGACY_SAVE_SCHEMA_VERSION
         ? parseSettlementHub(parsed.settlementHub)
         : base.settlementHub,
-      settlementStorage: parsedSchemaVersion === SAVE_SCHEMA_VERSION
+      settlementStorage: parsedSchemaVersion >= 8
         ? parseSettlementStorage(parsed.settlementStorage)
         : base.settlementStorage,
       population: Math.max(0, Math.floor(Number(parsed.population) || 0)),
@@ -2013,7 +2067,13 @@ function parseMines(value: unknown, now: number): MineSite[] {
     seenIds.add(id);
     const lastUpdatedAt = Number(entry.lastUpdatedAt);
     const storageCapacityLevel = Math.max(0, Math.floor(Number(entry.storageCapacityLevel) || 0));
-    const storageCapacity = getMineStorageCapacity({ storageCapacityLevel });
+    const inventory = parseResourceInventory(entry.inventory);
+    // Schema 8 stored only a visual scalar. Preserve that quantity as a
+    // conservative cobblestone stock rather than silently deleting it.
+    if (Object.keys(inventory).length === 0) {
+      const legacyStorageAmount = Math.max(0, Math.floor(Number((entry as { storageAmount?: unknown }).storageAmount) || 0));
+      if (legacyStorageAmount > 0) inventory.cobblestone = legacyStorageAmount;
+    }
     return [{
       id,
       x: Number.isFinite(Number(entry.x)) ? Number(entry.x) : 0,
@@ -2031,10 +2091,21 @@ function parseMines(value: unknown, now: number): MineSite[] {
       progressMs: Math.max(0, Number(entry.progressMs) || 0),
       lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,
       completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
-      storageAmount: Math.min(storageCapacity, Math.max(0, Number(entry.storageAmount) || 0)),
+      inventory,
       storageCapacityLevel,
     }];
   });
+}
+
+function parseResourceInventory(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+  const inventory: Record<string, number> = {};
+  Object.entries(value).forEach(([resource, amount]) => {
+    if (!/^[a-z][a-z0-9-]{0,39}$/.test(resource)) return;
+    const normalized = Math.max(0, Math.floor(Number(amount) || 0));
+    if (normalized > 0) inventory[resource] = normalized;
+  });
+  return inventory;
 }
 
 function parsePathCells(value: unknown): PathCell[] | null {

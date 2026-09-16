@@ -1092,6 +1092,26 @@ export function getMineTripDuration(state: GameState): number {
   return Math.max(2_000, MINE_TRIP_DURATION_MS / (1 + railRanks * 0.25));
 }
 
+export interface MineCartTravelState {
+  phase: number;
+  travellingToMine: boolean;
+  travel: number;
+}
+
+/** Project the persisted production clock into the current minecart trip. */
+export function getMineCartTravelState(
+  state: GameState,
+  mine: Pick<MineSite, 'progressMs' | 'lastUpdatedAt'>,
+  now = Date.now(),
+): MineCartTravelState {
+  const tripDuration = getMineTripDuration(state);
+  const projectedProgressMs = Math.max(0, mine.progressMs) + Math.max(0, now - mine.lastUpdatedAt);
+  const phase = (projectedProgressMs % tripDuration) / tripDuration;
+  const travellingToMine = phase < 0.5;
+  const travel = travellingToMine ? phase * 2 : 1 - (phase - 0.5) * 2;
+  return { phase, travellingToMine, travel };
+}
+
 /** Level-one mines start at 0.08%; Mining-menu upgrades raise this slowly. */
 export function getMineEmeraldChance(state: GameState): number {
   const upgradeRanks = getMineUpgradeRank(state, 'rail-speed') + getMineUpgradeRank(state, 'storage-capacity');

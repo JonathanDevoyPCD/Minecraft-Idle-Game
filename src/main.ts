@@ -53,6 +53,7 @@ import {
   getSettlementStageIndex,
   getLivingEntityPlan,
   getMineCargoKind,
+  getMineCartTravelState,
   getMeadowFeaturePlan,
   getNextPathTier,
   getNextSettlementStage,
@@ -1321,12 +1322,7 @@ function isMineAnimationPaused(mineId: string): boolean {
 
 function updateMineCartAnimation(visual: MineVisual, mine: MineSite, connectionIndex: number, now = Date.now()): void {
   if (isMineAnimationPaused(mine.id)) return;
-  const tripDuration = getMineTripDuration(state);
-  // Mine production is intentionally simulated on a slower cadence to reduce
-  // CPU and save churn. Project that state forward for the visual only so the
-  // cart continues moving continuously between simulation ticks.
-  const projectedProgressMs = mine.progressMs + Math.max(0, now - mine.lastUpdatedAt);
-  const baseProgress = (projectedProgressMs % tripDuration) / tripDuration;
+  const { phase: baseProgress } = getMineCartTravelState(state, mine, now);
   const startZ = BLOCK_SIZE * getMineRailCenterZ(connectionIndex);
   const endZ = BLOCK_SIZE * getMineRailCenterZ(0);
   visual.carts.forEach((cart, index) => {
@@ -1352,7 +1348,7 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
   setMineRotation(visual.group, direction);
   updateMinePathConnector(visual, mine.x, mine.z, direction, railLength);
   updateMineStorageVisual(visual, mine);
-  const connectionIndex = updateMineRailLength(visual, mine.x, mine.z, direction, railLength);
+  updateMineRailLength(visual, mine.x, mine.z, direction, railLength);
   syncMineCartMeshes(visual);
   const isMovePreview = selectedMoveItem?.kind === 'mine' && selectedMoveItem.id === mine.id;
   const isDestroyPreview = pendingDestroyItem?.kind === 'mine' && pendingDestroyItem.id === mine.id;
@@ -1363,7 +1359,8 @@ function updateSingleMineVisual(visual: MineVisual, mine: MineSite): void {
     visual.group.position.set(moveHoverCell.x * BLOCK_SIZE, 0, moveHoverCell.z * BLOCK_SIZE);
   }
   if (isMovePreview || isDestroyPreview) return;
-  updateMineCartAnimation(visual, mine, connectionIndex);
+  // Cart transforms are owned exclusively by updateMineCartAnimations. Scene
+  // and UI reconciliation must not reset a live cart between render frames.
 }
 
 function restoreActionVisual(mesh: THREE.Mesh): void {

@@ -7,15 +7,15 @@
 
 ## Current Phase
 
-**Phase 1 — Progression Foundation**
+**Phase 2 — Economy Cleanup**
 
-Status: Complete
+Status: Planning complete; Phase 2A is next.
 
 ## Current Sub-Phase
 
-**Phase 1D-C - Offline/cloud reconciliation and responsive hardening**
+**Phase 2A - Mine upgrade consolidation and Emerald deadlock removal**
 
-Status: Complete.
+Status: Not started.
 
 ## Current-repo audit
 
@@ -57,6 +57,28 @@ The current code now has one serialized generic `constructionQueue` with builder
 - Add first-class global storage capacity and overflow-safe resource transfers.
 - Add requirement/next-goal and builder/project feedback to the HUD and modals.
 - Integrate all construction, Hub and storage timers with offline progression and Supabase/local save flows.
+
+## Phase 2 sub-phases
+
+### Phase 2A - Mine upgrade consolidation and Emerald deadlock removal (first slice)
+
+- Remove Emerald payments from all current mine rail and mine-storage upgrades.
+- Make the Mine the sole current authority for rail-speed and mine-storage capacity upgrades; remove the duplicate Skill Tree contribution from the active rail-speed calculation while retaining its node as later automation knowledge.
+- Consolidate the two current mine-storage upgrade tracks into the serialized mine storage-capacity level, retaining legacy values safely on load.
+- Break the Emerald-to-First-Villager prerequisite cycle without adding villagers, trader systems or Phase 3 inventories.
+- Preserve existing mine visuals, one-cart rule, path connection, save compatibility and Supabase contract.
+
+### Phase 2B - Skill Tree currency and discovery ownership
+
+- Make branch entries free Settlement-Hub milestones and introduce increasing Crafting Point rank costs.
+- Convert material nodes from purchased unlocks to data-driven discoveries triggered by eligible world/mining conditions.
+- Migrate existing purchased material/branch ranks conservatively so no player loses discovered content.
+
+### Phase 2C - Legacy authority retirement and World Power boundary
+
+- Retire or migrate the remaining direct speed, tool and world upgrade routes in favour of their authoritative owners.
+- Limit World Power to world/biome expansion commitments; remove it from ordinary skills and non-expansion upgrades.
+- Keep Settlement Progress as non-spendable development progress and align its remaining awards with meaningful construction.
 
 ## Phase 1 Target Outcomes
 
@@ -107,6 +129,7 @@ Phase 1C-B: 60 tests passed; production build and `git diff --check` passed; bro
 Phase 1D-A: 63 tests passed; production build and `git diff --check` passed; browser verified global storage usage in the resource brief/modal on production and staging routes.
 Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; browser verified the independent Mining storage drawer, Settlement Storage upgrade blocker and next-goal/builder feedback at desktop and compact viewport sizes with no application console errors.
 Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; browser verified local and cloud-shaped restore reconciliation, offline progress feedback, independent drawers and responsive production/staging shells at desktop and compact viewport sizes with no application console errors.
+Minecart regression fix: 70 tests passed; production build and `git diff --check` passed; browser verified repeated long-rail travel, an east-facing short rail, and active save/reload continuity with exactly one cart per mine.
 
 ## Test / Verification History
 
@@ -120,12 +143,13 @@ Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; bro
 - Phase 1D-B browser: Playwright CLI verified the production route `http://127.0.0.1:5176/Minecraft-Idle-Game/` at 1280x720 and 390x844, plus the staging route `/testing/` at 1280x720. Mining and Build Mode remained independent; Mining > Storage showed Settlement Storage at `0/500`, the data-driven upgrade action and disabled missing-resource feedback; the HUD showed next-goal and builder availability text; staging retained its isolation banner. Console error checks returned zero errors on both routes.
 - Phase 1D-C: `npm test` — 69 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
 - Phase 1D-C browser: Playwright CLI verified production at `http://127.0.0.1:5176/Minecraft-Idle-Game/` and staging at `/testing/` on desktop and compact viewports. Restored no-mine state displayed offline XP once; Mining and Build Mode stayed independent; next-goal, builder and storage feedback rendered; staging retained its isolation banner; console error checks returned zero errors.
+- Minecart regression: render-loop optimization had left two transform writers active: routine scene/UI reconciliation and the frame animator both positioned the same cart. The renderer is now the sole transform owner, using a shared pure projection of persisted `progressMs` and `lastUpdatedAt`. Playwright verified normal repeated travel, an east-facing rail and a reload during production; the saved mine retained one cart and its progress advanced from `1107ms` to `4707ms` after reload.
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2 — Economy Cleanup (not started).
+Next incomplete roadmap sub-phase: Phase 2A — Mine upgrade consolidation and Emerald deadlock removal.
 
-Phase 1 is complete. Phase 2 must remain a separate future slice covering duplicate upgrade-path removal, the Emerald/dependency cleanup, discovery ownership and economy migration; no Phase 2 implementation is included in this commit.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A begins only after the minecart regression fix is committed and pushed.
 
 ## Phase 1D-C implementation plan
 

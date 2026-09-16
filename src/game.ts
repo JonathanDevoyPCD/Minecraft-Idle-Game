@@ -1,4 +1,4 @@
-import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition } from './skill-tree';
+import { SKILL_TREE_BRANCH_ENTRY_IDS, SKILL_TREE_BY_ID, SKILL_TREE_NODES, type SkillDiscoveryRule, type SkillNodeDefinition, type SkillMilestoneRule } from './skill-tree';
 
 export interface GameState {
   schemaVersion: number;
@@ -576,7 +576,7 @@ export function freshState(now = Date.now()): GameState {
     mineUpgradeRanks: {},
     lastSavedAt: now,
   };
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   return state;
 }
 
@@ -993,7 +993,7 @@ export function unlockStarterMine(
     : `mine-${state.mines.length + 1}`;
   state.mines.push(createMineSite(id, now, x, z, direction, railLength));
   state.placements.push(createWorldPlacement('mine', id, x, z, direction, railLength));
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   syncAvailableMineSites(state);
   return true;
 }
@@ -1188,7 +1188,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
   });
   const transfer = transferResourcesToSettlement(state, result.resources);
   result.resources = transfer.transferred;
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   return result;
 }
 
@@ -1427,6 +1427,7 @@ function completeSettlementHubUpgrade(state: GameState, project: ConstructionPro
   state.builderSlots = Math.max(state.builderSlots, definition.builderSlots);
   state.worldPower += definition.worldPowerReward;
   addSettlementProgress(state, definition.settlementProgressReward);
+  syncAutomaticSkillNodes(state);
 }
 
 function completeSettlementStorageUpgrade(state: GameState, project: ConstructionProject): void {
@@ -1626,6 +1627,15 @@ export function getSkillNodeRank(state: Pick<GameState, 'skillRanks'>, nodeId: s
   return Math.max(0, Math.floor(Number(state.skillRanks[nodeId]) || 0));
 }
 
+export function isSkillNodeMilestoneUnlocked(
+  state: Pick<GameState, 'settlementHub'>,
+  milestone: SkillMilestoneRule | undefined,
+): boolean {
+  if (!milestone) return true;
+  if (milestone.trigger === 'settlement-hub') return state.settlementHub.level >= milestone.required;
+  return false;
+}
+
 function satisfiesDiscoveryRule(state: GameState, rule: SkillDiscoveryRule): boolean {
   if (rule.trigger === 'surface') return state.worldCells.length >= rule.required;
   if (rule.trigger === 'mine') return state.mines.length >= rule.required;
@@ -1641,6 +1651,21 @@ export function syncDiscoveredSkillNodes(state: GameState): void {
     if (!node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0)) return;
     setSkillNodeRank(state, node.id, 1);
   });
+}
+
+/** Apply free, data-driven progression milestones owned by the Settlement Hub. */
+export function syncSettlementHubSkillMilestones(state: GameState): void {
+  SKILL_TREE_NODES.forEach((node) => {
+    if (!node.milestone || getSkillNodeRank(state, node.id) >= node.maxRank) return;
+    if (!isSkillNodeMilestoneUnlocked(state, node.milestone)) return;
+    setSkillNodeRank(state, node.id, node.maxRank);
+  });
+}
+
+/** Refresh every automatic Skill Tree unlock in dependency order. */
+export function syncAutomaticSkillNodes(state: GameState): void {
+  syncSettlementHubSkillMilestones(state);
+  syncDiscoveredSkillNodes(state);
 }
 
 function setSkillNodeRank(state: GameState, nodeId: string, rank: number): void {
@@ -1661,8 +1686,9 @@ export function canAffordSkillNode(state: GameState, node: SkillNodeDefinition):
 export function buySkillNode(state: GameState, nodeId: string, now = Date.now()): boolean {
   const node = SKILL_TREE_BY_ID.get(nodeId);
   if (!node) return false;
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   if (node.kind === 'discovery') return false;
+  if (node.milestone && !isSkillNodeMilestoneUnlocked(state, node.milestone)) return false;
   const currentRank = getSkillNodeRank(state, node.id);
   if (currentRank >= node.maxRank || !hasSkillPrerequisites(state, node) || !canAffordSkillNode(state, node)) return false;
   const constructionKind = node.id === SURFACE_3X3_NODE_ID ? 'chunk-upgrade' : null;
@@ -1685,7 +1711,7 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   return true;
 }
 
@@ -1951,7 +1977,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       lastSavedAt: Number(parsed.lastSavedAt) || now,
     };
     assignQueuedConstruction(restored, now);
-    syncDiscoveredSkillNodes(restored);
+    syncAutomaticSkillNodes(restored);
     syncAvailableMineSites(restored);
     return restored;
   } catch {

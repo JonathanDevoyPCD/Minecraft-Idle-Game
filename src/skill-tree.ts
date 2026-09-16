@@ -17,6 +17,11 @@ export interface SkillDiscoveryRule {
   biome?: string;
 }
 
+export interface SkillMilestoneRule {
+  trigger: 'settlement-hub';
+  required: number;
+}
+
 export interface SkillNodeCost {
   craftingPoints: number;
   resources: Record<string, number>;
@@ -35,6 +40,7 @@ export interface SkillNodeDefinition {
   prerequisites: string[];
   cost: SkillNodeCost;
   discovery?: SkillDiscoveryRule;
+  milestone?: SkillMilestoneRule;
 }
 
 export interface SkillBranchDefinition {
@@ -110,22 +116,25 @@ function discoveryNode(
   return node(branch, id, title, description, effect, 'discovery', prerequisites, 1, worldConsequence, discovery);
 }
 
-function branchEntry(branch: SkillBranchId, title: string): SkillNodeDefinition {
-  return node(
+function branchEntry(branch: SkillBranchId, title: string, requiredHubLevel: number): SkillNodeDefinition {
+  const definition = node(
     branch,
     SKILL_TREE_BRANCH_ENTRY_IDS[branch],
     title,
     `Open the ${title.toLowerCase()} path and reveal its first choice.`,
     `Reveals the ${title} branch.`,
-    'unlock',
+    'milestone',
     [],
     1,
     'No immediate gameplay effect; this is a branch discovery point.',
   );
+  definition.milestone = { trigger: 'settlement-hub', required: requiredHubLevel };
+  definition.cost = { craftingPoints: 0, resources: EMPTY_RESOURCES };
+  return definition;
 }
 
 const harvesting: SkillNodeDefinition[] = [
-  branchEntry('harvesting', 'Harvesting'),
+  branchEntry('harvesting', 'Harvesting', 1),
   node('harvesting', 'harvesting-bare-hands', 'Bare Hands I–III', 'Train the basic strike into a reliable rhythm.', '+10% manual strike speed per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.harvesting], 3),
   node('harvesting', 'harvesting-strike-power', 'Strike Power I–III', 'Put more force behind every active strike.', '+1 effective manual power per rank.', 'rank', ['harvesting-bare-hands'], 3),
   node('harvesting', 'harvesting-precision', 'Precision Mining I–II', 'Reduce wasted effort when a target is nearly broken.', 'Reduce wasted strikes by 5% per rank.', 'rank', ['harvesting-bare-hands'], 2),
@@ -138,7 +147,7 @@ const harvesting: SkillNodeDefinition[] = [
 ];
 
 const toolsCrafting: SkillNodeDefinition[] = [
-  branchEntry('tools-crafting', 'Tools and Crafting'),
+  branchEntry('tools-crafting', 'Tools and Crafting', 1),
   node('tools-crafting', 'tools-tool-bench', 'Tool Bench', 'Create and improve tools at a dedicated work surface.', 'Unlocks tool recipes and tool durability.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['tools-crafting']], 1, 'Adds a Tool Bench anchor to the world.'),
   node('tools-crafting', 'tools-wooden-shovel', 'Wooden Shovel', 'Shape a first tool for soil and soft ground.', 'Unlocks the Wooden Shovel recipe.', 'unlock', ['tools-tool-bench']),
   node('tools-crafting', 'tools-wooden-pickaxe', 'Wooden Pickaxe', 'Shape a first tool for stone and coal.', 'Unlocks the Wooden Pickaxe recipe.', 'unlock', ['tools-tool-bench']),
@@ -158,7 +167,7 @@ const toolsCrafting: SkillNodeDefinition[] = [
 ];
 
 const materialsDeepMining: SkillNodeDefinition[] = [
-  branchEntry('materials-deep-mining', 'Materials and Deep Mining'),
+  branchEntry('materials-deep-mining', 'Materials and Deep Mining', 4),
   discoveryNode('materials-deep-mining', 'materials-dirt-grass', 'Dirt and Grass', 'Understand the first living surface.', 'Unlocks dirt and grass drops.', [SKILL_TREE_BRANCH_ENTRY_IDS['materials-deep-mining']], { trigger: 'surface', required: 1 }, 'The starting surface becomes a registered material pool.'),
   discoveryNode('materials-deep-mining', 'materials-stone', 'Stone', 'Expose the first solid layer beneath the grass.', 'Unlocks stone and cobblestone drops.', ['materials-dirt-grass'], { trigger: 'mine', required: 1 }, 'Reveals the first underground layer.'),
   discoveryNode('materials-deep-mining', 'materials-sand', 'Sand', 'Find loose material for beaches and glass.', 'Unlocks sand drops and recipes.', ['materials-dirt-grass'], { trigger: 'biome', required: 1, biome: 'desert' }),
@@ -181,7 +190,7 @@ const materialsDeepMining: SkillNodeDefinition[] = [
 ];
 
 const automation: SkillNodeDefinition[] = [
-  branchEntry('automation', 'Automation'),
+  branchEntry('automation', 'Automation', 3),
   node('automation', 'automation-auto-strike', 'Auto Strike I–III', 'Improve the default automatic harvesting rhythm.', '+0.25 automatic strikes per second per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.automation], 3),
   node('automation', 'automation-mine-carts', 'Mine Cart Handling I–III', 'Improve the single minecart route without adding duplicate carts.', 'Improves the one-cart mine route per rank.', 'rank', [SKILL_TREE_BRANCH_ENTRY_IDS.automation, 'world-cave-entrance'], 3, 'Improves the existing minecart route without adding another cart.'),
   node('automation', 'automation-chest-minecart', 'Cart Storage', 'Bring the mine output home without spawning another cart.', 'Unlocks storage handling for the existing minecart.', 'unlock', ['automation-mine-carts']),
@@ -201,7 +210,7 @@ const automation: SkillNodeDefinition[] = [
 ];
 
 const worldGrowth: SkillNodeDefinition[] = [
-  branchEntry('world-growth-biomes', 'World Growth and Biomes'),
+  branchEntry('world-growth-biomes', 'World Growth and Biomes', 1),
   node('world-growth-biomes', 'world-adjacent-block', 'Plan the Perimeter', 'Prepare the settlement for its first perimeter expansion.', 'Unlocks the first chunk-upgrade commitment.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['world-growth-biomes']], 1, 'Makes the 7×7 perimeter upgrade available.'),
   node('world-growth-biomes', 'world-surface-3x3', 'Expand to a 7×7 Chunk', 'Add a complete perimeter ring around the starting 5×5 chunk.', 'Builds the next square chunk size.', 'milestone', ['world-adjacent-block'], 1, 'Adds a stable 7×7 settlement surface after construction completes.'),
   node('world-growth-biomes', 'world-underground-layer', 'Underground Layers I–II', 'Extend the world downward one permanent stratum at a time.', '+1 visible underground layer per rank.', 'rank', ['world-surface-3x3', 'materials-stone'], 2, 'Adds another stable stone or deepstone layer beneath the surface.'),
@@ -226,7 +235,7 @@ const worldGrowth: SkillNodeDefinition[] = [
 worldGrowth.find((entry) => entry.id === 'world-surface-3x3')!.cost.worldPower = 1;
 
 const lifeSettlement: SkillNodeDefinition[] = [
-  branchEntry('life-settlement', 'Life and Settlement'),
+  branchEntry('life-settlement', 'Life and Settlement', 2),
   node('life-settlement', 'life-saplings', 'Saplings', 'Start the first renewable plant cycle.', 'Unlocks sapling planting.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['life-settlement']], 1, 'Adds sapling anchors to forest chunks.'),
   node('life-settlement', 'life-crops', 'Crops', 'Grow food from planted seeds.', 'Unlocks crop growth.', 'unlock', ['life-saplings']),
   node('life-settlement', 'life-farmland', 'Farmland', 'Prepare reliable soil for farming.', 'Unlocks farmland tiles.', 'milestone', ['life-crops', 'tools-hoe-farming'], 1, 'Adds farmland to the surface.'),
@@ -246,7 +255,7 @@ const lifeSettlement: SkillNodeDefinition[] = [
 ];
 
 const masteryLongTerm: SkillNodeDefinition[] = [
-  branchEntry('mastery-long-term', 'Mastery and Long-Term Progression'),
+  branchEntry('mastery-long-term', 'Mastery and Long-Term Progression', 5),
   node('mastery-long-term', 'mastery-expanded-inventory', 'Expanded Inventory', 'Carry more resources before returning to storage.', '+25% inventory capacity.', 'unlock', [SKILL_TREE_BRANCH_ENTRY_IDS['mastery-long-term']]),
   node('mastery-long-term', 'mastery-resource-ledger', 'Resource Ledger', 'Track the history of every collected material.', 'Unlocks resource history and totals.', 'unlock', ['mastery-expanded-inventory']),
   node('mastery-long-term', 'mastery-blueprint-system', 'Blueprint System', 'Save authored construction patterns for later use.', 'Unlocks world blueprint slots.', 'unlock', ['mastery-resource-ledger', 'world-core']),

@@ -61,7 +61,8 @@ import {
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
-  syncDiscoveredSkillNodes,
+  isSkillNodeMilestoneUnlocked,
+  syncAutomaticSkillNodes,
   isTraderUnlocked,
   movePathCell,
   moveWorldPlacement,
@@ -1716,6 +1717,7 @@ function updateAudioUi(): void {
 
 function getSkillNodeState(node: SkillNodeDefinition): 'locked' | 'available' | 'ready' | 'maxed' {
   if (getSkillNodeRank(state, node.id) >= node.maxRank) return 'maxed';
+  if (node.milestone && !isSkillNodeMilestoneUnlocked(state, node.milestone)) return 'locked';
   if (!node.prerequisites.every((prerequisite) => getSkillNodeRank(state, prerequisite) > 0)) return 'locked';
   if (node.kind === 'discovery') return 'available';
   return canAffordSkillNode(state, node) ? 'ready' : 'available';
@@ -1801,7 +1803,7 @@ function changeSkillTreeZoom(direction: number): void {
 }
 
 function renderSkillTree(): void {
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   setSkillTreeBranchFocus(null);
   skillTreeGraph.replaceChildren();
   skillTreeInspector.hidden = true;
@@ -1946,9 +1948,11 @@ function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TR
   skillTreeInspectorDescription.textContent = node.description;
   skillTreeInspectorEffect.textContent = `${node.effect} · Rank ${rank}/${node.maxRank}`;
   skillTreeInspectorConsequence.textContent = `World impact: ${node.worldConsequence}`;
-  skillTreeInspectorPrerequisites.textContent = node.prerequisites.length > 0
-    ? `Requires ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
-    : 'Starting point for this branch';
+  skillTreeInspectorPrerequisites.textContent = node.milestone && !isSkillNodeMilestoneUnlocked(state, node.milestone)
+    ? `Requires Settlement Hub Level ${node.milestone.required}`
+    : node.prerequisites.length > 0
+      ? `Requires ${node.prerequisites.map(getSkillNodeTitle).join(' · ')}`
+      : 'Starting point for this branch';
   skillTreeInspectorState.textContent = stateName === 'ready' ? 'READY' : stateName.toUpperCase();
   const resourceCost = Object.entries(node.cost.resources).map(([resource, amount]) => `${amount} ${resource}`).join(' · ');
   const worldPowerCost = (node.cost.worldPower ?? 0) > 0 ? `${node.cost.worldPower} World Power` : '';
@@ -1957,7 +1961,7 @@ function showSkillNodeDetails(node: SkillNodeDefinition, branch: typeof SKILL_TR
   skillTreePurchaseButton.disabled = stateName !== 'ready';
   skillTreePurchaseButton.textContent = stateName === 'ready'
     ? rank > 0 ? `Upgrade Rank ${rank + 1}` : 'Unlock Node'
-    : stateName === 'maxed' ? 'Fully Unlocked' : stateName === 'locked' ? 'Requires Previous Nodes' : node.kind === 'discovery' ? 'Awaiting Discovery' : 'Need More Resources';
+    : stateName === 'maxed' ? 'Fully Unlocked' : stateName === 'locked' ? node.milestone ? `Requires Hub Level ${node.milestone.required}` : 'Requires Previous Nodes' : node.kind === 'discovery' ? 'Awaiting Discovery' : 'Need More Resources';
   selectedSkillNodeId = node.id;
   skillTreeViewport.classList.add('has-inspector');
   skillTreeInspector.hidden = false;
@@ -2397,7 +2401,7 @@ function updateSettlementHubUi(): void {
 }
 
 function updateUi(): void {
-  syncDiscoveredSkillNodes(state);
+  syncAutomaticSkillNodes(state);
   const rate = state.mines.length > 0 ? getMineCartCount(state) * 1000 / getMineTripDuration(state) : 0;
   const settlementStage = getSettlementStage(state);
   const nextSettlementStage = getNextSettlementStage(state);

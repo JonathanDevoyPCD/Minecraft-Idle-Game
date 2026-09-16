@@ -18,7 +18,7 @@ describe('Villagers - Idle World Game skill tree model', () => {
     });
   });
 
-  it('starts each branch with a discoverable entry node', () => {
+  it('starts each branch with a free Hub-gated entry node', () => {
     const entryIds = Object.values(SKILL_TREE_BRANCH_ENTRY_IDS);
     expect(entryIds).toHaveLength(7);
     expect(new Set(entryIds).size).toBe(7);
@@ -28,6 +28,10 @@ describe('Villagers - Idle World Game skill tree model', () => {
       const entry = SKILL_TREE_BY_ID.get(entryId);
       expect(entry?.branch).toBe(branch.id);
       expect(entry?.prerequisites).toEqual([]);
+      expect(entry?.kind).toBe('milestone');
+      expect(entry?.cost.craftingPoints).toBe(0);
+      expect(entry?.milestone?.trigger).toBe('settlement-hub');
+      expect(entry?.milestone?.required).toBeGreaterThanOrEqual(1);
 
       const firstRealNode = SKILL_TREE_NODES.find(
         (node) => node.branch === branch.id && node.id !== entryId,

@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2B in progress; Phase 2B-A complete.
+Status: Phase 2B in progress; Phase 2B-B complete.
 
 ## Current Sub-Phase
 
-**Phase 2B-A - Automatic material discoveries and Build Mode navigation**
+**Phase 2B-B - Free Hub-gated branch entries**
 
-Status: Complete; Phase 2B-B is next.
+Status: Complete; Phase 2B-C is next.
 
 ## Current-repo audit
 
@@ -133,6 +133,7 @@ Phase 1D-C: 69 tests passed; production build and `git diff --check` passed; bro
 Minecart regression fix: 70 tests passed; production build and `git diff --check` passed; browser verified repeated long-rail travel, an east-facing short rail, and active save/reload continuity with exactly one cart per mine.
 Phase 2A: 72 tests passed; production build and `git diff --check` passed; browser verified the independent Mining drawer, normal-resource mine upgrade labels and the removal of the duplicate Storage Carts upgrade entry.
 Phase 2B-A: 74 tests passed; production build and `git diff --check` passed; browser verified locked Build Mode categories remain semantically clickable, open their submenus with lock feedback, and the existing mine/path item flow remains available.
+Phase 2B-B: 75 tests passed; production build and `git diff --check` passed; browser verified Hub-gated branch entries in the Skill Tree show as unlocked only at their configured Hub level and remain free of Crafting Point costs.
 
 ## Test / Verification History
 
@@ -150,9 +151,9 @@ Phase 2B-A: 74 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2B-B — Free Hub-gated branch entries.
+Next incomplete roadmap sub-phase: Phase 2B-C — Increasing Crafting Point rank costs.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A and 2B-A are complete and pushed.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A and 2B-B are complete and pushed.
 
 ## Phase 2B-A acceptance criteria
 
@@ -170,6 +171,22 @@ Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 
 - Updated Skill Tree presentation so discoveries show `Awaiting Discovery` rather than a purchasable action.
 - Kept every Build Mode category navigable when locked and added visible category item previews with prerequisite feedback; implemented buildable items retain their existing mode handlers.
 - No save schema or Supabase migration was required; saved positive material ranks remain valid and unearned discoveries are not granted without their world condition.
+
+## Phase 2B-B acceptance criteria
+
+- [x] Branch-entry nodes are free and do not consume Crafting Points.
+- [x] Branch availability is owned by Settlement Hub level: Dwelling opens Harvesting, Tools and World; Hamlet opens Life; Village opens Automation; Small Town opens Materials and Deep Mining; Town opens Mastery.
+- [x] Hub-gated branch entries automatically unlock when a Hub upgrade completes and when a save is loaded.
+- [x] Existing branch-entry IDs and legacy positive ranks remain valid; no save schema or Supabase migration is required.
+- [x] Locked branch entries show their Hub requirement in the Skill Tree instead of presenting a purchasable path.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 2B-B completion record
+
+- Added data-driven Settlement Hub milestone rules to the existing stable branch-entry nodes and set their costs to zero.
+- Added centralized automatic Skill Tree synchronization for Hub milestones alongside natural material discoveries.
+- Preserved legacy purchased branch ranks through the existing conservative skill-rank migration; no schema or Supabase change was needed.
+- Updated Skill Tree state and inspector feedback to distinguish Hub-gated branch entries from ordinary prerequisite-locked skills.
 
 ## Phase 2A acceptance criteria
 

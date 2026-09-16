@@ -164,6 +164,15 @@ export interface BuildingDefinition {
   settlementProgressOnUpgrade: number;
 }
 
+/** Roadmap-approved Settlement XP rewards for immediate development actions. */
+export const SETTLEMENT_DEVELOPMENT_REWARDS = {
+  pathBuild: 2,
+  pathUpgrade: 2,
+  mineBuild: 100,
+  mineUpgrade: 100,
+  mineStorageUpgrade: 100,
+} as const;
+
 export interface SettlementHubBuildingRequirement {
   kind: WorldPlacementKind;
   count: number;
@@ -240,6 +249,7 @@ export interface MineUpgradeDefinition {
   name: string;
   description: string;
   costs: readonly ResourceCost[];
+  settlementProgressReward: number;
 }
 export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
   {
@@ -248,6 +258,7 @@ export const MINE_UPGRADES: readonly MineUpgradeDefinition[] = [
     name: 'Powered Rails',
     description: 'Shortens every minecart trip.',
     costs: [{ cobblestone: 40 }, { cobblestone: 100 }, { cobblestone: 250 }],
+    settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade,
   },
 ];
 export const MINE_STORAGE_BASE_CAPACITY = 100;
@@ -258,6 +269,7 @@ export const MINE_STORAGE_UPGRADE_COSTS: readonly ResourceCost[] = [
   { cobblestone: 150 },
   { cobblestone: 300 },
 ];
+export const MINE_STORAGE_UPGRADE_SETTLEMENT_PROGRESS = SETTLEMENT_DEVELOPMENT_REWARDS.mineStorageUpgrade;
 export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
 export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
 
@@ -511,9 +523,12 @@ export const SETTLEMENT_HUB_UPGRADES: readonly SettlementHubUpgradeDefinition[] 
 ] as const;
 
 const SETTLEMENT_PROGRESS_BY_CONSTRUCTION: Record<ConstructionKind, number> = {
-  'adjacent-cell': 100,
-  'surface-3x3': 400,
-  'chunk-upgrade': 400,
+  // World expansion is still a completed construction, but it no longer
+  // generates Settlement XP by itself. Development rewards come from the
+  // settlement structures and infrastructure that make the world meaningful.
+  'adjacent-cell': 0,
+  'surface-3x3': 0,
+  'chunk-upgrade': 0,
   'building-build': 0,
   'building-upgrade': 0,
 };
@@ -788,6 +803,7 @@ export function buildPathCell(state: GameState, x: number, z: number): boolean {
   if ((state.resources.dirt ?? 0) < DIRT_PATH_BUILD_COST) return false;
   state.resources.dirt -= DIRT_PATH_BUILD_COST;
   state.pathCells.push({ x, z, tier: 'dirt' });
+  addSettlementProgress(state, SETTLEMENT_DEVELOPMENT_REWARDS.pathBuild);
   return true;
 }
 
@@ -831,6 +847,7 @@ export function upgradePathCell(state: GameState, x: number, z: number): boolean
   if (resource && (state.resources[resource] ?? 0) < definition.resourceCost) return false;
   if (resource) state.resources[resource] -= definition.resourceCost;
   path.tier = nextTier;
+  addSettlementProgress(state, SETTLEMENT_DEVELOPMENT_REWARDS.pathUpgrade);
   return true;
 }
 
@@ -995,6 +1012,7 @@ export function unlockStarterMine(
     : `mine-${state.mines.length + 1}`;
   state.mines.push(createMineSite(id, now, x, z, direction, railLength));
   state.placements.push(createWorldPlacement('mine', id, x, z, direction, railLength));
+  addSettlementProgress(state, SETTLEMENT_DEVELOPMENT_REWARDS.mineBuild);
   syncAutomaticSkillNodes(state);
   syncAvailableMineSites(state);
   return true;
@@ -1048,6 +1066,7 @@ export function buyMineStorageUpgrade(state: GameState, mineId: string): boolean
   if (!mine || !cost || !canAffordResourceCost(state.resources, cost)) return false;
   payResourceCost(state.resources, cost);
   mine.storageCapacityLevel = Math.max(0, Math.floor(Number(mine.storageCapacityLevel) || 0)) + 1;
+  addSettlementProgress(state, MINE_STORAGE_UPGRADE_SETTLEMENT_PROGRESS);
   return true;
 }
 
@@ -1085,6 +1104,8 @@ export function buyMineUpgrade(state: GameState, id: MineUpgradeId): boolean {
       mine.railLevel = getMineUpgradeRank(state, 'rail-speed');
     });
   }
+  const definition = getMineUpgradeDefinition(id);
+  addSettlementProgress(state, definition?.settlementProgressReward ?? 0);
   return true;
 }
 

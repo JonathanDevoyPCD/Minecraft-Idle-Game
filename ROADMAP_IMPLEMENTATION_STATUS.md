@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2C-B complete; Phase 2C-C is next.
+Status: Phase 2C-C complete; Phase 3 is next.
 
 ## Current Sub-Phase
 
-**Phase 2C-B - Enforce the World Power boundary**
+**Phase 2C-C - Align Settlement Progress awards with meaningful construction**
 
-Status: Complete; Phase 2C-C is next.
+Status: Complete; Phase 3 is next.
 
 ## Current-repo audit
 
@@ -111,6 +111,22 @@ The current code now has one serialized generic `constructionQueue` with builder
 - [x] No save schema or Supabase migration is required; existing World Power balances remain intact.
 - [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
 
+## Phase 2C-C implementation plan
+
+1. Audit every Settlement Progress write and keep awards only for completed buildings, building/storage/Hub upgrades, path and mine development, or other roadmap-approved milestones.
+2. Remove the legacy emphasis on terrain expansion by making world expansion completion non-rewarding while preserving its construction and geometry effects.
+3. Add a small data-driven development reward registry for path construction, mine placement, mine upgrades and mine-storage upgrades; keep Settlement Progress non-spendable.
+4. Preserve the existing Hub-owned next-goal UI and add regression coverage for approved awards, expansion no-award behavior and Hub authority.
+
+## Phase 2C-C acceptance criteria
+
+- [x] Settlement Progress is awarded only by completed/approved development actions, not ordinary mining or terrain expansion alone.
+- [x] Path construction, mine placement and mine upgrades award the roadmap-defined development amounts.
+- [x] Building, Settlement Storage and Hub completion rewards remain completion-time and data-driven.
+- [x] Settlement Progress remains non-spendable and the existing Hub next-goal UI remains authoritative.
+- [x] Existing saves and Supabase payloads require no schema migration.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
 ## Phase 1 Target Outcomes
 
 - [x] Settlement Hub levels are authoritative global progression.
@@ -168,6 +184,7 @@ Phase 2B-C: 77 tests passed; production build and `git diff --check` passed; bro
 Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; browser verified the migrated Skill Tree loads with preserved progression and no application console errors.
 Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; browser verified production and staging Skill Tree, Mining and Build Mode shells with no application console errors and confirmed the legacy upgrade panel is absent.
 Phase 2C-B: 80 tests passed; production build and `git diff --check` passed; browser verified the production Skill Tree and World Power summary with no application console errors.
+Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; browser verified Build Mode path flow, Settlement XP/next-goal UI and no application console errors.
 
 ## Test / Verification History
 
@@ -199,11 +216,20 @@ Phase 2C-B: 80 tests passed; production build and `git diff --check` passed; bro
 - Added registry, ordinary-upgrade and accidental-cost regression tests; no save schema or Supabase migration was required.
 - Browser-verified the production Skill Tree and World Power summary at `http://127.0.0.1:5180/Minecraft-Idle-Game/` with zero application console errors.
 
+## Phase 2C-C completion record
+
+- Audited every runtime Settlement Progress write; mine output and ordinary resource collection remain non-rewarding, while building, storage and Hub rewards remain completion-time.
+- Removed Settlement Progress rewards from terrain expansion completion so World Power expansion does not advance settlement development by itself.
+- Added the data-driven `SETTLEMENT_DEVELOPMENT_REWARDS` registry for path construction, path upgrades, mine placement, mine upgrades and mine-storage upgrades using the roadmap's approved values.
+- Preserved Settlement Progress as a non-spendable Hub requirement and kept the existing Hub next-goal HUD as the authoritative feedback surface.
+- Added regression coverage for approved path/mine awards, no-award expansion completion and mine output not advancing progress; no save schema or Supabase migration was required.
+- Browser-verified the production Build Mode path flow and Settlement XP/next-goal UI at `http://127.0.0.1:5180/Minecraft-Idle-Game/` with zero application console errors.
+
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2C-C — Align Settlement Progress awards with meaningful construction.
+Next incomplete roadmap sub-phase: Phase 2D — Real Mine Economy.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A and 2C-B are complete and pushed.
+Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 
 ## Phase 2B-A acceptance criteria
 

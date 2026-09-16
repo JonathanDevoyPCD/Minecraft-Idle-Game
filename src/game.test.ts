@@ -407,6 +407,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(upgradePathCell(state, 0, 3)).toBe(true);
     expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 3)?.tier).toBe('cobblestone');
     expect(state.resources.cobblestone).toBe(0);
+    expect(state.settlementProgress).toBe(2);
     expect(upgradePathCell(state, 0, 2)).toBe(false);
     expect(upgradePathCell(state, 0, -1)).toBe(false);
   });
@@ -419,6 +420,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(buildPathCell(state, 0, 2)).toBe(true);
     expect(state.pathCells.find((cell) => cell.x === 0 && cell.z === 2)?.tier).toBe('dirt');
     expect(state.resources.dirt).toBe(0);
+    expect(state.settlementProgress).toBe(2);
     expect(buildPathCell(state, -1, 2)).toBe(false);
     const dwelling = createWorldPlacement('dwelling', 'dwelling-1', 1, 1, 'south');
     expect(placeWorldPlacement(state, dwelling)).toBe(true);
@@ -503,8 +505,10 @@ describe('Villagers - Idle World Game progression', () => {
   it('does not advance settlement progress from mine output alone', () => {
     const state = freshState(1000);
     unlockStarterMine(state, 1000);
+    const progressAfterMine = state.settlementProgress;
+    expect(progressAfterMine).toBe(100);
     advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
-    expect(state.settlementProgress).toBe(0);
+    expect(state.settlementProgress).toBe(progressAfterMine);
   });
 
   it('projects a minecart smoothly through outbound, delivery and return phases', () => {
@@ -550,11 +554,13 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state).toMatchObject({ worldRank: 0, worldPower: 1, craftingPoints: 2 });
     const now = Date.now();
     completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['adjacent-cell']);
+    expect(state.settlementProgress).toBe(0);
     expect(buySkillNode(state, 'world-surface-3x3')).toBe(true);
     expect(state).toMatchObject({ worldRank: 0, worldPower: 0, craftingPoints: 1 });
     completeConstructionProjects(state, now + 1 + CONSTRUCTION_DURATIONS_MS['chunk-upgrade']);
     expect(state.worldRank).toBe(1);
     expect(state.chunkSize).toBe(9);
+    expect(state.settlementProgress).toBe(0);
   });
 
   it('keeps World Power costs limited to data-defined expansion commitments', () => {
@@ -829,6 +835,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.resources.emerald).toBe(7);
     expect(mine.storageCapacityLevel).toBe(1);
     expect(getMineStorageCapacity(mine)).toBe(200);
+    expect(state.settlementProgress).toBe(200);
   });
 
   it('drops obsolete storage upgrade ranks while preserving serialized capacity', () => {
@@ -919,6 +926,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getMineTripDuration(state)).toBeLessThan(baseDuration);
     expect(getMineEmeraldChance(state)).toBeCloseTo(0.001);
     expect(getMineCartCount(state)).toBe(1);
+    expect(state.settlementProgress).toBe(200);
     expect(getMineStorageUpgradeCost(state, state.mines[0].id)).toEqual({ cobblestone: 25 });
   });
 

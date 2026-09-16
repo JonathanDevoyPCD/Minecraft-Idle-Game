@@ -116,7 +116,7 @@ Phase 1D-B: 67 tests passed; production build and `git diff --check` passed; bro
 - Phase 1D-A: `npm test` — 63 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. Schema 7 saves migrate to schema 8 with a default level-one Settlement Storage while preserving existing resources and Hub/runtime data.
 - Phase 1D-A browser: local production and staging pages loaded at `http://localhost:5174/Minecraft-Idle-Game/` and `/testing/` with zero application errors. The resource brief and Resources modal both displayed `Storage 0 / 500`; staging remained isolated and retained its banner.
 - Phase 1D-B: `npm test` — 67 tests passed across 3 files; `npm run build` passed; `git diff --check` passed. The build retains the existing large-chunk advisory only.
-- Phase 1D-B browser: Playwright CLI verified `http://127.0.0.1:5176/Minecraft-Idle-Game/` and `/testing/` at 1280x720 and 390x844. Mining and Build Mode remained independent; Mining > Storage showed Settlement Storage at `0/500`, the data-driven upgrade action and disabled missing-resource feedback; the HUD showed next-goal and builder availability text; staging retained its isolation banner. Console error checks returned zero errors on both routes.
+- Phase 1D-B browser: Playwright CLI verified the production route `http://127.0.0.1:5176/Minecraft-Idle-Game/` at 1280x720 and 390x844, plus the staging route `/testing/` at 1280x720. Mining and Build Mode remained independent; Mining > Storage showed Settlement Storage at `0/500`, the data-driven upgrade action and disabled missing-resource feedback; the HUD showed next-goal and builder availability text; staging retained its isolation banner. Console error checks returned zero errors on both routes.
 
 ## Next Work
 

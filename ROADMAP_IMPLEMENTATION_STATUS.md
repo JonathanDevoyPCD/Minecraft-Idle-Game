@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2B in progress; Phase 2B-C complete.
+Status: Phase 2B complete; Phase 2C is next.
 
 ## Current Sub-Phase
 
-**Phase 2B-C - Increasing Crafting Point rank costs**
+**Phase 2B-D - Conservative migration of purchased material/branch ranks**
 
-Status: Complete; Phase 2B-D is next.
+Status: Complete; Phase 2C is next.
 
 ## Current-repo audit
 
@@ -135,6 +135,7 @@ Phase 2A: 72 tests passed; production build and `git diff --check` passed; brows
 Phase 2B-A: 74 tests passed; production build and `git diff --check` passed; browser verified locked Build Mode categories remain semantically clickable, open their submenus with lock feedback, and the existing mine/path item flow remains available.
 Phase 2B-B: 75 tests passed; production build and `git diff --check` passed; browser verified Hub-gated branch entries in the Skill Tree show as unlocked only at their configured Hub level and remain free of Crafting Point costs.
 Phase 2B-C: 77 tests passed; production build and `git diff --check` passed; browser verified current-rank Skill Tree costs in the Skill Tree node and inspector with no application console errors.
+Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; browser verified the migrated Skill Tree loads with preserved progression and no application console errors.
 
 ## Test / Verification History
 
@@ -152,7 +153,7 @@ Phase 2B-C: 77 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2B-D — Conservative migration of remaining purchased material/branch ranks.
+Next incomplete roadmap sub-phase: Phase 2C — Legacy authority retirement and World Power boundary.
 
 Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B and 2B-C are complete and pushed.
 
@@ -204,6 +205,22 @@ Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 
 - Updated Skill Tree purchase validation, spending, accessibility text and inspector details to use the same rank-aware cost.
 - Preserved free discoveries and Hub-owned branch milestones, while keeping capstones at 5 CP.
 - Added model and behavior coverage for increasing rank costs; no save or Supabase migration was needed.
+
+## Phase 2B-D acceptance criteria
+
+- [x] Valid purchased material and skill ranks from legacy saves remain present after normalization and are capped only to the current node maximum.
+- [x] Legacy progress in a branch restores its stable branch entry so the now-free path remains visible without charging Crafting Points again.
+- [x] Automatic discovery and Hub milestone synchronization does not erase or reinterpret previously purchased ranks.
+- [x] Unknown, invalid and non-positive rank values remain excluded from the canonical skill-rank map.
+- [x] No save schema, Supabase contract or gameplay currency balance migration is required; saved Crafting Points are preserved exactly.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 2B-D completion record
+
+- Isolated legacy branch-entry restoration in a named migration helper and documented that stable child ranks remain the source of truth.
+- Preserved legacy material discoveries and purchased skill ranks while restoring only the free branch entry needed to expose their existing path.
+- Added a schema-4 migration regression test proving material/branch ranks survive load without changing Crafting Points and remain non-purchasable discoveries.
+- No schema or Supabase migration was required; Phase 2B is now complete.
 
 ## Phase 2A acceptance criteria
 

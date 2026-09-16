@@ -615,6 +615,29 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
   });
 
+  it('preserves legacy material and branch ranks without changing Crafting Points', () => {
+    const saved = {
+      ...freshState(0),
+      schemaVersion: 4,
+      craftingPoints: 4,
+      skillRanks: {
+        'harvesting-bare-hands': 3,
+        'materials-stone': 1,
+      },
+    };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 1000);
+
+    expect(state.skillRanks).toMatchObject({
+      'harvesting-bare-hands': 3,
+      'materials-stone': 1,
+      'branch-entry-harvesting': 1,
+      'branch-entry-materials-deep-mining': 1,
+    });
+    expect(state.craftingPoints).toBe(4);
+    expect(buySkillNode(state, 'materials-stone')).toBe(false);
+  });
+
   it('migrates schema 4 expansion projects into generic builder projects', () => {
     const saved = {
       ...freshState(0),

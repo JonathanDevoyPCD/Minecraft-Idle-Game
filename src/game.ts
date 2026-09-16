@@ -1772,14 +1772,21 @@ function migrateSkillRanks(parsed: Partial<GameState>): Record<string, number> {
   if (worldRank > 0) ranks[ADJACENT_BLOCK_NODE_ID] = 1;
   if (worldRank > 1) ranks[SURFACE_3X3_NODE_ID] = 1;
 
-  // Branch entries were introduced after the prototype tree. Reveal the entry
-  // for any branch that already had progress so existing players keep seeing
-  // the path they had already opened without paying again.
+  preserveLegacyBranchEntries(ranks);
+  return ranks;
+}
+
+/**
+ * Keep legacy purchased material/skill progress visible after automatic
+ * discoveries and Hub-owned branch entries replaced their old purchase gates.
+ * The stable child rank is the source of truth; this only restores the free
+ * branch entry required to render that already-earned path.
+ */
+function preserveLegacyBranchEntries(ranks: Record<string, number>): void {
   Object.entries(SKILL_TREE_BRANCH_ENTRY_IDS).forEach(([branch, entryId]) => {
     const hasBranchProgress = SKILL_TREE_NODES.some((node) => node.branch === branch && node.id !== entryId && ranks[node.id] > 0);
     if (hasBranchProgress) ranks[entryId] = 1;
   });
-  return ranks;
 }
 
 export function getAutoRate(state: GameState): number {

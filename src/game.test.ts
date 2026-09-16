@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubUpgradeStatus, getSettlementStage, getStableBlockType, harvestResource, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementStage, getStableBlockType, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -39,7 +39,7 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.toolRank).toBe(3);
     expect(state.undergroundLayer).toBe(2);
     expect(state.mines).toHaveLength(1);
-    expect(getAvailableMineSites(state)).toBe(2);
+    expect(getAvailableMineSites(state)).toBe(0);
   });
 
   it('unlocks a wooden pickaxe and increases harvest power', () => {
@@ -141,20 +141,22 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.placements.find((placement) => placement.id === 'starter-mine')?.depth).toBe(2);
   });
 
-  it('supports three independent mine sites and adds one slot per settlement stage', () => {
+  it('grants mine permits from Hub milestones instead of skill nodes', () => {
     const state = freshState();
     state.skillRanks = { 'world-cave-entrance': 1, 'world-second-mine-site': 1, 'world-third-mine-site': 1 };
-    expect(getMineSiteCapacity(state)).toBe(3);
-    expect(getAvailableMineSites(state)).toBe(3);
+    expect(getMineSiteCapacity(state)).toBe(1);
+    expect(getAvailableMineSites(state)).toBe(1);
     expect(unlockStarterMine(state, 1000, 0, 1, 'south', 2)).toBe(true);
+    state.settlementHub.level = 4;
+    expect(getSettlementStage(state).id).toBe('small-town');
+    expect(getMineSiteCapacity(state)).toBe(2);
     expect(unlockStarterMine(state, 1000, 1, -1, 'south', 4)).toBe(true);
+    state.settlementHub.level = 6;
+    expect(getSettlementStage(state).id).toBe('city');
+    expect(getMineSiteCapacity(state)).toBe(3);
     expect(unlockStarterMine(state, 1000, 2, -1, 'south', 4)).toBe(true);
     expect(state.mines.map((mine) => mine.id)).toEqual(['starter-mine', 'mine-2', 'mine-3']);
     expect(getAvailableMineSites(state)).toBe(0);
-    state.settlementHub.level = 2;
-    expect(getSettlementStage(state).id).toBe('hamlet');
-    expect(getMineSiteCapacity(state)).toBe(4);
-    expect(getAvailableMineSites(state)).toBe(1);
   });
 
   it('reports build prerequisites from the shared unlock registry', () => {
@@ -162,6 +164,20 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(false);
     state.skillRanks['world-cave-entrance'] = 1;
     expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(true);
+  });
+
+  it('derives Hub consequences and stage-gates later build categories', () => {
+    const state = freshState();
+    expect(getSettlementHubConsequences(state)).toMatchObject({ mineSiteCapacity: 1, traderUnlocked: false });
+    expect(isTraderUnlocked(state)).toBe(false);
+    expect(getBuildItemUnlockStatus(state, 'farm').unlocked).toBe(false);
+    state.settlementHub.level = 2;
+    state.skillRanks['life-crops'] = 1;
+    expect(getSettlementHubConsequences(state)).toMatchObject({ mineSiteCapacity: 1, traderUnlocked: true });
+    expect(isTraderUnlocked(state)).toBe(true);
+    expect(getBuildItemUnlockStatus(state, 'farm').unlocked).toBe(true);
+    state.settlementHub.level = 4;
+    expect(getSettlementHubConsequences(state).mineSiteCapacity).toBe(2);
   });
 
   it('uses one collision rule for path-facing structures', () => {
@@ -505,6 +521,8 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getLivingEntityPlan(state)).toHaveLength(0);
     state.worldRank = 2;
     state.skillRanks = { 'life-animals': 1, 'life-first-villager': 1 };
+    expect(getLivingEntityPlan(state)).toHaveLength(0);
+    state.settlementHub.level = 3;
     const entityPlan = getLivingEntityPlan(state);
     expect(entityPlan.map((entity) => entity.kind)).toEqual(['pig', 'cow', 'villager']);
     const animals = entityPlan.filter((entity) => entity.kind !== 'villager');

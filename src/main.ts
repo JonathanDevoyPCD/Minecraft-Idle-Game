@@ -34,6 +34,7 @@ import {
   getMineUpgradeDefinition,
   getMineUpgradeRank,
   getAvailableMineSites,
+  getBuildItemUnlockStatus,
   getMineSiteCapacity,
   getMineLayer,
   getMineStorageCapacity,
@@ -45,6 +46,7 @@ import {
   getBuilderSlotCount,
   getSettlementHubUpgrade,
   getSettlementHubUpgradeStatus,
+  getSettlementStageIndex,
   getLivingEntityPlan,
   getMineCargoKind,
   getMeadowFeaturePlan,
@@ -53,6 +55,7 @@ import {
   getSettlementStage,
   getWorldSurfaceCells,
   getSkillNodeRank,
+  isTraderUnlocked,
   movePathCell,
   moveWorldPlacement,
   queueSettlementHubUpgrade,
@@ -64,6 +67,7 @@ import {
   upgradePathCell,
   WORLD_DIRECTIONS,
   type BlockType,
+  type BuildItemId,
   type LivingEntityPlan,
   type MineCargoKind,
   type MineRailLength,
@@ -691,7 +695,7 @@ function updateLivingWorld(): void {
   livingEntityRoot.clear();
   getLivingEntityPlan(state).forEach((plan) => {
     const visual = createLivingEntityVisual(plan);
-    visual.group.visible = state.worldRank >= 2;
+    visual.group.visible = getSettlementStageIndex(state) >= 2;
   });
 }
 
@@ -2018,8 +2022,23 @@ function updateBuildUi(): void {
   mineButton.setAttribute('aria-pressed', String(buildMode === 'mine'));
   buildDrawer.dataset.category = buildDrawerCategory;
   buildBackButton.hidden = false;
+  const buildCategoryItems: Partial<Record<Exclude<BuildDrawerCategory, 'root'>, BuildItemId>> = {
+    mining: 'mine',
+    paths: 'path',
+    farm: 'farm',
+    smithing: 'smithing',
+    houses: 'houses',
+    animals: 'animals',
+  };
   buildCategoryButtons.forEach((button) => {
+    const category = button.dataset.buildCategory as Exclude<BuildDrawerCategory, 'root'> | undefined;
+    const itemId = category ? buildCategoryItems[category] : undefined;
+    const unlock = itemId ? getBuildItemUnlockStatus(state, itemId) : { unlocked: true, missing: [] };
     const isSelected = buildDrawerView === 'categories' && button.dataset.buildCategory === buildDrawerCategory;
+    button.disabled = !unlock.unlocked;
+    button.title = unlock.unlocked
+      ? `Open ${button.textContent?.trim() ?? 'build'} category`
+      : `Locked: ${unlock.missing.map((entry) => entry.label).join(' · ')}`;
     button.setAttribute('aria-pressed', String(isSelected));
     button.classList.toggle('selected', isSelected);
   });
@@ -2035,12 +2054,17 @@ function updateBuildUi(): void {
     const itemCategory = button.dataset.buildItemCategory as BuildDrawerCategory | undefined;
     const isVisible = !itemCategory || itemCategory === buildDrawerCategory;
     const isEmpty = item?.startsWith('empty-') ?? false;
-    const isMineLocked = item === 'mine' && getAvailableMineSites(state) <= 0;
+    const itemUnlock = item && !isEmpty && item !== 'back'
+      ? getBuildItemUnlockStatus(state, item as BuildItemId)
+      : { unlocked: true, missing: [] };
+    const isMineLocked = item === 'mine' && (getAvailableMineSites(state) <= 0 || !itemUnlock.unlocked);
     button.hidden = !isVisible;
     button.disabled = isEmpty || isMineLocked;
     if (item === 'mine') {
       if (isMineLocked) {
-        button.title = 'Unlock another mine site in the Skill Tree or reach the next settlement stage';
+        button.title = itemUnlock.missing.length > 0
+          ? `Locked: ${itemUnlock.missing.map((entry) => entry.label).join(' · ')}`
+          : 'Reach the next Settlement Hub milestone to unlock another mine site';
       } else {
         const available = getAvailableMineSites(state);
         button.title = `${available} mine blueprint${available === 1 ? '' : 's'} available`;
@@ -2337,10 +2361,14 @@ function updateUi(): void {
   resourceGoldFillEl.style.width = resourceFill(state.resources.gold ?? 0, 100);
   if (skillTreePointsLabel) skillTreePointsLabel.textContent = `${state.craftingPoints} CP`;
   if (miningMenuRate) miningMenuRate.textContent = `${rate.toFixed(2)}/s`;
-  const traderReady = state.worldRank >= 1;
+  const traderReady = isTraderUnlocked(state);
+  tradingButton.disabled = !traderReady;
+  tradingButton.title = traderReady
+    ? 'Open Wandering Trader'
+    : 'Wandering Trader unlocks when the Settlement Hub reaches Hamlet';
   traderEmeraldButton.disabled = !traderReady || (state.resources.cobblestone ?? 0) < TRADER_EMERALD_COST;
   traderEmeraldStatus.textContent = !traderReady
-    ? 'The trader arrives after your first land expansion.'
+    ? 'The trader arrives when the Settlement Hub reaches Hamlet.'
     : traderEmeraldButton.disabled
       ? `Need ${TRADER_EMERALD_COST} Cobblestone.`
       : `${state.resources.cobblestone.toLocaleString()} Cobblestone available.`;

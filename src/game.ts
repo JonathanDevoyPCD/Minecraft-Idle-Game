@@ -309,11 +309,11 @@ export const BUILD_ITEM_UNLOCKS: readonly BuildItemUnlockDefinition[] = [
   { id: 'mine', label: 'Mine', prerequisites: [{ kind: 'skill', id: 'world-cave-entrance', required: 1, label: 'Mine Entrance skill' }] },
   { id: 'path', label: 'Path', prerequisites: [] },
   { id: 'path-upgrade', label: 'Path Upgrade', prerequisites: [{ kind: 'resource', id: 'cobblestone', required: 8, label: '8 cobblestone' }] },
-  { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },
-  { id: 'smithing', label: 'Smithing', prerequisites: [{ kind: 'skill', id: 'tools-tool-bench', required: 1, label: 'Tool Bench skill' }] },
-  { id: 'houses', label: 'Houses', prerequisites: [{ kind: 'skill', id: 'life-villager-housing', required: 1, label: 'Villager Housing skill' }] },
-  { id: 'animals', label: 'Animals', prerequisites: [{ kind: 'skill', id: 'life-animals', required: 1, label: 'Animals skill' }] },
-  { id: 'science', label: 'Science', prerequisites: [{ kind: 'skill', id: 'materials-redstone', required: 1, label: 'Redstone skill' }] },
+  { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },
+  { id: 'smithing', label: 'Smithing', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'tools-tool-bench', required: 1, label: 'Tool Bench skill' }] },
+  { id: 'houses', label: 'Houses', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-villager-housing', required: 1, label: 'Villager Housing skill' }] },
+  { id: 'animals', label: 'Animals', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'life-animals', required: 1, label: 'Animals skill' }] },
+  { id: 'science', label: 'Science', prerequisites: [{ kind: 'settlement-stage', id: 'small-town', required: 1, label: 'Settlement Hub: Small Town' }, { kind: 'skill', id: 'materials-redstone', required: 1, label: 'Redstone skill' }] },
 ];
 export const SPEED_RATES = [1, 1.5, 2, 2.5, 3.25];
 export const TOOL_TIERS = [
@@ -347,6 +347,24 @@ export const SETTLEMENT_STAGES: readonly SettlementStageDefinition[] = [
   { id: 'city', name: 'City', requiredProgress: 75_000, requiredWorldRank: 2, description: 'A mature settlement with a broad connected world.' },
   { id: 'large-city', name: 'Large City', requiredProgress: 200_000, requiredWorldRank: 2, description: 'A major living world built over a long campaign.' },
   { id: 'endless', name: 'Endless Mode', requiredProgress: 500_000, requiredWorldRank: 2, description: 'The settlement loop continues without a final cap.' },
+] as const;
+
+export interface SettlementHubConsequenceDefinition {
+  hubLevel: number;
+  mineSiteCapacity: number;
+  traderUnlocked: boolean;
+}
+
+/** Derived gates owned by the Hub, kept in one registry with no extra save fields. */
+export const SETTLEMENT_HUB_CONSEQUENCES: readonly SettlementHubConsequenceDefinition[] = [
+  { hubLevel: 1, mineSiteCapacity: 1, traderUnlocked: false },
+  { hubLevel: 2, mineSiteCapacity: 1, traderUnlocked: true },
+  { hubLevel: 3, mineSiteCapacity: 1, traderUnlocked: true },
+  { hubLevel: 4, mineSiteCapacity: 2, traderUnlocked: true },
+  { hubLevel: 5, mineSiteCapacity: 2, traderUnlocked: true },
+  { hubLevel: 6, mineSiteCapacity: 3, traderUnlocked: true },
+  { hubLevel: 7, mineSiteCapacity: 3, traderUnlocked: true },
+  { hubLevel: 8, mineSiteCapacity: 3, traderUnlocked: true },
 ] as const;
 
 /**
@@ -775,7 +793,7 @@ export function getMeadowFeaturePlan(worldSeed: number): readonly MeadowFeature[
 }
 
 export function getLivingEntityPlan(state: GameState): readonly LivingEntityPlan[] {
-  if (state.worldRank < 2) return [];
+  if (getSettlementStageIndex(state) < 2) return [];
   const entities: LivingEntityPlan[] = [];
   if (getSkillNodeRank(state, 'life-animals') > 0) {
     entities.push({ id: 'starter-pig', kind: 'pig', x: 0.55, z: 0.25 });
@@ -1304,6 +1322,15 @@ export function getSettlementStageIndex(state: Pick<GameState, 'settlementHub'>)
   return Math.max(0, Math.min(SETTLEMENT_STAGES.length - 1, Math.floor(Number(state.settlementHub.level) || 1) - 1));
 }
 
+export function getSettlementHubConsequences(state: Pick<GameState, 'settlementHub'>): SettlementHubConsequenceDefinition {
+  const hubLevel = Math.max(1, Math.floor(Number(state.settlementHub.level) || 1));
+  return SETTLEMENT_HUB_CONSEQUENCES[Math.min(SETTLEMENT_HUB_CONSEQUENCES.length - 1, hubLevel - 1)];
+}
+
+export function isTraderUnlocked(state: Pick<GameState, 'settlementHub'>): boolean {
+  return getSettlementHubConsequences(state).traderUnlocked;
+}
+
 export interface SettlementHubUpgradeStatus {
   definition: SettlementHubUpgradeDefinition | null;
   ready: boolean;
@@ -1345,24 +1372,21 @@ export function getSettlementHubUpgradeStatus(
 }
 
 /**
- * One starter slot, one slot for each of the two mine-site skill unlocks, and
- * one more slot for every settlement stage reached after Dwelling.
+ * Mine permits are consequences of Settlement Hub authority: one starter
+ * permit, a second at Small Town, and a third at City.
  */
-export function getMineSiteCapacity(state: Pick<GameState, 'settlementHub' | 'skillRanks'>): number {
-  return 1
-    + getSkillNodeRank(state, 'world-second-mine-site')
-    + getSkillNodeRank(state, 'world-third-mine-site')
-    + getSettlementStageIndex(state);
+export function getMineSiteCapacity(state: Pick<GameState, 'settlementHub'>): number {
+  return getSettlementHubConsequences(state).mineSiteCapacity;
 }
 
 export function getAvailableMineSites(
   state: Pick<GameState, 'mines' | 'availableMineSites'>
-    & Partial<Pick<GameState, 'settlementHub' | 'skillRanks'>>,
+    & Partial<Pick<GameState, 'settlementHub'>>,
 ): number {
-  if (state.settlementHub === undefined || state.skillRanks === undefined) {
+  if (state.settlementHub === undefined) {
     return Math.max(0, state.availableMineSites);
   }
-  return Math.max(0, getMineSiteCapacity(state as Pick<GameState, 'settlementHub' | 'skillRanks'>) - state.mines.length);
+  return Math.max(0, getMineSiteCapacity({ settlementHub: state.settlementHub }) - state.mines.length);
 }
 
 function syncAvailableMineSites(state: GameState): void {
@@ -1452,7 +1476,6 @@ export function buySkillNode(state: GameState, nodeId: string, now = Date.now())
   if (node.id === SURFACE_3X3_NODE_ID) queueConstruction(state, 'chunk-upgrade', now);
   if (node.id === UNDERGROUND_LAYER_NODE_ID) state.undergroundLayer = Math.max(state.undergroundLayer, currentRank + 1);
   if (node.id === 'world-cave-entrance') unlockStarterMine(state, now);
-  if (node.id === 'world-second-mine-site' || node.id === 'world-third-mine-site') syncAvailableMineSites(state);
   if (TOOL_NODE_IDS.includes(node.id as typeof TOOL_NODE_IDS[number])) {
     state.toolRank = getToolRankFromSkills(state);
   }

@@ -227,7 +227,7 @@ Phase 2C-C: 80 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2D — Real Mine Economy.
+Next incomplete roadmap sub-phase: Phase 3 — Real Mine Economy.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 

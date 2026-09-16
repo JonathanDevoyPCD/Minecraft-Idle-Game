@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addSettlementProgress, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementStage, getStableBlockType, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, STARTING_CHUNK_SIZE, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementStage, getSettlementStorageCapacity, getStableBlockType, getStoredResourceTotal, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -110,7 +110,7 @@ describe('Villagers - Idle World Game progression', () => {
 
   it('starts on a procedural 7×7 chunk with a three-tile path line and one free mine site', () => {
     const state = freshState();
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(getBuilderSlotCount(state)).toBe(1);
     expect(getActiveBuilderCount(state)).toBe(0);
     expect(getAvailableBuilderSlots(state)).toBe(1);
@@ -118,6 +118,25 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.worldCells).toHaveLength(49);
     expect(state.pathCells.map((cell) => `${cell.x},${cell.z}`)).toEqual(['0,3', '1,3', '2,3']);
     expect(state.availableMineSites).toBe(1);
+    expect(state.settlementStorage).toEqual({ id: 'settlement-storage', level: 1 });
+    expect(getSettlementStorageCapacity(state)).toBe(SETTLEMENT_STORAGE_LEVELS[0].capacity);
+    expect(getAvailableSettlementStorage(state)).toBe(500);
+  });
+
+  it('caps settlement resource transfers and reports overflow', () => {
+    const state = freshState();
+    expect(getStoredResourceTotal(state)).toBe(0);
+    expect(addSettlementResource(state, 'dirt', 498)).toBe(498);
+    expect(transferResourcesToSettlement(state, { dirt: 10, cobblestone: 4 })).toEqual({
+      transferred: { dirt: 2 },
+      overflow: { dirt: 8, cobblestone: 4 },
+    });
+    expect(getStoredResourceTotal(state)).toBe(500);
+    expect(getAvailableSettlementStorage(state)).toBe(0);
+    expect(collectOreBonus(state, 'diamond')).toBe(0);
+    state.resources.dirt = 400;
+    expect(addSettlementResource(state, 'diamond', 10)).toBe(10);
+    expect(getStoredResourceTotal(state)).toBe(410);
   });
 
   it('requires a mine footprint to stay inside the chunk and point its rail end directly at a path', () => {
@@ -462,7 +481,7 @@ describe('Villagers - Idle World Game progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state).toMatchObject({ schemaVersion: 7, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1, settlementHub: { level: 1, constructionState: 'complete' } });
+    expect(state).toMatchObject({ schemaVersion: 8, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1, settlementHub: { level: 1, constructionState: 'complete' }, settlementStorage: { level: 1 } });
     expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
   });
 
@@ -475,8 +494,9 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.settlementHub.level).toBe(1);
+    expect(state.settlementStorage.level).toBe(1);
     expect(state.constructionQueue[0]).toMatchObject({ action: 'expand', targetKind: 'world', targetId: 'adjacent-cell-north', builderId: 'builder-1', cost: {} });
     expect(state.constructionQueue[0].completesAt).toBe(11000);
   });
@@ -486,8 +506,9 @@ describe('Villagers - Idle World Game progression', () => {
     const saved = { ...freshState(0), schemaVersion: 5, placements: [{ ...placement, level: undefined, constructionState: undefined }] };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state.schemaVersion).toBe(7);
+    expect(state.schemaVersion).toBe(8);
     expect(state.settlementHub.level).toBe(1);
+    expect(state.settlementStorage.level).toBe(1);
     expect(state.placements[0]).toMatchObject({ id: placement.id, level: 1, constructionState: 'complete' });
   });
 
@@ -557,6 +578,19 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state.mines[0].progressMs).toBe(0);
   });
 
+  it('pauses mine production at full settlement storage and resumes after space is freed', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    state.resources.dirt = 500;
+    const paused = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS);
+    expect(paused).toMatchObject({ trips: 0, xp: 0, resources: {} });
+    expect(state.mines[0].completedTrips).toBe(0);
+    state.resources.dirt = 499;
+    const resumed = advanceMineOperations(state, 1000 + MINE_TRIP_DURATION_MS * 2);
+    expect(resumed).toMatchObject({ trips: 1, xp: 2, resources: { cobblestone: 1 } });
+    expect(getStoredResourceTotal(state)).toBe(500);
+  });
+
   it('fills mine storage from the first returning cart and reaches full in twelve minutes', () => {
     const state = freshState(1000);
     unlockStarterMine(state, 1000);
@@ -598,6 +632,23 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     expect(loadState(storage, 2000).mines).toHaveLength(1);
+  });
+
+  it('migrates schema 7 saves to schema 8 without losing resources or runtime state', () => {
+    const saved = {
+      ...freshState(1000),
+      schemaVersion: 7,
+      resources: { dirt: 120, cobblestone: 80 },
+      settlementHub: { id: 'settlement-hub' as const, level: 2, constructionState: 'complete' as const },
+      mines: [{ id: 'starter-mine', x: 0, z: 1, cartCount: 1, storageCarts: 0, railLevel: 0, minerCount: 0, progressMs: 2000, lastUpdatedAt: 1000, completedTrips: 3 }],
+    };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 2000);
+    expect(state.schemaVersion).toBe(8);
+    expect(state.resources).toMatchObject({ dirt: 120, cobblestone: 80 });
+    expect(state.settlementHub.level).toBe(2);
+    expect(state.settlementStorage).toEqual({ id: 'settlement-storage', level: 1 });
+    expect(state.mines[0]).toMatchObject({ completedTrips: 3, progressMs: 2000 });
   });
 
   it('keeps one cart per mine while keeping bonus ore clickable', () => {

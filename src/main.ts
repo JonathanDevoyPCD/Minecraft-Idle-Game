@@ -43,7 +43,10 @@ import {
   getMineStorageUpgradeCost,
   getMineTripDuration,
   getActiveBuilderCount,
+  addSettlementResource,
   getBuilderSlotCount,
+  getSettlementStorageCapacity,
+  getStoredResourceTotal,
   getSettlementHubUpgrade,
   getSettlementHubUpgradeStatus,
   getSettlementStageIndex,
@@ -1532,10 +1535,12 @@ const totalXpEl = document.querySelector('#total-xp')!;
 const resourceEmeraldEl = document.querySelector('#resource-emerald')!;
 const resourceDiamondEl = document.querySelector('#resource-diamond')!;
 const resourceGoldEl = document.querySelector('#resource-gold')!;
+const resourceStorageEl = document.querySelector('#resource-storage')!;
 const resourceModalEmeraldEl = document.querySelector('#resource-modal-emerald')!;
 const resourceModalDiamondEl = document.querySelector('#resource-modal-diamond')!;
 const resourceModalGoldEl = document.querySelector('#resource-modal-gold')!;
 const resourceModalCobblestoneEl = document.querySelector('#resource-modal-cobblestone')!;
+const resourceModalStorageEl = document.querySelector('#resource-modal-storage')!;
 const resourceXpFillEl = document.querySelector<HTMLElement>('#resource-xp-fill')!;
 const resourceEmeraldFillEl = document.querySelector<HTMLElement>('#resource-emerald-fill')!;
 const resourceDiamondFillEl = document.querySelector<HTMLElement>('#resource-diamond-fill')!;
@@ -2354,6 +2359,12 @@ function updateUi(): void {
   resourceModalDiamondEl.textContent = (state.resources.diamond ?? 0).toLocaleString();
   resourceModalGoldEl.textContent = (state.resources.gold ?? 0).toLocaleString();
   resourceModalCobblestoneEl.textContent = (state.resources.cobblestone ?? 0).toLocaleString();
+  const storedResources = getStoredResourceTotal(state);
+  const storageCapacity = getSettlementStorageCapacity(state);
+  const storageLabel = `${Math.min(storedResources, storageCapacity).toLocaleString()} / ${storageCapacity.toLocaleString()}`;
+  resourceStorageEl.textContent = storageLabel;
+  resourceModalStorageEl.textContent = storageLabel;
+  resourceStorageEl.closest<HTMLElement>('.resource-capacity')?.classList.toggle('is-full', storedResources >= storageCapacity);
   const resourceFill = (value: number, milestone: number) => `${Math.min(100, value / milestone * 100)}%`;
   resourceXpFillEl.style.width = settlementFillEl.style.width;
   resourceEmeraldFillEl.style.width = resourceFill(state.resources.emerald ?? 0, 100);
@@ -3005,7 +3016,7 @@ tradingButton.addEventListener('click', () => openWorldModal('trading-modal'));
 traderEmeraldButton.addEventListener('click', () => {
   if ((state.resources.cobblestone ?? 0) < TRADER_EMERALD_COST) return;
   state.resources.cobblestone -= TRADER_EMERALD_COST;
-  state.resources.emerald = (state.resources.emerald ?? 0) + 1;
+  addSettlementResource(state, 'emerald', 1);
   updateUi();
   saveState(localStorage, state);
 });

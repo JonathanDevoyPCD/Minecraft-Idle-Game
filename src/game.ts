@@ -13,6 +13,7 @@ export interface GameState {
   worldSeed: number;
   settlementProgress: number;
   settlementHub: SettlementHubInstance;
+  settlementStorage: SettlementStorageInstance;
   population: number;
   completedStoryMilestones: string[];
   chunkSize: number;
@@ -67,6 +68,11 @@ export interface SettlementHubInstance {
   constructionState: BuildingConstructionState;
 }
 
+export interface SettlementStorageInstance {
+  id: 'settlement-storage';
+  level: number;
+}
+
 export interface MineSite {
   id: string;
   x: number;
@@ -92,6 +98,11 @@ export interface MineProductionResult {
   trips: number;
   xp: number;
   resources: Record<string, number>;
+}
+
+export interface ResourceTransferResult {
+  transferred: Record<string, number>;
+  overflow: Record<string, number>;
 }
 
 export interface WorldCell {
@@ -239,6 +250,45 @@ export const MINE_STORAGE_CAPACITY_PER_UPGRADE = 100;
 export const MINE_STORAGE_UPGRADE_COST = 1;
 export const MINE_STORAGE_BASE_FILL_DURATION_MS = 12 * 60 * 1000;
 export const MINE_STORAGE_FILL_REDUCTION_PER_MINE_UPGRADE_MS = 25 * 1000;
+
+export function getSettlementStorageCapacity(state: Pick<GameState, 'settlementStorage'>): number {
+  const level = Math.max(1, Math.floor(Number(state.settlementStorage.level) || 1));
+  const definition = SETTLEMENT_STORAGE_LEVELS[Math.min(SETTLEMENT_STORAGE_LEVELS.length - 1, level - 1)];
+  return definition.capacity;
+}
+
+export function getStoredResourceTotal(state: Pick<GameState, 'resources'>): number {
+  return Object.values(state.resources).reduce((total, value) => total + Math.max(0, Math.floor(Number(value) || 0)), 0);
+}
+
+export function getAvailableSettlementStorage(
+  state: Pick<GameState, 'resources' | 'settlementStorage'>,
+): number {
+  return Math.max(0, getSettlementStorageCapacity(state) - getStoredResourceTotal(state));
+}
+
+export function addSettlementResource(state: GameState, resource: string, amount = 1): number {
+  const requested = Math.max(0, Math.floor(Number(amount) || 0));
+  const transferred = Math.min(requested, getAvailableSettlementStorage(state));
+  if (transferred > 0) state.resources[resource] = (state.resources[resource] ?? 0) + transferred;
+  return transferred;
+}
+
+export function transferResourcesToSettlement(
+  state: GameState,
+  resources: Readonly<Record<string, number>>,
+): ResourceTransferResult {
+  const transferred: Record<string, number> = {};
+  const overflow: Record<string, number> = {};
+  Object.entries(resources).forEach(([resource, amount]) => {
+    const requested = Math.max(0, Math.floor(Number(amount) || 0));
+    const accepted = addSettlementResource(state, resource, requested);
+    if (accepted > 0) transferred[resource] = accepted;
+    if (requested > accepted) overflow[resource] = requested - accepted;
+  });
+  return { transferred, overflow };
+}
+
 const MINE_ID = 'starter-mine';
 const MINE_REDSTONE_NODE_ID = 'automation-redstone-rails';
 const MINE_MINER_NODE_ID = 'automation-miner-helper';
@@ -262,9 +312,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 7;
-export const LEGACY_SAVE_SCHEMA_VERSION = 6;
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6];
+export const SAVE_SCHEMA_VERSION = 8;
+export const LEGACY_SAVE_SCHEMA_VERSION = 7;
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -277,6 +327,12 @@ export const PATH_TIERS: readonly { tier: PathTier; requiredResource?: string; r
   { tier: 'stone', requiredResource: 'cobblestone', resourceCost: 16, description: 'A finished route prepared for a larger settlement.' },
 ];
 export const DIRT_PATH_BUILD_COST = 2;
+export const SETTLEMENT_STORAGE_LEVELS = [
+  { level: 1, capacity: 500 },
+  { level: 2, capacity: 1_500 },
+  { level: 3, capacity: 5_000 },
+  { level: 4, capacity: 10_000 },
+] as const;
 export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { width: number; depth: number; requiresPath: boolean }>> = {
   mine: { width: 1, depth: 4, requiresPath: true },
   dwelling: { width: 2, depth: 2, requiresPath: true },
@@ -459,6 +515,7 @@ export function freshState(now = Date.now()): GameState {
     worldSeed: 184731,
     settlementProgress: 0,
     settlementHub: { id: 'settlement-hub', level: 1, constructionState: 'complete' },
+    settlementStorage: { id: 'settlement-storage', level: 1 },
     population: 0,
     completedStoryMilestones: [],
     chunkSize: STARTING_CHUNK_SIZE,
@@ -1009,6 +1066,10 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     mine.storageCarts = 0;
     mine.railLevel = getSkillNodeRank(state, MINE_REDSTONE_NODE_ID) + getMineUpgradeRank(state, 'rail-speed');
     mine.minerCount = getSkillNodeRank(state, MINE_MINER_NODE_ID) > 0 ? 1 : 0;
+    if (getAvailableSettlementStorage(state) <= 0) {
+      mine.lastUpdatedAt = now;
+      return;
+    }
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
     const storageCapacity = getMineStorageCapacity(mine);
     const storageWasStarted = mine.storageAmount > 0 || mine.completedTrips > 0;
@@ -1055,9 +1116,8 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
       if (random() < getMineEmeraldChance(state)) addMineResource(result, 'emerald', 1);
     }
   });
-  Object.entries(result.resources).forEach(([resource, amount]) => {
-    state.resources[resource] = (state.resources[resource] ?? 0) + amount;
-  });
+  const transfer = transferResourcesToSettlement(state, result.resources);
+  result.resources = transfer.transferred;
   return result;
 }
 
@@ -1071,10 +1131,7 @@ export function dispatchMineCart(state: GameState, now = Date.now()): MineProduc
 }
 
 export function collectOreBonus(state: GameState, resource: string, amount = 1): number {
-  const safeAmount = Math.max(0, Math.floor(amount));
-  if (safeAmount <= 0) return 0;
-  state.resources[resource] = (state.resources[resource] ?? 0) + safeAmount;
-  return safeAmount;
+  return addSettlementResource(state, resource, amount);
 }
 
 export const CONSTRUCTION_DURATIONS_MS: Record<ConstructionKind, number> = {
@@ -1615,9 +1672,9 @@ export function getMiningStats(state: GameState, blockType: BlockType): MiningSt
   };
 }
 
-export function harvestResource(state: GameState, blockType: BlockType, amount = 1): void {
+export function harvestResource(state: GameState, blockType: BlockType, amount = 1): number {
   const resource = BLOCK_DEFINITIONS[blockType].resource;
-  state.resources[resource] = (state.resources[resource] ?? 0) + amount;
+  return addSettlementResource(state, resource, amount);
 }
 
 export function buyToolUpgrade(state: GameState): boolean {
@@ -1709,12 +1766,16 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       settlementProgress: Number.isFinite(parsedSettlementProgress)
         ? Math.max(0, Math.floor(parsedSettlementProgress))
         : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
-      // Schema 7 is the first save format that persisted an authoritative Hub.
+      // Schema 7 is the first save format that persisted an authoritative Hub;
+      // schema 8 adds the Settlement Storage instance.
       // Older saves retain their existing world/progress data but begin at the
       // conservative Dwelling authority until the player completes the Hub flow.
-      settlementHub: parsedSchemaVersion === SAVE_SCHEMA_VERSION
+      settlementHub: parsedSchemaVersion >= LEGACY_SAVE_SCHEMA_VERSION
         ? parseSettlementHub(parsed.settlementHub)
         : base.settlementHub,
+      settlementStorage: parsedSchemaVersion === SAVE_SCHEMA_VERSION
+        ? parseSettlementStorage(parsed.settlementStorage)
+        : base.settlementStorage,
       population: Math.max(0, Math.floor(Number(parsed.population) || 0)),
       completedStoryMilestones: Array.isArray(parsed.completedStoryMilestones)
         ? Array.from(new Set(parsed.completedStoryMilestones.filter((milestone): milestone is string => typeof milestone === 'string').slice(0, 100)))
@@ -1754,6 +1815,15 @@ function parseSettlementHub(value: unknown): SettlementHubInstance {
     id: 'settlement-hub',
     level: Math.min(SETTLEMENT_STAGES.length, Math.max(1, Math.floor(Number(entry.level) || 1))),
     constructionState: entry.constructionState === 'upgrading' || entry.constructionState === 'building' ? entry.constructionState : 'complete',
+  };
+}
+
+function parseSettlementStorage(value: unknown): SettlementStorageInstance {
+  if (!value || typeof value !== 'object') return { id: 'settlement-storage', level: 1 };
+  const entry = value as Partial<SettlementStorageInstance>;
+  return {
+    id: 'settlement-storage',
+    level: Math.min(SETTLEMENT_STORAGE_LEVELS.length, Math.max(1, Math.floor(Number(entry.level) || 1))),
   };
 }
 

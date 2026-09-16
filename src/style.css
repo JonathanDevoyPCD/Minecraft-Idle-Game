@@ -276,6 +276,11 @@ button { font: inherit; }
 .resource-line--gold .resource-metric b { background: linear-gradient(90deg, #e4a630, #ffd95d); }
 .resource-line--xp { border-bottom: 1px solid rgba(89, 51, 26, .14); }
 .resource-line--xp strong { color: #588d37; }
+.resource-capacity { display: flex; justify-content: space-between; gap: 8px; padding: 4px 4px 0; color: #7a694f; border-top: 1px solid rgba(89, 51, 26, .14); font-size: 8px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.resource-capacity strong { color: #588d37; font-variant-numeric: tabular-nums; }
+.resource-capacity.is-full strong { color: #b85c32; }
+.storage-summary { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; color: #725f44; border: 2px solid rgba(89,51,26,.16); border-radius: 10px; background: rgba(255,244,201,.55); font-weight: 900; }
+.storage-summary strong { color: #588d37; font-variant-numeric: tabular-nums; }
 .world-actions { position: absolute; bottom: 24px; left: 28px; z-index: 3; display: flex; flex-direction: column; gap: 9px; }
 .world-actions .world-menu-button { position: relative; width: 90px; min-height: 90px; }
 .world-actions .world-menu-button img { width: 34px; height: 34px; }

@@ -89,6 +89,8 @@ export interface MineSite {
   progressMs: number;
   lastUpdatedAt: number;
   completedTrips: number;
+  /** Canonical mine-owned depth and production progression. */
+  mineLevel: number;
   /** Canonical mine-local inventory. Settlement resources are only changed by collection. */
   inventory: Record<string, number>;
   storageCapacityLevel: number;
@@ -272,6 +274,16 @@ export interface MineProductionDefinition {
   entries: readonly MineOreTableEntry[];
 }
 
+export interface MineLevelDefinition {
+  level: number;
+  name: string;
+  productionTier: MineProductionTier;
+  requiredHubLevel: number;
+  requiredResources: ResourceCost;
+  durationMs: number;
+  settlementProgressReward: number;
+}
+
 /**
  * The active mine production tables. Weights are balance targets from the
  * roadmap and deliberately exclude Emerald, which is rolled separately.
@@ -319,6 +331,20 @@ export const MINE_PRODUCTION_TABLES: readonly MineProductionDefinition[] = [
       { resource: 'diamond', weight: 3 },
     ],
   },
+];
+
+/**
+ * Mine progression is owned by each MineSite. Levels 1-6 follow the roadmap's
+ * depth names; levels sharing a table still represent meaningful mine
+ * improvements without inventing a second resource table prematurely.
+ */
+export const MINE_LEVELS: readonly MineLevelDefinition[] = [
+  { level: 1, name: 'Shallow Tunnel', productionTier: 'shallow', requiredHubLevel: 1, requiredResources: {}, durationMs: 0, settlementProgressReward: 0 },
+  { level: 2, name: 'Reinforced Mine', productionTier: 'iron', requiredHubLevel: 3, requiredResources: { cobblestone: 250, planks: 100, iron: 20 }, durationMs: 30_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 3, name: 'Deep Shaft', productionTier: 'redstone', requiredHubLevel: 4, requiredResources: { cobblestone: 500, copper: 50, iron: 100 }, durationMs: 60_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 4, name: 'Deep Mine', productionTier: 'redstone', requiredHubLevel: 5, requiredResources: { cobblestone: 1_000, gold: 50, iron: 250 }, durationMs: 120_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 5, name: 'Diamond Depth', productionTier: 'diamond', requiredHubLevel: 6, requiredResources: { cobblestone: 2_000, gold: 100, iron: 500 }, durationMs: 240_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
+  { level: 6, name: 'Ancient Depth', productionTier: 'diamond', requiredHubLevel: 7, requiredResources: { cobblestone: 4_000, diamond: 50, gold: 250, iron: 1_000 }, durationMs: 480_000, settlementProgressReward: SETTLEMENT_DEVELOPMENT_REWARDS.mineUpgrade },
 ];
 
 /** Capacity is a Skill Tree perk: rank 0 is the baseline one-roll cart. */
@@ -449,9 +475,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 9;
+export const SAVE_SCHEMA_VERSION = 10;
 export const LEGACY_SAVE_SCHEMA_VERSION = 7;
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7, 8];
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7, 8, 9];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -1074,6 +1100,7 @@ function createMineSite(
     progressMs: 0,
     lastUpdatedAt: now,
     completedTrips: 0,
+    mineLevel: 1,
     inventory: {},
     storageCapacityLevel: 0,
   };
@@ -1103,28 +1130,38 @@ export function getMineLayer(state: GameState): number {
   return Math.min(2, Math.max(0, Math.floor(state.undergroundLayer)));
 }
 
+export function getMineLevel(mine: Pick<MineSite, 'mineLevel'>): number {
+  return Math.min(MINE_LEVELS.length, Math.max(1, Math.floor(Number(mine.mineLevel) || 1)));
+}
+
+function getLegacyMineLevel(state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>): number {
+  const layer = Math.min(2, Math.max(0, Math.floor(Number(state.undergroundLayer) || 0)));
+  if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) return 5;
+  return Math.min(3, layer + 1);
+}
+
 export function getMineProductionTier(
   state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+  mine?: Pick<MineSite, 'mineLevel'>,
 ): MineProductionTier {
-  const layer = Math.min(2, Math.max(0, Math.floor(Number(state.undergroundLayer) || 0)));
-  if (layer >= 2 && getSkillNodeRank(state, 'materials-diamond') > 0) return 'diamond';
-  if (layer >= 2) return 'redstone';
-  if (layer >= 1) return 'iron';
-  return 'shallow';
+  const level = mine ? getMineLevel(mine) : getLegacyMineLevel(state);
+  return MINE_LEVELS[level - 1]?.productionTier ?? MINE_LEVELS[0].productionTier;
 }
 
 export function getMineProductionDefinition(
   state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+  mine?: Pick<MineSite, 'mineLevel'>,
 ): MineProductionDefinition {
-  const tier = getMineProductionTier(state);
+  const tier = getMineProductionTier(state, mine);
   return MINE_PRODUCTION_TABLES.find((definition) => definition.tier === tier) ?? MINE_PRODUCTION_TABLES[0];
 }
 
 /** A compact visual fallback for the authored cart contents model. */
 export function getMineProductionVisualKind(
   state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
+  mine?: Pick<MineSite, 'mineLevel'>,
 ): MineCargoKind {
-  const resource = getMineProductionDefinition(state).entries[0]?.resource;
+  const resource = getMineProductionDefinition(state, mine).entries[0]?.resource;
   return resource === 'diamond' ? 'diamond' : resource === 'gold' ? 'gold' : 'stone';
 }
 
@@ -1152,9 +1189,10 @@ export function generateMineCartCargo(
   state: GameState,
   random = Math.random,
   capacity = getMineCartCapacity(state),
+  mine?: Pick<MineSite, 'mineLevel'>,
 ): Record<string, number> {
   const cargo: Record<string, number> = {};
-  const definition = getMineProductionDefinition(state);
+  const definition = getMineProductionDefinition(state, mine);
   const safeCapacity = Math.max(1, Math.floor(Number(capacity) || 1));
   for (let rollIndex = 0; rollIndex < safeCapacity; rollIndex += 1) {
     const resource = selectWeightedMineResource(definition.entries, random());
@@ -1182,7 +1220,7 @@ export function getMineStorageContents(mine: Pick<MineSite, 'inventory'>): Recor
 
 export function getMineStorageCargoKind(
   state: Pick<GameState, 'undergroundLayer' | 'skillRanks'>,
-  mine: Pick<MineSite, 'inventory'>,
+  mine: Pick<MineSite, 'inventory' | 'mineLevel'>,
 ): MineCargoKind {
   const resourceKinds: ReadonlyArray<[string, MineCargoKind]> = [
     ['diamond', 'diamond'],
@@ -1199,7 +1237,7 @@ export function getMineStorageCargoKind(
   for (const [resource, cargoKind] of resourceKinds) {
     if ((mine.inventory[resource] ?? 0) > 0) return cargoKind;
   }
-  const visualResource = getMineProductionDefinition(state).entries[0]?.resource;
+  const visualResource = getMineProductionDefinition(state, mine).entries[0]?.resource;
   return visualResource === 'diamond' ? 'diamond' : visualResource === 'gold' ? 'gold' : 'stone';
 }
 
@@ -1349,7 +1387,6 @@ function depositMineCargo(
 
 export function advanceMineOperations(state: GameState, now = Date.now(), random = Math.random): MineProductionResult {
   const result: MineProductionResult = { trips: 0, xp: 0, resources: {} };
-  const layer = getMineLayer(state);
   const tripDuration = getMineTripDuration(state);
   state.mines.forEach((mine) => {
     mine.cartCount = 1;
@@ -1379,7 +1416,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     let acceptedTrips = 0;
     let storageAmount = currentStorage;
     for (let trip = 0; trip < completedArrivals; trip += 1) {
-      const cargo = generateMineCartCargo(state, random);
+      const cargo = generateMineCartCargo(state, random, getMineCartCapacity(state), mine);
       const acceptedAmount = depositMineCargo(mine, cargo, storageCapacity - storageAmount, result);
       if (acceptedAmount <= 0) break;
       storageAmount += acceptedAmount;
@@ -1387,7 +1424,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     }
     mine.completedTrips += acceptedTrips;
     result.trips += acceptedTrips;
-    result.xp += acceptedTrips * (layer >= 1 ? 3 : 2);
+    result.xp += acceptedTrips * (getMineLevel(mine) >= 2 ? 3 : 2);
     // If storage filled during an elapsed interval, park at the delivery
     // boundary rather than carrying unprocessed trips through the pause.
     mine.progressMs = acceptedTrips < completedArrivals ? 0 : totalProgress - completedArrivals * tripDuration;
@@ -1448,6 +1485,40 @@ export const CONSTRUCTION_COSTS: Readonly<Record<ConstructionKind, ResourceCost>
 
 export function getBuildingDefinition(kind: WorldPlacementKind): BuildingDefinition {
   return BUILDING_DEFINITIONS[kind];
+}
+
+export interface MineLevelUpgradeStatus {
+  mine: MineSite | null;
+  definition: MineLevelDefinition | null;
+  ready: boolean;
+  missing: string[];
+}
+
+export function getMineLevelUpgrade(
+  state: Pick<GameState, 'mines'>,
+  mineId: string,
+): MineLevelDefinition | null {
+  const mine = state.mines.find((candidate) => candidate.id === mineId);
+  if (!mine) return null;
+  const nextLevel = getMineLevel(mine) + 1;
+  return MINE_LEVELS.find((definition) => definition.level === nextLevel) ?? null;
+}
+
+export function getMineLevelUpgradeStatus(
+  state: Pick<GameState, 'mines' | 'placements' | 'settlementHub' | 'resources'>,
+  mineId: string,
+): MineLevelUpgradeStatus {
+  const mine = state.mines.find((candidate) => candidate.id === mineId) ?? null;
+  const definition = getMineLevelUpgrade(state, mineId);
+  if (!mine || !definition) return { mine, definition, ready: false, missing: [] };
+  const placement = state.placements.find((candidate) => candidate.id === mineId);
+  const missing: string[] = [];
+  if (!placement || placement.constructionState !== 'complete') missing.push('Current mine upgrade must finish');
+  if (state.settlementHub.level < definition.requiredHubLevel) missing.push(`Settlement Hub level ${definition.requiredHubLevel}`);
+  Object.entries(definition.requiredResources).forEach(([resource, amount]) => {
+    if ((state.resources[resource] ?? 0) < amount) missing.push(`${amount.toLocaleString()} ${resource}`);
+  });
+  return { mine, definition, ready: missing.length === 0, missing };
 }
 
 export function canAffordResourceCost(resources: Readonly<Record<string, number>>, cost: ResourceCost): boolean {
@@ -1593,6 +1664,23 @@ export function queueBuildingUpgrade(state: GameState, placementId: string, now 
   return true;
 }
 
+/** Queue a Mine-owned depth upgrade through the shared construction system. */
+export function queueMineLevelUpgrade(state: GameState, mineId: string, now = Date.now()): boolean {
+  const status = getMineLevelUpgradeStatus(state, mineId);
+  if (!status.mine || !status.definition || !status.ready) return false;
+  if (!queueConstruction(state, 'building-upgrade', now, undefined, {
+    action: 'upgrade',
+    targetKind: 'mine',
+    targetId: mineId,
+    cost: status.definition.requiredResources,
+    durationMs: status.definition.durationMs,
+  })) return false;
+  payResourceCost(state.resources, status.definition.requiredResources);
+  const placement = state.placements.find((candidate) => candidate.id === mineId);
+  if (placement) placement.constructionState = 'upgrading';
+  return true;
+}
+
 /** Queue the next Settlement Hub era after all of its requirements are met. */
 export function queueSettlementHubUpgrade(state: GameState, now = Date.now()): boolean {
   const status = getSettlementHubUpgradeStatus(state);
@@ -1663,6 +1751,19 @@ function completeSettlementStorageUpgrade(state: GameState, project: Constructio
   addSettlementProgress(state, definition.settlementProgressReward);
 }
 
+function completeMineLevelUpgrade(state: GameState, project: ConstructionProject): void {
+  if (project.targetKind !== 'mine' || project.action !== 'upgrade') return;
+  const mine = state.mines.find((candidate) => candidate.id === project.targetId);
+  const placement = state.placements.find((candidate) => candidate.id === project.targetId);
+  if (!mine || !placement) return;
+  const definition = getMineLevelUpgrade(state, mine.id);
+  if (!definition) return;
+  mine.mineLevel = definition.level;
+  placement.constructionState = 'complete';
+  addSettlementProgress(state, definition.settlementProgressReward);
+  syncAutomaticSkillNodes(state);
+}
+
 export function completeConstructionProjects(state: GameState, now = Date.now()): ConstructionProject[] {
   const completed: ConstructionProject[] = [];
   const dueProjects = state.constructionQueue
@@ -1677,7 +1778,8 @@ export function completeConstructionProjects(state: GameState, now = Date.now())
     if (project.targetKind === 'hub') completeSettlementHubUpgrade(state, project);
     if (project.targetKind === 'storage') completeSettlementStorageUpgrade(state, project);
     if (project.targetKind === 'building') completeBuildingConstruction(state, project);
-    if (project.targetKind !== 'building' && project.targetKind !== 'hub' && project.targetKind !== 'storage') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
+    if (project.targetKind === 'mine') completeMineLevelUpgrade(state, project);
+    if (project.targetKind !== 'building' && project.targetKind !== 'mine' && project.targetKind !== 'hub' && project.targetKind !== 'storage') addSettlementProgress(state, SETTLEMENT_PROGRESS_BY_CONSTRUCTION[project.kind]);
     completed.push(project);
   });
   assignQueuedConstruction(state, now);
@@ -2099,7 +2201,8 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
     const worldCells = parseWorldCells(parsed.worldCells) ?? base.worldCells;
     const pathCells = parsePathCells(parsed.pathCells) ?? base.pathCells;
     const placements = parseWorldPlacements(parsed.placements);
-    const mines = parseMines(parsed.mines, now);
+    const legacyUndergroundLayer = Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0)));
+    const mines = parseMines(parsed.mines, now, getLegacyMineLevel({ undergroundLayer: legacyUndergroundLayer, skillRanks }));
     mines.forEach((mine) => {
       if (!placements.some((placement) => placement.id === mine.id)) {
         placements.push(createWorldPlacement('mine', mine.id, mine.x, mine.z, mine.direction ?? 'south', mine.railLength));
@@ -2129,7 +2232,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
         : worldRank >= 2 ? 500 : worldRank >= 1 ? 100 : 0,
       // Schema 7 is the first save format that persisted an authoritative Hub;
       // schema 8 adds the Settlement Storage instance; schema 9 adds typed
-      // mine-local inventories.
+      // mine-local inventories; schema 10 adds mine-owned levels.
       // Older saves retain their existing world/progress data but begin at the
       // conservative Dwelling authority until the player completes the Hub flow.
       settlementHub: parsedSchemaVersion >= LEGACY_SAVE_SCHEMA_VERSION
@@ -2149,7 +2252,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       availableMineSites: Number.isFinite(Number(parsed.availableMineSites))
         ? Math.max(0, Math.floor(Number(parsed.availableMineSites)))
         : base.availableMineSites,
-      undergroundLayer: Math.min(2, Math.max(0, Math.floor(Number(parsed.undergroundLayer) || 0))),
+      undergroundLayer: legacyUndergroundLayer,
       mines,
       constructionQueue: parseConstructionQueue(parsed.constructionQueue, builderSlots),
       builderSlots,
@@ -2203,7 +2306,7 @@ function parseMineUpgradeRanks(value: unknown): Record<string, number> {
   return ranks;
 }
 
-function parseMines(value: unknown, now: number): MineSite[] {
+function parseMines(value: unknown, now: number, legacyMineLevel: number): MineSite[] {
   if (!Array.isArray(value)) return [];
   const seenIds = new Set<string>();
   return value.flatMap((candidate): MineSite[] => {
@@ -2215,6 +2318,10 @@ function parseMines(value: unknown, now: number): MineSite[] {
     seenIds.add(id);
     const lastUpdatedAt = Number(entry.lastUpdatedAt);
     const storageCapacityLevel = Math.max(0, Math.floor(Number(entry.storageCapacityLevel) || 0));
+    const savedMineLevel = Number((entry as { mineLevel?: unknown }).mineLevel);
+    const mineLevel = Number.isFinite(savedMineLevel) && savedMineLevel > 0
+      ? Math.min(MINE_LEVELS.length, Math.floor(savedMineLevel))
+      : legacyMineLevel;
     const inventory = parseResourceInventory(entry.inventory);
     // Schema 8 stored only a visual scalar. Preserve that quantity as a
     // conservative cobblestone stock rather than silently deleting it.
@@ -2239,6 +2346,7 @@ function parseMines(value: unknown, now: number): MineSite[] {
       progressMs: Math.max(0, Number(entry.progressMs) || 0),
       lastUpdatedAt: Number.isFinite(lastUpdatedAt) ? lastUpdatedAt : now,
       completedTrips: Math.max(0, Math.floor(Number(entry.completedTrips) || 0)),
+      mineLevel,
       inventory,
       storageCapacityLevel,
     }];

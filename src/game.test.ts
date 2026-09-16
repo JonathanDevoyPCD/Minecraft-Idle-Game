@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { syncAutomaticSkillNodes } from './game';
-import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, buySpeedUpgrade, buyToolUpgrade, buyWorldExpansion, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getHarvestPower, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
+import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperations, BLOCK_PROGRESSION, buildPathCell, buyMineStorageUpgrade, buyMineUpgrade, buySkillNode, calculateOfflineXp, canBuildPathCell, canMoveWorldPlacement, canPlaceMine, canPlaceWorldPlacement, collectOreBonus, completeConstructionProjects, CONSTRUCTION_DURATIONS_MS, createWorldPlacement, debugUnlockFullSkillTree, destroyWorldPlacement, DIRT_PATH_BUILD_COST, dispatchMineCart, expandToFirstAdjacentCell, expandToSurface3x3, freshState, getActiveBuilderCount, getAvailableBuilderSlots, getAutoRate, getAvailableMineSites, getAvailableSettlementStorage, getBuildItemUnlockStatus, getBuildingUpgradeCost, getBuilderSlotCount, getContextTool, getLivingEntityPlan, getMeadowFeaturePlan, getMineCargoKind, getMineCartCount, getMineCartTravelState, getMineEmeraldChance, getMineSiteCapacity, getMineStorageCapacity, getMineStorageFillDuration, getMineStorageFillState, getMineStorageUpgradeCost, getMineTripDuration, getMiningStats, getNextBlockType, getNextSettlementStage, getSettlementHubConsequences, getSettlementHubUpgradeStatus, getSettlementNextGoal, getSettlementStage, getSettlementStorageCapacity, getSettlementStorageUpgrade, getSettlementStorageUpgradeStatus, getStableBlockType, getStoredResourceTotal, getTool, harvestResource, isTraderUnlocked, loadState, MINE_STORAGE_BASE_FILL_DURATION_MS, MINE_TRIP_DURATION_MS, moveWorldPlacement, placeWorldPlacement, queueBuildingConstruction, queueBuildingUpgrade, queueConstruction, queueSettlementHubUpgrade, queueSettlementStorageUpgrade, reconcileElapsedProgress, SETTLEMENT_HUB_UPGRADES, SETTLEMENT_STAGES, SETTLEMENT_STORAGE_LEVELS, STARTING_CHUNK_SIZE, syncDiscoveredSkillNodes, transferResourcesToSettlement, unlockStarterMine, upgradePathCell, xpRequired } from './game';
 import { SKILL_TREE_NODES } from './skill-tree';
 
 describe('Villagers - Idle World Game progression', () => {
@@ -73,10 +73,15 @@ describe('Villagers - Idle World Game progression', () => {
     expect(state).toMatchObject({ level: 2, xp: 10, totalXp: 110, craftingPoints: 1 });
   });
 
-  it('spends a crafting point on auto speed', () => {
+  it('uses the Skill Tree as the only authority for automatic speed', () => {
     const state = freshState();
-    addXp(state, 100);
-    expect(buySpeedUpgrade(state)).toBe(true);
+    state.speedRank = 4;
+    expect(getAutoRate(state)).toBe(1);
+    state.settlementHub.level = 3;
+    syncAutomaticSkillNodes(state);
+    state.craftingPoints = 1;
+    expect(buySkillNode(state, 'automation-auto-strike')).toBe(true);
+    state.speedRank = 0;
     expect(getAutoRate(state)).toBe(1.5);
   });
 
@@ -103,19 +108,25 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getAvailableMineSites(state)).toBe(0);
   });
 
-  it('unlocks a wooden pickaxe and increases harvest power', () => {
+  it('uses the Skill Tree as the only authority for tool tiers', () => {
     const state = freshState();
-    addXp(state, 100);
-    expect(buyToolUpgrade(state)).toBe(true);
-    expect(state.toolRank).toBe(1);
-    expect(getHarvestPower(state)).toBe(2);
+    state.toolRank = 3;
+    expect(getTool(state).name).toBe('Bare Hands');
+    state.craftingPoints = 2;
+    expect(buySkillNode(state, 'tools-tool-bench')).toBe(true);
+    expect(buySkillNode(state, 'tools-wooden-pickaxe')).toBe(true);
+    state.toolRank = 0;
+    expect(getTool(state).name).toBe('Wooden Pickaxe');
+    expect(getMiningStats(state, 'stone').strikeDamage).toBe(2);
   });
 
   it('selects the right tool form for each block family', () => {
     const state = freshState();
     expect(getContextTool(state, 'grass').name).toBe('Hand');
-    addXp(state, 100);
-    buyToolUpgrade(state);
+    state.craftingPoints = 3;
+    buySkillNode(state, 'tools-tool-bench');
+    buySkillNode(state, 'tools-wooden-shovel');
+    buySkillNode(state, 'tools-wooden-pickaxe');
     expect(getContextTool(state, 'grass').name).toBe('Wooden Shovel');
     expect(getContextTool(state, 'stone').name).toBe('Wooden Pickaxe');
   });
@@ -153,8 +164,9 @@ describe('Villagers - Idle World Game progression', () => {
   it('uses harder mining times for cobblestone and improves with a pickaxe', () => {
     const state = freshState();
     const handStone = getMiningStats(state, 'stone');
-    addXp(state, 100);
-    buyToolUpgrade(state);
+    state.craftingPoints = 2;
+    buySkillNode(state, 'tools-tool-bench');
+    buySkillNode(state, 'tools-wooden-pickaxe');
     const woodenStone = getMiningStats(state, 'stone');
     expect(handStone.breakTimeSeconds).toBeGreaterThan(woodenStone.breakTimeSeconds);
     expect(handStone.maxDamage).toBeGreaterThan(getMiningStats(state, 'dirt').maxDamage);
@@ -414,23 +426,6 @@ describe('Villagers - Idle World Game progression', () => {
     expect(canBuildPathCell(state, 1, 1)).toBe(false);
   });
 
-  it('expands the world after the first growth milestone', () => {
-    const state = freshState();
-    addXp(state, 350);
-    expect(state.level).toBe(3);
-    const now = 1000;
-    expect(buyWorldExpansion(state, 'north', now)).toBe(true);
-    expect(state.worldRank).toBe(0);
-    expect(state.constructionQueue[0]).toMatchObject({ kind: 'chunk-upgrade', startedAt: now, completesAt: now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'] });
-    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'] - 1)).toHaveLength(0);
-    expect(completeConstructionProjects(state, now + CONSTRUCTION_DURATIONS_MS['chunk-upgrade'])).toHaveLength(1);
-    expect(state.worldRank).toBe(1);
-    expect(state.chunkSize).toBe(9);
-    expect(state.worldCells).toHaveLength(81);
-    expect(state.craftingPoints).toBe(1);
-    expect(state.settlementProgress).toBe(400);
-  });
-
   it('assigns one builder and starts queued projects when the builder is released', () => {
     const state = freshState();
     const now = 1_000;
@@ -613,6 +608,9 @@ describe('Villagers - Idle World Game progression', () => {
     const state = loadState(storage, 1000);
     expect(state).toMatchObject({ schemaVersion: 8, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1, settlementHub: { level: 1, constructionState: 'complete' }, settlementStorage: { level: 1 } });
     expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
+    expect(getAutoRate(state)).toBe(2);
+    expect(getTool(state).name).toBe('Wooden Pickaxe');
+    expect(state.craftingPoints).toBe(2);
   });
 
   it('preserves legacy material and branch ranks without changing Crafting Points', () => {

@@ -9,13 +9,13 @@
 
 **Phase 2 — Economy Cleanup**
 
-Status: Phase 2B complete; Phase 2C is next.
+Status: Phase 2C-A complete; Phase 2C-B is next.
 
 ## Current Sub-Phase
 
-**Phase 2B-D - Conservative migration of purchased material/branch ranks**
+**Phase 2C-A - Retire legacy direct upgrade routes and canonicalize runtime reads**
 
-Status: Complete; Phase 2C is next.
+Status: Complete; Phase 2C-B is next.
 
 ## Current-repo audit
 
@@ -81,6 +81,29 @@ The current code now has one serialized generic `constructionQueue` with builder
 - Limit World Power to world/biome expansion commitments; remove it from ordinary skills and non-expansion upgrades.
 - Keep Settlement Progress as non-spendable development progress and align its remaining awards with meaningful construction.
 
+### Phase 2C implementation sub-phases
+
+1. **Phase 2C-A - Retire legacy direct upgrade routes and canonicalize runtime reads (current slice)**
+   - Remove direct Speed, Tool and World upgrade mutators and their hidden compatibility UI.
+   - Derive automatic speed and tool summaries from canonical Skill Tree ranks.
+   - Preserve old `speedRank` and `toolRank` save fields as migration inputs and compatibility mirrors; never charge or refund during migration.
+2. **Phase 2C-B - Enforce the World Power boundary**
+   - Keep World Power spendable only by world/biome expansion commitments.
+   - Remove any World Power cost or reward from ordinary skill, tool, mine and building routes.
+   - Add regression coverage for the canonical expansion path and non-expansion rejection.
+3. **Phase 2C-C - Align Settlement Progress awards with meaningful construction**
+   - Audit remaining progress awards and retain them only for completed construction, Hub progression, or other roadmap-approved development milestones.
+   - Keep Settlement Progress non-spendable and expose the authoritative next-goal state in the existing UI.
+
+## Phase 2C-A acceptance criteria
+
+- [x] No direct public Speed, Tool or World upgrade mutator remains active.
+- [x] The Skill Tree is the only active owner of automatic speed and tool knowledge effects; runtime reads do not depend on legacy counters.
+- [x] World expansion continues through the existing Skill Tree/construction path without changing world size, direction, or builder behavior.
+- [x] The hidden legacy upgrade panel is removed from production and staging shells.
+- [x] Legacy saves with prototype speed/tool counters still load into stable Skill Tree ranks without CP changes, refunds, or duplicate purchases.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
 ## Phase 1 Target Outcomes
 
 - [x] Settlement Hub levels are authoritative global progression.
@@ -136,6 +159,7 @@ Phase 2B-A: 74 tests passed; production build and `git diff --check` passed; bro
 Phase 2B-B: 75 tests passed; production build and `git diff --check` passed; browser verified Hub-gated branch entries in the Skill Tree show as unlocked only at their configured Hub level and remain free of Crafting Point costs.
 Phase 2B-C: 77 tests passed; production build and `git diff --check` passed; browser verified current-rank Skill Tree costs in the Skill Tree node and inspector with no application console errors.
 Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; browser verified the migrated Skill Tree loads with preserved progression and no application console errors.
+Phase 2C-A: 77 tests passed; production build and `git diff --check` passed; browser verified production and staging Skill Tree, Mining and Build Mode shells with no application console errors and confirmed the legacy upgrade panel is absent.
 
 ## Test / Verification History
 
@@ -151,11 +175,19 @@ Phase 2B-D: 78 tests passed; production build and `git diff --check` passed; bro
 - Phase 1D-C browser: Playwright CLI verified production at `http://127.0.0.1:5176/Minecraft-Idle-Game/` and staging at `/testing/` on desktop and compact viewports. Restored no-mine state displayed offline XP once; Mining and Build Mode stayed independent; next-goal, builder and storage feedback rendered; staging retained its isolation banner; console error checks returned zero errors.
 - Minecart regression: render-loop optimization had left two transform writers active: routine scene/UI reconciliation and the frame animator both positioned the same cart. The renderer is now the sole transform owner, using a shared pure projection of persisted `progressMs` and `lastUpdatedAt`. Playwright verified normal repeated travel, an east-facing rail and a reload during production; the saved mine retained one cart and its progress advanced from `1107ms` to `4707ms` after reload.
 
+## Phase 2C-A completion record
+
+- Removed the direct `buySpeedUpgrade`, `buyToolUpgrade` and `buyWorldExpansion` mutators so Speed, Tool and World progression no longer has a second active purchase route.
+- Made `getAutoRate` read the canonical `automation-auto-strike` Skill Tree rank and made `getTool` read canonical tool-family ranks; legacy counters remain compatibility mirrors only.
+- Removed the hidden legacy upgrade panel and its unused style from both production and staging shells; the existing Skill Tree/construction expansion flow remains unchanged.
+- Preserved schema 8 and the existing migration: legacy `speedRank` and `toolRank` values still map into stable Skill Tree ranks without spending or refunding Crafting Points. No Supabase migration was required.
+- Added regression coverage proving stale legacy counters cannot override canonical Skill Tree runtime reads and converted legacy tests to canonical purchase paths.
+
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 2C — Legacy authority retirement and World Power boundary.
+Next incomplete roadmap sub-phase: Phase 2C-B — Enforce the World Power boundary.
 
-Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B and 2B-C are complete and pushed.
+Phase 1 is complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D and 2C-A are complete and pushed.
 
 ## Phase 2B-A acceptance criteria
 

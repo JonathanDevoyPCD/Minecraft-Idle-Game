@@ -6,7 +6,9 @@ export interface GameState {
   xp: number;
   totalXp: number;
   craftingPoints: number;
+  /** @deprecated Kept as a save-compatibility mirror; Skill Tree ranks are authoritative. */
   speedRank: number;
+  /** @deprecated Kept as a save-compatibility mirror; Skill Tree ranks are authoritative. */
   toolRank: number;
   worldRank: number;
   worldPower: number;
@@ -1790,22 +1792,12 @@ function preserveLegacyBranchEntries(ranks: Record<string, number>): void {
 }
 
 export function getAutoRate(state: GameState): number {
-  return SPEED_RATES[Math.min(state.speedRank, SPEED_RATES.length - 1)];
-}
-
-export function buySpeedUpgrade(state: GameState): boolean {
-  if (state.level < 2 || state.craftingPoints < 1 || state.speedRank >= SPEED_RATES.length - 1) {
-    return false;
-  }
-
-  state.craftingPoints -= 1;
-  state.speedRank += 1;
-  setSkillNodeRank(state, AUTO_STRIKE_NODE_ID, Math.min(3, state.speedRank));
-  return true;
+  const rank = Math.min(getSkillNodeRank(state, AUTO_STRIKE_NODE_ID), SPEED_RATES.length - 1);
+  return SPEED_RATES[rank];
 }
 
 export function getTool(state: GameState) {
-  return TOOL_TIERS[Math.min(state.toolRank, TOOL_TIERS.length - 1)];
+  return TOOL_TIERS[Math.min(getToolRankFromSkills(state), TOOL_TIERS.length - 1)];
 }
 
 export function getHarvestPower(state: GameState): number {
@@ -1862,49 +1854,8 @@ export function harvestResource(state: GameState, blockType: BlockType, amount =
   return addSettlementResource(state, resource, amount);
 }
 
-export function buyToolUpgrade(state: GameState): boolean {
-  const nextTool = TOOL_TIERS[state.toolRank + 1];
-  if (!nextTool || state.level < nextTool.requiredLevel || state.craftingPoints < nextTool.cost) {
-    return false;
-  }
-
-  state.craftingPoints -= nextTool.cost;
-  state.toolRank += 1;
-  if (state.toolRank >= 1) {
-    setSkillNodeRank(state, TOOL_BENCH_NODE_ID, 1);
-    setSkillNodeRank(state, 'tools-wooden-shovel', 1);
-    setSkillNodeRank(state, WOODEN_PICKAXE_NODE_ID, 1);
-    setSkillNodeRank(state, 'tools-wooden-axe', 1);
-  }
-  if (state.toolRank >= 2) setSkillNodeRank(state, STONE_TOOL_SET_NODE_ID, 1);
-  if (state.toolRank >= 3) {
-    setSkillNodeRank(state, 'tools-iron-shovel', 1);
-    setSkillNodeRank(state, IRON_PICKAXE_NODE_ID, 1);
-    setSkillNodeRank(state, 'tools-iron-axe', 1);
-  }
-  return true;
-}
-
 export function getWorldTier(state: GameState) {
   return WORLD_TIERS[Math.min(state.worldRank, WORLD_TIERS.length - 1)];
-}
-
-export function buyWorldExpansion(state: GameState, direction: WorldDirection = 'north', now = Date.now()): boolean {
-  const nextWorld = WORLD_TIERS[state.worldRank + 1];
-  if (
-    !nextWorld
-    || state.level < nextWorld.requiredLevel
-    || state.craftingPoints < nextWorld.cost
-    || (state.worldRank >= 1 && state.expansionDirections.includes(direction))
-  ) {
-    return false;
-  }
-
-  const constructionKind: ConstructionKind = 'chunk-upgrade';
-  if (!queueConstruction(state, constructionKind, now, direction)) return false;
-  state.craftingPoints -= nextWorld.cost;
-  setSkillNodeRank(state, SURFACE_3X3_NODE_ID, 1);
-  return true;
 }
 
 export function loadState(storage: Storage, now = Date.now()): GameState {

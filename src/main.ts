@@ -1555,7 +1555,6 @@ const resourceEmeraldFillEl = document.querySelector<HTMLElement>('#resource-eme
 const resourceDiamondFillEl = document.querySelector<HTMLElement>('#resource-diamond-fill')!;
 const resourceGoldFillEl = document.querySelector<HTMLElement>('#resource-gold-fill')!;
 const autoRateEl = document.querySelector('#auto-rate')!;
-const pointsEl = document.querySelector('#upgrade-points')!;
 const totalXpCard = totalXpEl.closest<HTMLElement>('.resource-brief')!;
 const offlineModal = document.querySelector<HTMLDivElement>('#offline-modal')!;
 const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out')!;
@@ -1998,7 +1997,9 @@ function updateConstructionUi(now = Date.now()): void {
     : now < project.startedAt
     ? `Queued · starts in ${Math.ceil((project.startedAt - now) / 1000)}s`
     : `${remainingSeconds}s remaining`;
-  constructionFillEl.style.width = `${elapsed / duration * 100}%`;
+  // Keep the shared runtime tolerant of older/staging shells that may not
+  // include the optional progress-fill element.
+  if (constructionFillEl) constructionFillEl.style.width = `${elapsed / duration * 100}%`;
   constructionStatusEl.hidden = false;
 }
 
@@ -2462,7 +2463,6 @@ function updateUi(): void {
       ? `Need ${TRADER_EMERALD_COST} Cobblestone.`
       : `${state.resources.cobblestone.toLocaleString()} Cobblestone available.`;
   if (storyStageLabel) storyStageLabel.textContent = settlementStage.name;
-  pointsEl.textContent = `${state.craftingPoints} CP`;
   updateCurrentTool();
   updateConstructionUi();
   updateMineUi();

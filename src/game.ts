@@ -858,7 +858,10 @@ export interface BuildItemUnlockDefinition {
 // same unlock flow as the mine. Future item definitions can add requirements
 // here without adding another one-off conditional to the UI or game loop.
 export const BUILD_ITEM_UNLOCKS: readonly BuildItemUnlockDefinition[] = [
-  { id: 'mine', label: 'Mine', prerequisites: [{ kind: 'skill', id: 'world-cave-entrance', required: 1, label: 'Mine Entrance skill' }] },
+  // The starter mine blueprint is available from a fresh Settlement Hub. The
+  // Hub-owned mine-site permit and canPlaceMine remain the authorities for
+  // whether another physical mine can actually be placed.
+  { id: 'mine', label: 'Mine', prerequisites: [] },
   { id: 'path', label: 'Path', prerequisites: [] },
   { id: 'path-upgrade', label: 'Path Upgrade', prerequisites: [{ kind: 'resource', id: 'cobblestone', required: 8, label: '8 cobblestone' }] },
   { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },

@@ -3248,8 +3248,8 @@ function collectOreNode(node: OreNode): void {
 function beginNewMinePlacement(): void {
   // Build Mode is for placing a new unlocked mine. It must never dispatch or
   // modify the progress of a mine that is already operating in the world.
-  // The first blueprint is part of the starter flow; later blueprints are
-  // supplied by mine-site skills and settlement stages.
+  // The first blueprint is part of the starter flow; later placement capacity
+  // is supplied by Settlement Hub mine-site permits.
   if (getAvailableMineSites(state) <= 0) return;
   setBuildMode(buildMode === 'mine' ? null : 'mine');
 }

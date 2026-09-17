@@ -340,6 +340,13 @@ Phase 4C: 110 tests passed; production build and `git diff --check` passed; brow
 - Added focused Stonecutter/Furnace tests for unlocks, costs, construction blocking, recipe ownership, input/fuel validation, atomic starts, completion and offline processing while retaining the Sawmill regression coverage. No schema or Supabase migration was needed.
 - Browser-verified the local Production submenu at `http://127.0.0.1:5176/Minecraft-Idle-Game/`; fresh state showed the new Stonecutter and Furnace entries with actionable locked states, and the route loaded with no application exceptions. The existing minecart/storage behavior remains protected by the Phase 3 regression suite and prior browser verification.
 
+## Fresh starter mine placement regression fix
+
+- Root cause: the Build Mode `Mine` blueprint inherited the `world-cave-entrance` Skill Tree prerequisite even though a fresh Settlement Hub already grants one mine-site permit. This duplicate gate disabled the only starter mine before the placement flow could begin.
+- Removed that duplicate blueprint prerequisite. `getAvailableMineSites`, Settlement Hub mine-site consequences and `canPlaceMine` remain the authorities for physical site capacity, collision, path connection and placement validity; existing Skill Tree world knowledge remains available for its own discovery/perk role.
+- Added regression coverage proving a fresh save exposes the Mine blueprint and one permit, then reaches zero available sites after placing the starter mine. No save schema or Supabase migration was required.
+- Browser-verified a clean fresh session: Build Mode -> Mining shows an enabled `Mine` item, clicking it enters mine placement mode, and the page reports zero application console errors.
+
 ## Next Work
 
 Phase 4C is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4D - Smithy and tool crafting**. Do not begin Phase 4D in this task.

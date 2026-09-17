@@ -298,10 +298,12 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getAvailableMineSites(state)).toBe(0);
   });
 
-  it('reports build prerequisites from the shared unlock registry', () => {
+  it('keeps the starter mine blueprint available while Hub permits control capacity', () => {
     const state = freshState();
-    expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(false);
-    state.skillRanks['world-cave-entrance'] = 1;
+    expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(true);
+    expect(getAvailableMineSites(state)).toBe(1);
+    expect(unlockStarterMine(state, 1000)).toBe(true);
+    expect(getAvailableMineSites(state)).toBe(0);
     expect(getBuildItemUnlockStatus(state, 'mine').unlocked).toBe(true);
   });
 

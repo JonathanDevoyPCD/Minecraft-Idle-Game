@@ -77,6 +77,8 @@
               <button class="build-category-item" type="button" data-build-item="path" data-build-item-category="paths"><span class="path-item-icon">▦</span><span>Path</span></button>
               <button class="build-category-item" type="button" data-build-item="path-upgrade" data-build-item-category="paths"><span class="path-item-icon">↑</span><span>Upgrade</span></button>
               <button class="build-category-item" type="button" data-build-item="sawmill" data-build-item-category="production"><span class="build-item-icon">⚒</span><span>Sawmill</span></button>
+              <button class="build-category-item" type="button" data-build-item="stonecutter" data-build-item-category="production"><span class="build-item-icon">▦</span><span>Stonecutter</span></button>
+              <button class="build-category-item" type="button" data-build-item="furnace" data-build-item-category="production"><span class="build-item-icon">♨</span><span>Furnace</span></button>
               <button class="build-category-item" type="button" data-build-item="farm" data-build-item-category="farm"><span class="build-item-icon">⌂</span><span>Farm</span></button>
               <button class="build-category-item" type="button" data-build-item="smithing" data-build-item-category="smithing"><span class="build-item-icon">⚒</span><span>Smithing</span></button>
               <button class="build-category-item" type="button" data-build-item="houses" data-build-item-category="houses"><span class="build-item-icon">⌂</span><span>Houses</span></button>
@@ -263,22 +265,17 @@
         </div>
       </section>
 
-      <section id="sawmill-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="sawmill-title" hidden>
+      <section id="processing-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="processing-title" hidden>
         <div class="modal-card panel processing-card">
-          <button class="modal-close" type="button" data-close-modal="sawmill-modal" aria-label="Close Sawmill">×</button>
+          <button class="modal-close" type="button" data-close-modal="processing-modal" aria-label="Close processing menu">×</button>
           <p class="eyebrow">PRODUCTION</p>
-          <h2 id="sawmill-title">Sawmill</h2>
-          <div class="processing-building-summary"><strong id="sawmill-level">Not built</strong><small>1 processing slot</small></div>
-          <div class="processing-recipe">
-            <strong id="sawmill-recipe">1 Logs → 4 Planks</strong>
-            <small id="sawmill-input">Input: 1 logs</small>
-            <small id="sawmill-output">Output: 4 planks</small>
-            <small id="sawmill-duration">Time: 10s</small>
-          </div>
-          <p id="sawmill-job" class="processing-job" aria-live="polite">Build a Sawmill to begin processing.</p>
-          <small id="sawmill-status" class="trader-status" aria-live="polite"></small>
-          <button id="sawmill-start" class="modal-primary" type="button">Start Logs → Planks</button>
-          <button id="sawmill-collect" class="modal-secondary processing-collect" type="button" hidden>Collect Planks</button>
+          <h2 id="processing-title">Sawmill</h2>
+          <div class="processing-building-summary"><strong id="processing-level">Not built</strong><small id="processing-slots">1 processing slot</small></div>
+          <div id="processing-recipes" class="processing-recipe-list"></div>
+          <p id="processing-job" class="processing-job" aria-live="polite">Build a processing building to begin.</p>
+          <small id="processing-status" class="trader-status" aria-live="polite"></small>
+          <button id="processing-start" class="modal-primary" type="button">Start recipe</button>
+          <button id="processing-collect" class="modal-secondary processing-collect" type="button" hidden>Collect output</button>
         </div>
       </section>
 

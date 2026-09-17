@@ -1029,10 +1029,99 @@ describe('Villagers - Idle World Game progression', () => {
     const state = freshState();
     const furnace = createWorldPlacement('furnace', 'furnace-1', 0, 2, 'south');
     expect(placeWorldPlacement(state, furnace)).toBe(true);
-    expect(getProcessingJobStatus(state, 'furnace-bricks', furnace.id).missing).toEqual(['Coal discovery', '1 clay']);
+    expect(getProcessingJobStatus(state, 'furnace-bricks', furnace.id).missing).toEqual(['Coal discovery', 'Clay discovery', '1 clay', '1 coal']);
     state.skillRanks['materials-coal'] = 1;
+    state.skillRanks['materials-clay'] = 1;
     state.resources.clay = 1;
+    state.resources.coal = 1;
     expect(getProcessingJobStatus(state, 'furnace-bricks', furnace.id).ready).toBe(true);
+  });
+
+  it('builds and processes Stonecutter output through the shared queue', () => {
+    const state = freshState(1000);
+    state.settlementHub.level = 2;
+    state.resources.cobblestone = 42;
+    expect(getBuildItemUnlockStatus(state, 'stonecutter')).toMatchObject({ unlocked: true, missing: [] });
+    const stonecutter = createWorldPlacement('stonecutter', 'stonecutter-1', 0, 2, 'south');
+    expect(queueBuildingConstruction(state, stonecutter, 1000)).toBe(true);
+    expect(state.resources.cobblestone).toBe(2);
+    expect(state.placements[0]).toMatchObject({ kind: 'stonecutter', constructionState: 'building', level: 1 });
+    expect(startProcessingJob(state, 'stonecutter-stone', stonecutter.id, 1000)).toBe(false);
+
+    completeConstructionProjects(state, 11_000);
+    expect(getProcessingRecipesForBuilding('stonecutter')).toMatchObject([{ id: 'stonecutter-stone', inputs: { cobblestone: 2 }, outputs: { stone: 1 }, durationMs: 10_000 }]);
+    expect(startProcessingJob(state, 'stonecutter-stone', stonecutter.id, 11_000)).toBe(true);
+    expect(state.resources.cobblestone).toBe(0);
+    expect(advanceProcessingJobs(state, 21_000).completedJobIds).toHaveLength(1);
+    expect(state.resources.stone).toBe(1);
+  });
+
+  it('gates Furnace construction and exposes all four Coal-fed recipes', () => {
+    const state = freshState(1000);
+    state.settlementHub.level = 2;
+    expect(getBuildItemUnlockStatus(state, 'furnace').unlocked).toBe(false);
+    state.skillRanks['materials-coal'] = 1;
+    expect(getBuildItemUnlockStatus(state, 'furnace')).toMatchObject({ unlocked: true, missing: [] });
+    expect(getProcessingRecipesForBuilding('furnace').map((recipe) => recipe.id)).toEqual([
+      'furnace-bricks', 'furnace-glass', 'furnace-iron-ingot', 'furnace-gold-ingot',
+    ]);
+    state.resources.cobblestone = 50;
+    state.resources.logs = 10;
+    const furnace = createWorldPlacement('furnace', 'furnace-1', 1, 2, 'south');
+    expect(queueBuildingConstruction(state, furnace, 1000)).toBe(true);
+    expect(state.resources).toMatchObject({ cobblestone: 0, logs: 0 });
+    completeConstructionProjects(state, 11_000);
+    state.skillRanks['materials-iron'] = 1;
+    state.resources.iron = 1;
+    state.resources.coal = 1;
+    expect(getProcessingJobStatus(state, 'furnace-iron-ingot', furnace.id)).toMatchObject({ ready: true });
+    expect(startProcessingJob(state, 'furnace-iron-ingot', furnace.id, 11_000)).toBe(true);
+    expect(state.resources.iron).toBe(0);
+    expect(state.resources.coal).toBe(0);
+    expect(startProcessingJob(state, 'furnace-gold-ingot', furnace.id, 11_001)).toBe(false);
+    expect(advanceProcessingJobs(state, 26_000).completedJobIds).toHaveLength(1);
+    expect(state.resources['iron-ingot']).toBe(1);
+  });
+
+  it('keeps Furnace fuel and raw-material validation atomic', () => {
+    const state = freshState();
+    state.skillRanks['materials-coal'] = 1;
+    state.skillRanks['materials-iron'] = 1;
+    const furnace = createWorldPlacement('furnace', 'furnace-1', 0, 2, 'south');
+    expect(placeWorldPlacement(state, furnace)).toBe(true);
+    state.resources.iron = 1;
+    expect(getProcessingJobStatus(state, 'furnace-iron-ingot', furnace.id).missing).toContain('1 coal');
+    expect(startProcessingJob(state, 'furnace-iron-ingot', furnace.id)).toBe(false);
+    expect(state.resources.iron).toBe(1);
+    expect(state.processingJobs).toHaveLength(0);
+  });
+
+  it('rejects a recipe when its owning processing building is different', () => {
+    const state = freshState();
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+    expect(placeWorldPlacement(state, sawmill)).toBe(true);
+    state.resources.iron = 1;
+    state.resources.coal = 1;
+    state.skillRanks['materials-coal'] = 1;
+    state.skillRanks['materials-iron'] = 1;
+    expect(getProcessingJobStatus(state, 'furnace-iron-ingot', sawmill.id).missing).toContain('furnace building is required');
+    expect(startProcessingJob(state, 'furnace-iron-ingot', sawmill.id)).toBe(false);
+  });
+
+  it('reconciles an active Furnace job after save and offline time', () => {
+    const saved = freshState(1000);
+    const furnace = createWorldPlacement('furnace', 'furnace-1', 0, 2, 'south');
+    expect(placeWorldPlacement(saved, furnace)).toBe(true);
+    saved.skillRanks['materials-coal'] = 1;
+    saved.skillRanks['materials-iron'] = 1;
+    saved.resources.iron = 1;
+    saved.resources.coal = 1;
+    expect(startProcessingJob(saved, 'furnace-iron-ingot', furnace.id, 1000)).toBe(true);
+    saved.schemaVersion = 11;
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const restored = loadState(storage, 2000);
+    expect(reconcileElapsedProgress(restored, 17000).processingResult.completedJobIds).toHaveLength(1);
+    expect(restored.resources['iron-ingot']).toBe(1);
   });
 
   it('loads legacy saves without inventing processing jobs', () => {

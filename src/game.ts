@@ -174,7 +174,7 @@ export interface ProcessingRecipe {
   outputs: ResourceCost;
   durationMs: number;
   quantity: number;
-  unlockRequirement?: ProcessingUnlockRequirement;
+  unlockRequirements?: readonly ProcessingUnlockRequirement[];
 }
 
 export type ProcessingJobStatus = 'active' | 'ready';
@@ -253,46 +253,59 @@ export const PROCESSING_RECIPES: readonly ProcessingRecipe[] = [
     outputs: { stone: 1 },
     durationMs: 10_000,
     quantity: 1,
+    unlockRequirements: [{ kind: 'settlement-hub', id: 'hamlet', required: 2, label: 'Settlement Hub: Hamlet' }],
   },
   {
     id: 'furnace-bricks',
     buildingKind: 'furnace',
     requiredLevel: 1,
-    inputs: { clay: 1 },
+    inputs: { clay: 1, coal: 1 },
     outputs: { bricks: 1 },
     durationMs: 15_000,
     quantity: 1,
-    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+    unlockRequirements: [
+      { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+      { kind: 'discovery', id: 'materials-clay', required: 1, label: 'Clay discovery' },
+    ],
   },
   {
     id: 'furnace-glass',
     buildingKind: 'furnace',
     requiredLevel: 1,
-    inputs: { sand: 1 },
+    inputs: { sand: 1, coal: 1 },
     outputs: { glass: 1 },
     durationMs: 15_000,
     quantity: 1,
-    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+    unlockRequirements: [
+      { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+      { kind: 'discovery', id: 'materials-sand', required: 1, label: 'Sand discovery' },
+    ],
   },
   {
     id: 'furnace-iron-ingot',
     buildingKind: 'furnace',
     requiredLevel: 1,
-    inputs: { iron: 1 },
+    inputs: { iron: 1, coal: 1 },
     outputs: { 'iron-ingot': 1 },
     durationMs: 15_000,
     quantity: 1,
-    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+    unlockRequirements: [
+      { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+      { kind: 'discovery', id: 'materials-iron', required: 1, label: 'Iron discovery' },
+    ],
   },
   {
     id: 'furnace-gold-ingot',
     buildingKind: 'furnace',
     requiredLevel: 1,
-    inputs: { gold: 1 },
+    inputs: { gold: 1, coal: 1 },
     outputs: { 'gold-ingot': 1 },
     durationMs: 15_000,
     quantity: 1,
-    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+    unlockRequirements: [
+      { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+      { kind: 'discovery', id: 'materials-gold', required: 1, label: 'Gold discovery' },
+    ],
   },
 ];
 
@@ -369,11 +382,11 @@ export const BUILDING_DEFINITIONS: Readonly<Record<WorldPlacementKind, BuildingD
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
   },
   furnace: {
-    kind: 'furnace', name: 'Furnace', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    kind: 'furnace', name: 'Furnace', maxLevel: 1, buildCost: { cobblestone: 50, logs: 10 }, upgradeCosts: [],
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
   },
   stonecutter: {
-    kind: 'stonecutter', name: 'Stonecutter', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    kind: 'stonecutter', name: 'Stonecutter', maxLevel: 1, buildCost: { cobblestone: 40 }, upgradeCosts: [],
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
   },
   smithy: {
@@ -647,7 +660,7 @@ export function getProcessingRecipesForBuilding(buildingKind: ProcessingBuilding
     ...recipe,
     inputs: { ...recipe.inputs },
     outputs: { ...recipe.outputs },
-    unlockRequirement: recipe.unlockRequirement ? { ...recipe.unlockRequirement } : undefined,
+    unlockRequirements: recipe.unlockRequirements?.map((requirement) => ({ ...requirement })),
   }));
 }
 
@@ -674,15 +687,14 @@ export function getProcessingJobStatus(
   if (building && building.constructionState !== 'complete') missing.push('Processing building construction must finish');
   if (building && building.level < recipe.requiredLevel) missing.push(`Building level ${recipe.requiredLevel}`);
   if (getProcessingJobForBuilding(state, buildingId)) missing.push('Processing slot is occupied');
-  const unlock = recipe.unlockRequirement;
-  if (unlock) {
+  recipe.unlockRequirements?.forEach((unlock) => {
     const unlocked = unlock.kind === 'discovery'
       ? getSkillNodeRank(state, unlock.id) >= unlock.required
       : unlock.kind === 'settlement-hub'
         ? state.settlementHub.level >= unlock.required
         : state.placements.some((placement) => placement.kind === unlock.id && placement.level >= unlock.required);
     if (!unlocked) missing.push(unlock.label);
-  }
+  });
   Object.entries(multiplyResourceCost(recipe.inputs, safeQuantity * recipe.quantity)).forEach(([resource, amount]) => {
     if ((state.resources[resource] ?? 0) < amount) missing.push(`${amount.toLocaleString()} ${resource}`);
   });
@@ -826,7 +838,7 @@ export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { 
   smithy: { width: 2, depth: 2, requiresPath: true },
 };
 
-export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'sawmill' | 'smithing' | 'houses' | 'animals' | 'science';
+export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'sawmill' | 'stonecutter' | 'furnace' | 'smithing' | 'houses' | 'animals' | 'science';
 export type UnlockPrerequisiteKind = 'skill' | 'settlement-stage' | 'level' | 'resource';
 
 export interface UnlockPrerequisite {
@@ -851,6 +863,8 @@ export const BUILD_ITEM_UNLOCKS: readonly BuildItemUnlockDefinition[] = [
   { id: 'path-upgrade', label: 'Path Upgrade', prerequisites: [{ kind: 'resource', id: 'cobblestone', required: 8, label: '8 cobblestone' }] },
   { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },
   { id: 'sawmill', label: 'Sawmill', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }] },
+  { id: 'stonecutter', label: 'Stonecutter', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }] },
+  { id: 'furnace', label: 'Furnace', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'materials-coal', required: 1, label: 'Coal discovery' }] },
   { id: 'smithing', label: 'Smithing', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'tools-tool-bench', required: 1, label: 'Tool Bench skill' }] },
   { id: 'houses', label: 'Houses', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-villager-housing', required: 1, label: 'Villager Housing skill' }] },
   { id: 'animals', label: 'Animals', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'life-animals', required: 1, label: 'Animals skill' }] },

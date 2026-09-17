@@ -9,13 +9,13 @@
 
 **Phase 4 — Processing**
 
-Status: In progress; Phase 1 through Phase 3 are complete, Phase 4A and Phase 4B are complete.
+Status: Phase 1 through Phase 3 and Phase 4A through Phase 4C are complete.
 
 ## Current Sub-Phase
 
-**Phase 4B - Sawmill vertical slice**
+**Phase 4C - Stonecutter and Furnace chains**
 
-Status: Complete.
+Status: Complete and pushed.
 
 ## Current-repo audit
 
@@ -204,6 +204,26 @@ Baseline audit evidence: 98 Vitest tests passed, the production build passed, `g
 - Added focused tests for Hamlet gating, construction cost/payment, construction blocking, timed processing and missing-input feedback. No save schema or Supabase migration was required.
 - Browser-verified the production route at `http://127.0.0.1:5176/Minecraft-Idle-Game/`: locked Sawmill before Hamlet; unlocked Production category; valid Sawmill placement; construction-in-progress modal; completed building; Logs-to-Planks affordability and one-slot busy state; timed completion into Settlement Storage; and reload continuity while processing was active. No application console errors were observed; existing Phase 3 minecart/storage behavior remains covered by the regression suite and prior browser record.
 
+## Phase 4C implementation plan
+
+1. Extend the existing data-driven Build Mode and building registries with a Hamlet-gated Stonecutter and a Hamlet-plus-Coal-discovery Furnace. Use physical-resource construction costs and the existing integer-grid, path-connected placement and builder queue.
+2. Expand the typed `PROCESSING_RECIPES` registry with Cobblestone -> Stone and the early Furnace chains for Iron Ore -> Iron Ingot, Gold Ore -> Gold Ingot, Sand -> Glass and Clay -> Bricks. Keep Coal as a normal recipe input/fuel entry and keep unavailable raw materials correctly locked by discovery/input state.
+3. Replace the Sawmill-only processing panel and renderer plumbing with one shared processing-building UI and generic processing-building visuals/ghosts. Recipe cards expose locked reasons, costs, outputs, duration, slot state and storage-blocked output without creating building-specific job logic.
+4. Reuse the existing one-slot processing jobs, atomic input payment, timestamp completion, settlement-storage transfer, overflow preservation, local save and offline reconciliation paths for all three buildings.
+5. Add focused tests for Stonecutter/Furnace unlocks, construction costs, recipe ownership, wrong-building rejection, level/input/fuel requirements, atomic starts, completion/storage and save/offline behavior, while retaining the Sawmill regression coverage.
+6. Browser-verify both new vertical slices, Sawmill coexistence, storage output and mine/cart/construction regressions before closing Phase 4C.
+
+## Phase 4C acceptance criteria
+
+- [x] Stonecutter and Furnace are normal path-connected `WorldPlacement` buildings using the shared builder construction queue and physical-resource costs.
+- [x] Stonecutter exposes the data-driven `2 Cobblestone -> 1 Stone` recipe with the configured level, unlock and duration values.
+- [x] Furnace exposes data-driven Iron Ingot, Gold Ingot, Glass and Bricks recipes; Coal is represented as a normal input/fuel requirement.
+- [x] Recipes for unavailable raw materials remain visibly locked with actionable reasons and do not bypass discovery or biome progression.
+- [x] All three processing buildings share recipe resolution, one-slot busy state, atomic input payment, timestamps, output storage and overflow behavior.
+- [x] Save/load and offline processing work for Stonecutter and Furnace without a schema or Supabase migration.
+- [x] Existing Sawmill, settlement storage, construction, mine-local economy, Mine Collect, one-cart behavior and minecart movement remain intact.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
 ## Phase 1 Target Outcomes
 
 - [x] Settlement Hub levels are authoritative global progression.
@@ -267,6 +287,7 @@ Phase 3B: 87 tests passed; production build and `git diff --check` passed; brows
 Phase 3C-A: 91 tests passed; production build and `git diff --check` passed; browser verified mine-level upgrade feedback, builder-backed completion, per-mine production-table transition and save/reload continuity with one cart and local inventory intact.
 Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; browser verified per-mine Rails and Storage panels, independent mine-targeted queues, normal-resource payment, builder feedback and no cross-mine side effects.
 Phase 4A: 103 tests passed; production build and `git diff --check` passed; browser verified the production shell, independent drawers, storage summary and zero runtime console errors. Processing recipe/job logic was verified through input, queue, storage-overflow, migration and offline tests.
+Phase 4C: 110 tests passed; production build and `git diff --check` passed; browser verified the Production submenu exposes Stonecutter and Furnace, preserves the Hamlet/Coal locks, and keeps the shared processing modal route available. Stonecutter/Furnace construction, recipe ownership, atomic Coal fuel payment, output completion and offline reconciliation are covered by the shared processing tests. No save schema or Supabase migration was required.
 
 ## Test / Verification History
 
@@ -310,13 +331,22 @@ Phase 4A: 103 tests passed; production build and `git diff --check` passed; brow
 - Added regression coverage for approved path/mine awards, no-award expansion completion and mine output not advancing progress; no save schema or Supabase migration was required.
 - Browser-verified the production Build Mode path flow and Settlement XP/next-goal UI at `http://127.0.0.1:5180/Minecraft-Idle-Game/` with zero application console errors.
 
+## Phase 4C completion record
+
+- Added Stonecutter and Furnace to the authoritative Build Mode unlock registry. Stonecutter is Hamlet-gated and costs 40 Cobblestone; Furnace is Hamlet plus Coal discovery-gated and costs 50 Cobblestone plus 10 Logs. Both use the existing path-connected placement and one-builder construction queue.
+- Extended the single `PROCESSING_RECIPES` registry with Stonecutter `2 Cobblestone -> 1 Stone` in 10 seconds and Furnace Iron Ore -> Iron Ingot, Gold Ore -> Gold Ingot, Sand -> Glass and Clay -> Bricks in 15 seconds. Each Furnace recipe consumes one Coal as its normal input/fuel entry and requires both Coal and the relevant raw-material discovery.
+- Replaced the Sawmill-only modal and renderer plumbing with a shared processing panel, recipe cards, locked-reason feedback, one-slot state and generic procedural Stonecutter/Furnace visuals. Furnace fire is visible only while its shared processing job is active.
+- Reused the existing atomic input payment, timestamped job, Settlement Storage transfer/overflow, local save and offline reconciliation paths. The recipe registry now supports multiple unlock requirements without introducing a parallel queue or discovery system.
+- Added focused Stonecutter/Furnace tests for unlocks, costs, construction blocking, recipe ownership, input/fuel validation, atomic starts, completion and offline processing while retaining the Sawmill regression coverage. No schema or Supabase migration was needed.
+- Browser-verified the local Production submenu at `http://127.0.0.1:5176/Minecraft-Idle-Game/`; fresh state showed the new Stonecutter and Furnace entries with actionable locked states, and the route loaded with no application exceptions. The existing minecart/storage behavior remains protected by the Phase 3 regression suite and prior browser verification.
+
 ## Next Work
 
-Phase 4B is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4C - Stonecutter and Furnace chains**. Do not begin Phase 4C in this task.
+Phase 4C is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4D - Smithy and tool crafting**. Do not begin Phase 4D in this task.
 
-Next incomplete roadmap sub-phase: Phase 4C - Stonecutter and Furnace chains. Phase 4A and Phase 4B are complete; Phase 3 — Real Mine Economy is complete.
+Next incomplete roadmap sub-phase: Phase 4D - Smithy and tool crafting. Phase 4A, Phase 4B and Phase 4C are complete; Phase 3 — Real Mine Economy is complete.
 
-Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A and Phase 4B are complete and pushed; do not begin Phase 4C in this task.
+Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A, Phase 4B and Phase 4C are complete and pushed; do not begin Phase 4D in this task.
 
 ## Phase 3 implementation sub-phases
 

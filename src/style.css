@@ -490,6 +490,12 @@ button { font: inherit; }
 .processing-recipe { display: grid; gap: 4px; margin-top: 12px; padding: 11px; border: 2px solid rgba(89,51,26,.16); border-radius: 10px; background: rgba(255,244,201,.65); }
 .processing-recipe strong { color: var(--ink); font-size: 15px; }
 .processing-recipe small { color: #725f44; font-size: 10px; font-weight: 800; }
+.processing-recipe-list { display: grid; gap: 7px; margin-top: 12px; max-height: 240px; overflow-y: auto; }
+.processing-recipe-card { display: grid; gap: 3px; width: 100%; padding: 9px 11px; border: 2px solid rgba(89,51,26,.2); border-radius: 10px; color: var(--ink); text-align: left; background: rgba(255,244,201,.65); cursor: pointer; }
+.processing-recipe-card.selected { border-color: #d9c51c; background: #fff04b; box-shadow: 0 3px 0 rgba(89,51,26,.16); }
+.processing-recipe-card:disabled { cursor: default; opacity: .78; }
+.processing-recipe-card strong { font-size: 13px; }
+.processing-recipe-card small { color: #725f44; font-size: 10px; font-weight: 800; }
 .processing-job { margin: 14px 0 4px; color: var(--ink) !important; font-weight: 900; }
 .processing-collect { color: var(--ink) !important; border-color: #b6a584 !important; background: #fff4c9 !important; box-shadow: 0 3px 0 rgba(89,51,26,.16) !important; }
 

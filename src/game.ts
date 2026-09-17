@@ -26,6 +26,7 @@ export interface GameState {
   undergroundLayer: number;
   mines: MineSite[];
   constructionQueue: ConstructionProject[];
+  processingJobs: ProcessingJob[];
   builderSlots: number;
   expansionDirections: WorldDirection[];
   resources: Record<string, number>;
@@ -49,7 +50,8 @@ export interface PathCell {
   tier: PathTier;
 }
 
-export type WorldPlacementKind = 'mine' | 'dwelling' | 'well' | 'farm' | 'tree' | 'animal-pen';
+export type ProcessingBuildingKind = 'sawmill' | 'furnace' | 'stonecutter' | 'smithy';
+export type WorldPlacementKind = 'mine' | 'dwelling' | 'well' | 'farm' | 'tree' | 'animal-pen' | ProcessingBuildingKind;
 export type BuildingConstructionState = 'complete' | 'building' | 'upgrading';
 
 export interface WorldPlacement {
@@ -157,6 +159,50 @@ export type ConstructionTargetKind = 'building' | 'mine' | 'path' | 'world' | 'h
 export type ResourceCost = Record<string, number>;
 export type MineUpgradeKind = 'mine-level' | 'rail' | 'storage';
 
+export interface ProcessingUnlockRequirement {
+  kind: 'building-level' | 'discovery' | 'settlement-hub';
+  id: string;
+  required: number;
+  label: string;
+}
+
+export interface ProcessingRecipe {
+  id: string;
+  buildingKind: ProcessingBuildingKind;
+  requiredLevel: number;
+  inputs: ResourceCost;
+  outputs: ResourceCost;
+  durationMs: number;
+  quantity: number;
+  unlockRequirement?: ProcessingUnlockRequirement;
+}
+
+export type ProcessingJobStatus = 'active' | 'ready';
+
+export interface ProcessingJob {
+  id: string;
+  recipeId: string;
+  buildingId: string;
+  quantity: number;
+  startedAt: number;
+  completesAt: number;
+  status: ProcessingJobStatus;
+  pendingOutputs: ResourceCost;
+}
+
+export interface ProcessingJobStatusReport {
+  recipe: ProcessingRecipe | null;
+  building: WorldPlacement | null;
+  ready: boolean;
+  missing: string[];
+}
+
+export interface ProcessingProgressResult {
+  completedJobIds: string[];
+  readyJobIds: string[];
+  transferred: ResourceCost;
+}
+
 export interface ConstructionProject {
   id: string;
   action: ConstructionAction;
@@ -183,6 +229,72 @@ export interface BuildingDefinition {
   settlementProgressOnBuild: number;
   settlementProgressOnUpgrade: number;
 }
+
+/**
+ * Phase 4's single source of truth for raw-to-processed transformations.
+ * Building placement and the processing queue consume these definitions; the
+ * renderer never carries a second recipe table.
+ */
+export const PROCESSING_RECIPES: readonly ProcessingRecipe[] = [
+  {
+    id: 'sawmill-planks',
+    buildingKind: 'sawmill',
+    requiredLevel: 1,
+    inputs: { logs: 1 },
+    outputs: { planks: 4 },
+    durationMs: 10_000,
+    quantity: 1,
+  },
+  {
+    id: 'stonecutter-stone',
+    buildingKind: 'stonecutter',
+    requiredLevel: 1,
+    inputs: { cobblestone: 2 },
+    outputs: { stone: 1 },
+    durationMs: 10_000,
+    quantity: 1,
+  },
+  {
+    id: 'furnace-bricks',
+    buildingKind: 'furnace',
+    requiredLevel: 1,
+    inputs: { clay: 1 },
+    outputs: { bricks: 1 },
+    durationMs: 15_000,
+    quantity: 1,
+    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+  },
+  {
+    id: 'furnace-glass',
+    buildingKind: 'furnace',
+    requiredLevel: 1,
+    inputs: { sand: 1 },
+    outputs: { glass: 1 },
+    durationMs: 15_000,
+    quantity: 1,
+    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+  },
+  {
+    id: 'furnace-iron-ingot',
+    buildingKind: 'furnace',
+    requiredLevel: 1,
+    inputs: { iron: 1 },
+    outputs: { 'iron-ingot': 1 },
+    durationMs: 15_000,
+    quantity: 1,
+    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+  },
+  {
+    id: 'furnace-gold-ingot',
+    buildingKind: 'furnace',
+    requiredLevel: 1,
+    inputs: { gold: 1 },
+    outputs: { 'gold-ingot': 1 },
+    durationMs: 15_000,
+    quantity: 1,
+    unlockRequirement: { kind: 'discovery', id: 'materials-coal', required: 1, label: 'Coal discovery' },
+  },
+];
 
 /** Roadmap-approved Settlement XP rewards for immediate development actions. */
 export const SETTLEMENT_DEVELOPMENT_REWARDS = {
@@ -248,6 +360,22 @@ export const BUILDING_DEFINITIONS: Readonly<Record<WorldPlacementKind, BuildingD
   'animal-pen': {
     kind: 'animal-pen', name: 'Animal Pen', maxLevel: 3, buildCost: { dirt: 20 }, upgradeCosts: [{ dirt: 20 }, { dirt: 40 }],
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
+  },
+  sawmill: {
+    kind: 'sawmill', name: 'Sawmill', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
+  },
+  furnace: {
+    kind: 'furnace', name: 'Furnace', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
+  },
+  stonecutter: {
+    kind: 'stonecutter', name: 'Stonecutter', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
+  },
+  smithy: {
+    kind: 'smithy', name: 'Smithy', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
   },
 };
 
@@ -507,6 +635,138 @@ export function transferResourcesToSettlement(
   return { transferred, overflow };
 }
 
+export function getProcessingRecipe(recipeId: string): ProcessingRecipe | null {
+  return PROCESSING_RECIPES.find((recipe) => recipe.id === recipeId) ?? null;
+}
+
+export function getProcessingRecipesForBuilding(buildingKind: ProcessingBuildingKind): ProcessingRecipe[] {
+  return PROCESSING_RECIPES.filter((recipe) => recipe.buildingKind === buildingKind).map((recipe) => ({
+    ...recipe,
+    inputs: { ...recipe.inputs },
+    outputs: { ...recipe.outputs },
+    unlockRequirement: recipe.unlockRequirement ? { ...recipe.unlockRequirement } : undefined,
+  }));
+}
+
+function multiplyResourceCost(cost: ResourceCost, multiplier: number): ResourceCost {
+  return Object.fromEntries(Object.entries(cost).map(([resource, amount]) => [resource, amount * multiplier]));
+}
+
+function getProcessingJobForBuilding(state: Pick<GameState, 'processingJobs'>, buildingId: string): ProcessingJob | null {
+  return state.processingJobs.find((job) => job.buildingId === buildingId) ?? null;
+}
+
+export function getProcessingJobStatus(
+  state: Pick<GameState, 'placements' | 'processingJobs' | 'resources' | 'settlementHub' | 'skillRanks'>,
+  recipeId: string,
+  buildingId: string,
+  quantity = 1,
+): ProcessingJobStatusReport {
+  const recipe = getProcessingRecipe(recipeId);
+  const building = state.placements.find((placement) => placement.id === buildingId) ?? null;
+  const missing: string[] = [];
+  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (!recipe) return { recipe: null, building, ready: false, missing: ['Recipe is unavailable'] };
+  if (!building || building.kind !== recipe.buildingKind) missing.push(`${recipe.buildingKind} building is required`);
+  if (building && building.constructionState !== 'complete') missing.push('Processing building construction must finish');
+  if (building && building.level < recipe.requiredLevel) missing.push(`Building level ${recipe.requiredLevel}`);
+  if (getProcessingJobForBuilding(state, buildingId)) missing.push('Processing slot is occupied');
+  const unlock = recipe.unlockRequirement;
+  if (unlock) {
+    const unlocked = unlock.kind === 'discovery'
+      ? getSkillNodeRank(state, unlock.id) >= unlock.required
+      : unlock.kind === 'settlement-hub'
+        ? state.settlementHub.level >= unlock.required
+        : state.placements.some((placement) => placement.kind === unlock.id && placement.level >= unlock.required);
+    if (!unlocked) missing.push(unlock.label);
+  }
+  Object.entries(multiplyResourceCost(recipe.inputs, safeQuantity * recipe.quantity)).forEach(([resource, amount]) => {
+    if ((state.resources[resource] ?? 0) < amount) missing.push(`${amount.toLocaleString()} ${resource}`);
+  });
+  return { recipe, building, ready: missing.length === 0, missing };
+}
+
+/** Start one persistent processing job and consume its inputs exactly once. */
+export function startProcessingJob(
+  state: GameState,
+  recipeId: string,
+  buildingId: string,
+  now = Date.now(),
+  quantity = 1,
+): boolean {
+  const status = getProcessingJobStatus(state, recipeId, buildingId, quantity);
+  if (!status.ready || !status.recipe) return false;
+  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  const inputCost = multiplyResourceCost(status.recipe.inputs, safeQuantity * status.recipe.quantity);
+  payResourceCost(state.resources, inputCost);
+  state.processingJobs.push({
+    id: `processing-${buildingId}-${recipeId}-${now}`,
+    recipeId,
+    buildingId,
+    quantity: safeQuantity,
+    startedAt: now,
+    completesAt: now + status.recipe.durationMs,
+    status: 'active',
+    pendingOutputs: {},
+  });
+  return true;
+}
+
+function mergeResourceAmounts(target: ResourceCost, source: Readonly<ResourceCost>): void {
+  Object.entries(source).forEach(([resource, amount]) => {
+    if (amount > 0) target[resource] = (target[resource] ?? 0) + amount;
+  });
+}
+
+function hasResourceAmount(resources: Readonly<ResourceCost>): boolean {
+  return Object.values(resources).some((amount) => amount > 0);
+}
+
+function getProcessingJobOutputs(job: ProcessingJob): ResourceCost {
+  const recipe = getProcessingRecipe(job.recipeId);
+  return recipe ? multiplyResourceCost(recipe.outputs, job.quantity * recipe.quantity) : {};
+}
+
+function settleProcessingJobOutput(state: GameState, job: ProcessingJob): ResourceTransferResult {
+  const transfer = transferResourcesToSettlement(state, job.pendingOutputs);
+  job.pendingOutputs = { ...transfer.overflow };
+  return transfer;
+}
+
+/** Advance active jobs and retry completed jobs whose output previously overflowed. */
+export function advanceProcessingJobs(state: GameState, now = Date.now()): ProcessingProgressResult {
+  const result: ProcessingProgressResult = { completedJobIds: [], readyJobIds: [], transferred: {} };
+  state.processingJobs.slice().forEach((job) => {
+    if (job.status === 'active' && job.completesAt > now) return;
+    if (job.status === 'active') {
+      job.status = 'ready';
+      job.pendingOutputs = getProcessingJobOutputs(job);
+    }
+    const transfer = settleProcessingJobOutput(state, job);
+    mergeResourceAmounts(result.transferred, transfer.transferred);
+    if (hasResourceAmount(job.pendingOutputs)) {
+      result.readyJobIds.push(job.id);
+      return;
+    }
+    result.completedJobIds.push(job.id);
+    const index = state.processingJobs.findIndex((candidate) => candidate.id === job.id);
+    if (index >= 0) state.processingJobs.splice(index, 1);
+  });
+  return result;
+}
+
+/** Retry a completed job's preserved output after the player frees storage. */
+export function collectProcessingOutput(state: GameState, jobId: string): ResourceTransferResult {
+  const job = state.processingJobs.find((candidate) => candidate.id === jobId);
+  if (!job || job.status !== 'ready') return { transferred: {}, overflow: {} };
+  const transfer = settleProcessingJobOutput(state, job);
+  if (!hasResourceAmount(job.pendingOutputs)) {
+    const index = state.processingJobs.indexOf(job);
+    if (index >= 0) state.processingJobs.splice(index, 1);
+  }
+  return transfer;
+}
+
 const MINE_ID = 'starter-mine';
 const MINE_MINER_NODE_ID = 'automation-miner-helper';
 
@@ -529,9 +789,9 @@ export const BLOCK_PROGRESSION: readonly BlockType[] = ['dirt', 'grass', 'stone'
 
 const isTestingSurface = typeof window !== 'undefined' && window.location.pathname.includes('/testing/');
 export const SAVE_KEY = isTestingSurface ? 'idlecraft-testing-save-v4' : 'idlecraft-save-v4';
-export const SAVE_SCHEMA_VERSION = 11;
+export const SAVE_SCHEMA_VERSION = 12;
 export const LEGACY_SAVE_SCHEMA_VERSION = 7;
-export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7, 8, 9, 10];
+export const LEGACY_SAVE_SCHEMA_VERSIONS: readonly number[] = [4, 5, 6, 7, 8, 9, 10, 11];
 export const STARTING_CHUNK_SIZE = 7;
 export const STARTING_PATH_CELLS: readonly PathCell[] = [
   { x: 0, z: 3, tier: 'dirt' },
@@ -557,6 +817,10 @@ export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { 
   farm: { width: 2, depth: 2, requiresPath: true },
   tree: { width: 1, depth: 1, requiresPath: false },
   'animal-pen': { width: 2, depth: 2, requiresPath: true },
+  sawmill: { width: 2, depth: 2, requiresPath: true },
+  furnace: { width: 1, depth: 1, requiresPath: true },
+  stonecutter: { width: 1, depth: 1, requiresPath: true },
+  smithy: { width: 2, depth: 2, requiresPath: true },
 };
 
 export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
@@ -746,6 +1010,7 @@ export function freshState(now = Date.now()): GameState {
     undergroundLayer: 0,
     mines: [],
     constructionQueue: [],
+    processingJobs: [],
     builderSlots: 1,
     expansionDirections: [],
     resources: { dirt: 0, cobblestone: 0 },
@@ -2491,7 +2756,8 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       // Schema 7 is the first save format that persisted an authoritative Hub;
       // schema 8 adds the Settlement Storage instance; schema 9 adds typed
       // mine-local inventories; schema 10 adds mine-owned levels; schema 11
-      // makes rail and storage upgrade actions mine-owned construction work.
+      // makes rail and storage upgrade actions mine-owned construction work;
+      // schema 12 adds timestamped processing jobs.
       // Older saves retain their existing world/progress data but begin at the
       // conservative Dwelling authority until the player completes the Hub flow.
       settlementHub: parsedSchemaVersion >= LEGACY_SAVE_SCHEMA_VERSION
@@ -2514,6 +2780,7 @@ export function loadState(storage: Storage, now = Date.now()): GameState {
       undergroundLayer: legacyUndergroundLayer,
       mines,
       constructionQueue: parseConstructionQueue(parsed.constructionQueue, builderSlots),
+      processingJobs: parseProcessingJobs(parsed.processingJobs),
       builderSlots,
       expansionDirections: Array.isArray(parsed.expansionDirections)
         ? parsed.expansionDirections.filter((direction): direction is WorldDirection => WORLD_DIRECTIONS.includes(direction as WorldDirection)).slice(0, WORLD_TIERS.length - 2)
@@ -2654,7 +2921,7 @@ function parsePathCells(value: unknown): PathCell[] | null {
 
 function parseWorldPlacements(value: unknown): WorldPlacement[] {
   if (!Array.isArray(value)) return [];
-  const validKinds: readonly WorldPlacementKind[] = ['mine', 'dwelling', 'well', 'farm', 'tree', 'animal-pen'];
+  const validKinds: readonly WorldPlacementKind[] = ['mine', 'dwelling', 'well', 'farm', 'tree', 'animal-pen', 'sawmill', 'furnace', 'stonecutter', 'smithy'];
   const placements: WorldPlacement[] = [];
   const seen = new Set<string>();
   value.forEach((candidate) => {
@@ -2682,6 +2949,33 @@ function parseWorldPlacements(value: unknown): WorldPlacement[] {
     });
   });
   return placements;
+}
+
+function parseProcessingJobs(value: unknown): ProcessingJob[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((candidate): ProcessingJob[] => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const entry = candidate as Partial<ProcessingJob>;
+    const recipeId = typeof entry.recipeId === 'string' ? entry.recipeId : '';
+    const recipe = getProcessingRecipe(recipeId);
+    const buildingId = typeof entry.buildingId === 'string' ? entry.buildingId : '';
+    const id = typeof entry.id === 'string' && entry.id.length > 0 ? entry.id : `processing-${buildingId}-${recipeId}`;
+    const startedAt = Number(entry.startedAt);
+    const completesAt = Number(entry.completesAt);
+    if (!recipe || !buildingId || seen.has(id) || !Number.isFinite(startedAt) || !Number.isFinite(completesAt) || completesAt < startedAt) return [];
+    seen.add(id);
+    return [{
+      id,
+      recipeId,
+      buildingId,
+      quantity: Math.max(1, Math.floor(Number(entry.quantity) || 1)),
+      startedAt,
+      completesAt,
+      status: entry.status === 'ready' ? 'ready' : 'active',
+      pendingOutputs: parseResourceInventory(entry.pendingOutputs),
+    }];
+  }).slice(0, 32);
 }
 
 function parseConstructionQueue(value: unknown, builderSlots: number): ConstructionProject[] {
@@ -2800,6 +3094,7 @@ export function calculateOfflineXp(state: GameState, now = Date.now()): number {
 export interface ElapsedProgressResult {
   completedProjects: ConstructionProject[];
   mineResult: MineProductionResult;
+  processingResult: ProcessingProgressResult;
   offlineXp: number;
 }
 
@@ -2811,8 +3106,9 @@ export interface ElapsedProgressResult {
 export function reconcileElapsedProgress(state: GameState, now = Date.now(), random = Math.random): ElapsedProgressResult {
   const completedProjects = completeConstructionProjects(state, now);
   const mineResult = advanceMineOperations(state, now, random);
+  const processingResult = advanceProcessingJobs(state, now);
   const offlineXp = mineResult.trips > 0 ? mineResult.xp : calculateOfflineXp(state, now);
   if (offlineXp > 0) addXp(state, offlineXp);
   state.lastSavedAt = now;
-  return { completedProjects, mineResult, offlineXp };
+  return { completedProjects, mineResult, processingResult, offlineXp };
 }

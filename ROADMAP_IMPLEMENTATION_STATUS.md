@@ -7,13 +7,13 @@
 
 ## Current Phase
 
-**Phase 3 — Real Mine Economy**
+**Phase 4 — Processing**
 
-Status: Complete; Phase 3D is complete.
+Status: In progress; Phase 3 audit passed and Phase 4A is in progress.
 
 ## Current Sub-Phase
 
-**Phase 3D - Offline mine economy and final Mining UI**
+**Phase 4A - Processing recipe and persistent queue foundation**
 
 Status: Complete.
 
@@ -127,6 +127,54 @@ The current code now has one serialized generic `constructionQueue` with builder
 - [x] Existing saves and Supabase payloads require no schema migration.
 - [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
 
+## Phase 3 audit before Phase 4
+
+Phase 3 passes its completion audit at the current baseline. Mine-local typed inventory remains authoritative; production deposits into mine storage before any settlement transfer; manual Collect respects settlement capacity; full mine storage pauses production; offline reconciliation uses the same bounded production path; weighted ore tables, mine levels and cart capacity are data-driven; rail and storage upgrades are mine-owned and funded by normal resources; Emerald remains a rare bonus; schema 8/9/10/11 migrations preserve mine clocks, IDs, orientation, inventory, capacity and levels; and one-cart repeated movement remains owned by the renderer's persisted mine clock. No Phase 3 fix was required before Phase 4.
+
+Baseline audit evidence: 98 Vitest tests passed, the production build passed, `git diff --check` passed, and existing browser QA covered repeated cart travel, mine collection, storage-full pause, offline delivery feedback, save/reload continuity, mine orientations and rail configurations. The browser session's Supabase requests were unavailable in isolation, but local gameplay and save behavior remained functional with no application exceptions.
+
+## Phase 4 implementation sub-phases
+
+1. **Phase 4A - Processing recipe and persistent queue foundation (current slice)**
+   - Add a typed recipe registry and persistent processing jobs with one occupied slot per processing building.
+   - Route inputs from settlement storage, persist timestamps for save/reload and offline progression, and preserve completed outputs when settlement storage is full.
+   - Make the generic building-instance model able to identify processing buildings without adding a second construction system.
+2. **Phase 4B - Sawmill vertical slice**
+   - Add the first player-placeable Sawmill through Build Mode and shared builder construction.
+   - Add the Logs -> Planks recipe, processing panel, affordability feedback and processed-material discovery.
+3. **Phase 4C - Stonecutter and Furnace chains**
+   - Add Stonecutter and Furnace placement, Stone, Bricks, Glass and ingot recipes, discovery integration and deterministic queue/output feedback.
+4. **Phase 4D - Smithy/tool authority**
+   - Add Smithy placement and move actual tool-tier progression into its builder-backed processing flow without restoring Skill Tree tool ownership.
+
+## Phase 4A implementation plan
+
+1. Add a schema-versioned `processingJobs` collection to the canonical save state and normalize older payloads without changing their gameplay data.
+2. Add one data-driven `PROCESSING_RECIPES` registry with typed building, input, output, duration, quantity and unlock fields for the Phase 4 processing chains.
+3. Add generic start, affordability/status, completion, output-preservation and collection functions. A processing building can have one active or output-blocked job; output overflow remains on that job rather than being discarded.
+4. Integrate timestamp reconciliation into the existing offline/save loop and generic building definitions, while leaving player-facing building placement and final production UI to the next sub-phases.
+5. Add business-logic coverage for input consumption, one-slot contention, completion timing, full-storage preservation, partial output transfer, save migration and offline completion.
+
+## Phase 4A acceptance criteria
+
+- [x] Processing recipes are represented by one typed, data-driven registry rather than per-recipe branches.
+- [x] A processing job consumes settlement inputs once, occupies one building slot, persists `startedAt`/`completesAt`, and completes deterministically after its duration.
+- [x] Completed output transfers through settlement storage; insufficient capacity preserves every untransferred output on the completed job.
+- [x] Save/load and offline reconciliation continue active and output-blocked jobs without simulating every elapsed second.
+- [x] Processing building targets use the existing `WorldPlacement`/generic construction model and do not create a second construction queue.
+- [x] Existing Phase 1-3 behavior remains green, including mine-local inventory, collection, full-storage pause, offline mine production and one-cart movement.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser regression verification pass.
+
+## Phase 4A completion record
+
+- Added the typed `PROCESSING_RECIPES` registry for the initial Sawmill, Stonecutter and Furnace transformation definitions, including building requirements, inputs, outputs, durations, quantities and discovery gates.
+- Added persistent `processingJobs` with one occupied slot per processing building, exact input payment, timestamped completion, deterministic offline advancement and output retry/collection.
+- Completed output is routed through Settlement Storage. Partial or full output overflow remains on a `ready` job and is never silently deleted.
+- Processing buildings are ordinary `WorldPlacement` building kinds and use the existing generic placement/construction model; no second construction queue was introduced. Player-facing Sawmill placement/UI remains Phase 4B scope.
+- Bumped the save schema from 11 to 12. Schema 4 through schema 11 saves remain readable, and older saves receive an empty processing-job list without changing existing progression. No Supabase table or RLS migration was required.
+- Added automated coverage for registry selection, input consumption, one-slot contention, completion timing, partial/full storage handling, output collection, schema migration and offline completion.
+- Browser-verified the production route at `http://127.0.0.1:5176/Minecraft-Idle-Game/`: title, HUD, independent Mining/Build drawers, storage summary, fresh-state shell and zero runtime error console messages. Existing Phase 3 minecart/collection/storage behavior remains covered by the prior Phase 3 browser record and the full regression suite.
+
 ## Phase 1 Target Outcomes
 
 - [x] Settlement Hub levels are authoritative global progression.
@@ -154,15 +202,15 @@ Existing mine/path placement, mine storage behavior, one-cart animation and Supa
 
 ## Save Migration Notes
 
-Current schema version: 11.
+Current schema version: 12.
 
-Schema 4 through schema 10 saves are accepted and normalized into schema 11 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1. Schema 8 mine storage scalars migrate into typed local cobblestone inventory without changing mine clocks, IDs, orientation, rail length, storage capacity or effective tier. Schema 9 mines without `mineLevel` inherit the effective production tier represented by their saved underground layer and discoveries, then persist as Mine level 1, 2, 3 or 5 as appropriate. Schema 10's global `mineUpgradeRanks['rail-speed']` mirror is copied into each mine's `railLevel` when needed; schema 11 runtime never reads that global mirror.
+Schema 4 through schema 11 saves are accepted and normalized into schema 12 on load. Existing world, path, placement, mine, resource, skill and timestamp data is preserved. Legacy placements receive level 1 and complete construction state; legacy projects receive a persisted duration from the construction registry. Legacy saves do not inherit an unearned Hub level; they begin at the Dwelling Hub authority and Storage level 1. Schema 8 mine storage scalars migrate into typed local cobblestone inventory without changing mine clocks, IDs, orientation, rail length, storage capacity or effective tier. Schema 9 mines without `mineLevel` inherit the effective production tier represented by their saved underground layer and discoveries, then persist as Mine level 1, 2, 3 or 5 as appropriate. Schema 10's global `mineUpgradeRanks['rail-speed']` mirror is copied into each mine's `railLevel` when needed; schema 11 runtime never reads that global mirror. Schema 12 adds timestamped processing jobs; older saves receive none.
 
 Legacy expansion-only projects are assigned stable IDs, `action: expand`, world targets, no resource cost and an available builder when loaded.
 
 Legacy cloud rows remain readable because the client accepts the previous save version and passes the payload through the same local migration before use. No Supabase table or RLS change is needed.
 
-Fresh schema 11 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot and no active projects. Each mine starts at Mine level 1, rail level 0 and storage capacity level 0 with an empty typed local inventory.
+Fresh schema 12 saves start with a complete level-one Settlement Hub, level-one Settlement Storage (500 capacity), zero population/story milestones, one builder slot, no active projects and no processing jobs. Each mine starts at Mine level 1, rail level 0 and storage capacity level 0 with an empty typed local inventory.
 
 ## Completed Slices
 
@@ -189,6 +237,7 @@ Phase 3A: 82 tests passed; production build and `git diff --check` passed; brows
 Phase 3B: 87 tests passed; production build and `git diff --check` passed; browser verified weighted local production, multi-resource storage, collection, reload continuity, repeated trips and two mine orientations/rail configurations. Supabase requests were unavailable in the isolated browser session; local gameplay remained functional.
 Phase 3C-A: 91 tests passed; production build and `git diff --check` passed; browser verified mine-level upgrade feedback, builder-backed completion, per-mine production-table transition and save/reload continuity with one cart and local inventory intact.
 Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; browser verified per-mine Rails and Storage panels, independent mine-targeted queues, normal-resource payment, builder feedback and no cross-mine side effects.
+Phase 4A: 103 tests passed; production build and `git diff --check` passed; browser verified the production shell, independent drawers, storage summary and zero runtime console errors. Processing recipe/job logic was verified through input, queue, storage-overflow, migration and offline tests.
 
 ## Test / Verification History
 
@@ -234,9 +283,11 @@ Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap phase: Phase 4 — Processing. Phase 3 — Real Mine Economy is complete.
+Phase 4A is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4B - Sawmill vertical slice**. Do not begin Phase 4B in this task.
 
-Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
+Next incomplete roadmap sub-phase: Phase 4B - Sawmill vertical slice. Phase 4A is complete; Phase 3 — Real Mine Economy is complete.
+
+Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A is complete and pushed; do not begin Phase 4B in this task.
 
 ## Phase 3 implementation sub-phases
 

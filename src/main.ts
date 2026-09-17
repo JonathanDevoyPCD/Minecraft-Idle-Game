@@ -8,6 +8,7 @@ import {
   DIRT_PATH_BUILD_COST,
   MINE_RAIL_LENGTHS,
   addXp,
+  advanceProcessingJobs,
   advanceMineOperations,
   buildPathCell,
   buySkillNode,
@@ -1529,7 +1530,7 @@ let lastOrbitX = 0;
 let lastOrbitY = 0;
 const initialReconciliation = reconcileElapsedProgress(state, Date.now());
 const offlineXp = initialReconciliation.offlineXp;
-if (initialReconciliation.completedProjects.length > 0 || initialReconciliation.mineResult.mineReports.length > 0 || offlineXp > 0) {
+if (initialReconciliation.completedProjects.length > 0 || initialReconciliation.mineResult.mineReports.length > 0 || initialReconciliation.processingResult.completedJobIds.length > 0 || initialReconciliation.processingResult.readyJobIds.length > 0 || offlineXp > 0) {
   saveState(localStorage, state);
 }
 updateWorldScene();
@@ -3407,6 +3408,10 @@ function render(_now: number): void {
       addXp(state, mineResult.xp);
       flashXpCard();
       audioManager.playMiningSound('stone');
+      stateChanged = true;
+    }
+    const processingResult = advanceProcessingJobs(state, wallClockNow);
+    if (processingResult.completedJobIds.length > 0 || processingResult.readyJobIds.length > 0 || Object.keys(processingResult.transferred).length > 0) {
       stateChanged = true;
     }
     if (stateChanged) saveState(localStorage, state);

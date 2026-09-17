@@ -5,6 +5,7 @@ import { addSettlementProgress, addSettlementResource, addXp, advanceMineOperati
 import { SKILL_TREE_NODES, WORLD_POWER_EXPANSION_NODE_IDS } from './skill-tree';
 import { collectMineStorage, getMineStorageAmount } from './game';
 import { getMineOperationsSummary, getMineStorageFillDuration } from './game';
+import { advanceProcessingJobs, collectProcessingOutput, getProcessingJobStatus, getProcessingRecipesForBuilding, startProcessingJob } from './game';
 
 describe('Villagers - Idle World Game progression', () => {
   it('uses the intended early level curve', () => {
@@ -185,7 +186,7 @@ describe('Villagers - Idle World Game progression', () => {
 
   it('starts on a procedural 7×7 chunk with a three-tile path line and one free mine site', () => {
     const state = freshState();
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(getBuilderSlotCount(state)).toBe(1);
     expect(getActiveBuilderCount(state)).toBe(0);
     expect(getAvailableBuilderSlots(state)).toBe(1);
@@ -641,7 +642,7 @@ describe('Villagers - Idle World Game progression', () => {
       }),
     } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state).toMatchObject({ schemaVersion: 11, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1, settlementHub: { level: 1, constructionState: 'complete' }, settlementStorage: { level: 1 } });
+    expect(state).toMatchObject({ schemaVersion: 12, worldRank: 1, worldPower: 1, chunkSize: 7, builderSlots: 1, settlementHub: { level: 1, constructionState: 'complete' }, settlementStorage: { level: 1 } });
     expect(state.skillRanks).toMatchObject({ 'automation-auto-strike': 2, 'tools-tool-bench': 1 });
     expect(getAutoRate(state)).toBe(2);
     expect(getTool(state).name).toBe('Wooden Pickaxe');
@@ -680,7 +681,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.settlementHub.level).toBe(1);
     expect(state.settlementStorage.level).toBe(1);
     expect(state.constructionQueue[0]).toMatchObject({ action: 'expand', targetKind: 'world', targetId: 'adjacent-cell-north', builderId: 'builder-1', cost: {} });
@@ -692,7 +693,7 @@ describe('Villagers - Idle World Game progression', () => {
     const saved = { ...freshState(0), schemaVersion: 5, placements: [{ ...placement, level: undefined, constructionState: undefined }] };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 1000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.settlementHub.level).toBe(1);
     expect(state.settlementStorage.level).toBe(1);
     expect(state.placements[0]).toMatchObject({ id: placement.id, level: 1, constructionState: 'complete' });
@@ -932,6 +933,77 @@ describe('Villagers - Idle World Game progression', () => {
     expect(firstVillager?.prerequisites).not.toContain('materials-emerald');
   });
 
+  it('uses one data-driven processing slot and consumes inputs once', () => {
+    const state = freshState(1000);
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+    expect(placeWorldPlacement(state, sawmill)).toBe(true);
+    state.resources.logs = 2;
+
+    expect(getProcessingRecipesForBuilding('sawmill')).toHaveLength(1);
+    expect(getProcessingJobStatus(state, 'sawmill-planks', sawmill.id)).toMatchObject({ ready: true });
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id, 1000)).toBe(true);
+    expect(state.resources.logs).toBe(1);
+    expect(state.processingJobs).toMatchObject([{ recipeId: 'sawmill-planks', buildingId: sawmill.id, status: 'active', startedAt: 1000, completesAt: 11000 }]);
+    expect(getProcessingJobStatus(state, 'sawmill-planks', sawmill.id).missing).toEqual(['Processing slot is occupied']);
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id, 1000)).toBe(false);
+  });
+
+  it('preserves completed processing output when settlement storage is full', () => {
+    const state = freshState(1000);
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+    expect(placeWorldPlacement(state, sawmill)).toBe(true);
+    state.resources.dirt = 499;
+    state.resources.logs = 1;
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id, 1000)).toBe(true);
+
+    const completed = advanceProcessingJobs(state, 11000);
+    expect(completed.completedJobIds).toEqual([]);
+    expect(completed.readyJobIds).toHaveLength(1);
+    expect(state.resources.planks).toBe(1);
+    expect(state.processingJobs[0]).toMatchObject({ status: 'ready', pendingOutputs: { planks: 3 } });
+
+    state.resources.dirt = 496;
+    expect(collectProcessingOutput(state, state.processingJobs[0].id)).toEqual({ transferred: { planks: 3 }, overflow: {} });
+    expect(state.processingJobs).toHaveLength(0);
+    expect(getStoredResourceTotal(state)).toBe(500);
+  });
+
+  it('migrates and completes an active processing job during offline reconciliation', () => {
+    const saved = freshState(1000);
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+    expect(placeWorldPlacement(saved, sawmill)).toBe(true);
+    saved.resources.logs = 1;
+    expect(startProcessingJob(saved, 'sawmill-planks', sawmill.id, 1000)).toBe(true);
+    saved.schemaVersion = 11;
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+
+    const state = loadState(storage, 2000);
+    expect(state.schemaVersion).toBe(12);
+    expect(state.processingJobs).toHaveLength(1);
+    const restored = reconcileElapsedProgress(state, 12000);
+    expect(restored.processingResult.completedJobIds).toHaveLength(1);
+    expect(state.processingJobs).toHaveLength(0);
+    expect(state.resources.planks).toBe(4);
+  });
+
+  it('keeps the furnace discovery gate in the shared recipe registry', () => {
+    const state = freshState();
+    const furnace = createWorldPlacement('furnace', 'furnace-1', 0, 2, 'south');
+    expect(placeWorldPlacement(state, furnace)).toBe(true);
+    expect(getProcessingJobStatus(state, 'furnace-bricks', furnace.id).missing).toEqual(['Coal discovery', '1 clay']);
+    state.skillRanks['materials-coal'] = 1;
+    state.resources.clay = 1;
+    expect(getProcessingJobStatus(state, 'furnace-bricks', furnace.id).ready).toBe(true);
+  });
+
+  it('loads legacy saves without inventing processing jobs', () => {
+    const saved = { ...freshState(0), schemaVersion: 11 };
+    const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
+    const state = loadState(storage, 1000);
+    expect(state.schemaVersion).toBe(12);
+    expect(state.processingJobs).toEqual([]);
+  });
+
   it('loads a saved mine operation', () => {
     const saved = {
       ...freshState(1000),
@@ -953,7 +1025,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.resources).toMatchObject({ dirt: 120, cobblestone: 80 });
     expect(state.settlementHub.level).toBe(2);
     expect(state.settlementStorage).toEqual({ id: 'settlement-storage', level: 1, constructionState: 'complete' });
@@ -984,7 +1056,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.mines[0]).toMatchObject({
       direction: 'east',
       railLength: 4,
@@ -1004,7 +1076,7 @@ describe('Villagers - Idle World Game progression', () => {
     saved.mines[0].inventory = { cobblestone: 4, coal: 2 };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.mines[0].inventory).toEqual({ cobblestone: 4, coal: 2 });
     expect(getMineStorageAmount(state.mines[0])).toBe(6);
   });
@@ -1024,7 +1096,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.mines[0]).toMatchObject({ mineLevel: 5, progressMs: 321, lastUpdatedAt: 1000, inventory: { cobblestone: 4, coal: 2 } });
     expect(getMineProductionTier(state, state.mines[0])).toBe('diamond');
   });
@@ -1037,7 +1109,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.settlementStorage).toEqual({ id: 'settlement-storage', level: 2, constructionState: 'complete' });
   });
 
@@ -1171,7 +1243,7 @@ describe('Villagers - Idle World Game progression', () => {
     };
     const storage = { getItem: () => JSON.stringify(saved) } as unknown as Storage;
     const state = loadState(storage, 2000);
-    expect(state.schemaVersion).toBe(11);
+    expect(state.schemaVersion).toBe(12);
     expect(state.mines[0].railLevel).toBe(2);
     expect(getMineTripDuration(state, state.mines[0])).toBeCloseTo(MINE_TRIP_DURATION_MS / 1.5);
   });

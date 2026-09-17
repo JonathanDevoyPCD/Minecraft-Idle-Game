@@ -933,6 +933,45 @@ describe('Villagers - Idle World Game progression', () => {
     expect(firstVillager?.prerequisites).not.toContain('materials-emerald');
   });
 
+  it('gates the Sawmill through the Settlement Hub and shared construction flow', () => {
+    const state = freshState(1000);
+    expect(getBuildItemUnlockStatus(state, 'sawmill').unlocked).toBe(false);
+    state.settlementHub.level = 2;
+    expect(getBuildItemUnlockStatus(state, 'sawmill')).toMatchObject({ unlocked: true, missing: [] });
+    state.resources.logs = 10;
+    state.resources.cobblestone = 20;
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+
+    expect(queueBuildingConstruction(state, sawmill, 1000)).toBe(true);
+    expect(state.resources.logs).toBe(0);
+    expect(state.resources.cobblestone).toBe(0);
+    expect(state.placements[0]).toMatchObject({ kind: 'sawmill', level: 1, constructionState: 'building' });
+    expect(state.constructionQueue[0]).toMatchObject({ action: 'build', targetKind: 'building', targetId: 'sawmill-1', durationMs: 10_000 });
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id, 1000)).toBe(false);
+
+    completeConstructionProjects(state, 11_000);
+    expect(state.placements[0].constructionState).toBe('complete');
+    state.resources.logs = 1;
+    expect(getProcessingJobStatus(state, 'sawmill-planks', sawmill.id).ready).toBe(true);
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id, 11_000)).toBe(true);
+    expect(state.resources.logs).toBe(0);
+    const jobId = state.processingJobs[0].id;
+    expect(advanceProcessingJobs(state, 21_000).completedJobIds).toEqual([jobId]);
+    expect(state.resources.planks).toBe(4);
+  });
+
+  it('explains the Sawmill input blocker without consuming partial Logs', () => {
+    const state = freshState();
+    state.settlementHub.level = 2;
+    const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');
+    expect(placeWorldPlacement(state, sawmill)).toBe(true);
+    const status = getProcessingJobStatus(state, 'sawmill-planks', sawmill.id);
+    expect(status.ready).toBe(false);
+    expect(status.missing).toContain('1 logs');
+    expect(startProcessingJob(state, 'sawmill-planks', sawmill.id)).toBe(false);
+    expect(state.processingJobs).toHaveLength(0);
+  });
+
   it('uses one data-driven processing slot and consumes inputs once', () => {
     const state = freshState(1000);
     const sawmill = createWorldPlacement('sawmill', 'sawmill-1', 0, 1, 'south');

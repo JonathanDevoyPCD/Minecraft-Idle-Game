@@ -9,11 +9,11 @@
 
 **Phase 4 — Processing**
 
-Status: In progress; Phase 3 audit passed and Phase 4A is complete.
+Status: In progress; Phase 1 through Phase 3 are complete, Phase 4A and Phase 4B are complete.
 
 ## Current Sub-Phase
 
-**Phase 4A - Processing recipe and persistent queue foundation**
+**Phase 4B - Sawmill vertical slice**
 
 Status: Complete.
 
@@ -175,6 +175,35 @@ Baseline audit evidence: 98 Vitest tests passed, the production build passed, `g
 - Added automated coverage for registry selection, input consumption, one-slot contention, completion timing, partial/full storage handling, output collection, schema migration and offline completion.
 - Browser-verified the production route at `http://127.0.0.1:5176/Minecraft-Idle-Game/`: title, HUD, independent Mining/Build drawers, storage summary, fresh-state shell and zero runtime error console messages. Existing Phase 3 minecart/collection/storage behavior remains covered by the prior Phase 3 browser record and the full regression suite.
 
+## Phase 4B implementation plan
+
+1. Add a data-driven Sawmill Build Mode item gated by the Settlement Hub's Hamlet stage, with the existing builder-backed construction queue, a 2x2 path-connected footprint and a normal resource build cost.
+2. Add the Sawmill world representation and placement ghost without introducing a second building or construction system; preserve the existing isometric world, placement rules and save flow.
+3. Bind the Sawmill panel to the Phase 4 typed recipe and persistent processing-job APIs. Show the Logs input, Planks output, duration, affordability, one-slot busy state, completion and storage-full feedback.
+4. Use the existing timestamp reconciliation and settlement-storage transfer path for save/reload and offline completion. A completed Planks output is never discarded when storage is full.
+5. Keep Planks out of the Skill Tree discovery registry for this slice: the Sawmill's Hamlet Build Mode gate is the single unlock authority, and successful processing is surfaced through the Sawmill/storage UI rather than adding a duplicate discovery system or Crafting Point cost.
+6. Add focused business-logic coverage and browser verification for the complete placement, construction and Logs-to-Planks flow.
+
+## Phase 4B acceptance criteria
+
+- [x] Sawmill is unlocked by the authoritative Settlement Hub Hamlet stage and is unavailable before that stage.
+- [x] Sawmill placement uses the existing Build Mode, integer-grid, collision, path-connection, builder and timestamped construction systems.
+- [x] Sawmill build cost is data-driven (`10 Logs + 20 Cobblestone`) and is consumed once when construction begins.
+- [x] A completed Sawmill exposes the typed `1 Logs -> 4 Planks` recipe, checks affordability and occupies exactly one processing slot.
+- [x] Inputs are consumed once; timed completion transfers Planks through Settlement Storage, while storage-full output remains recoverable through the shared job state.
+- [x] Save/reload and offline timestamp reconciliation continue Sawmill construction and processing without a schema or Supabase migration.
+- [x] Existing mine/path visuals, one-cart mine behavior, mine-local economy, construction and save systems remain intact.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 4B completion record
+
+- Added the Hamlet-gated Sawmill to the data-driven Build Mode registry and Production category. It occupies a path-connected 2x2 footprint, costs 10 Logs plus 20 Cobblestone, and uses the shared 10-second builder construction flow.
+- Added a procedural Sawmill scene visual and yellow/invalid placement ghost, with placement records persisted as ordinary `WorldPlacement` building instances.
+- Added the Sawmill modal UI for level, recipe, input/output, duration, affordability, active-job countdown, one-slot feedback, completion and Settlement Storage status. Start and collect actions call the shared Phase 4 processing APIs.
+- The existing typed `sawmill-planks` recipe remains authoritative: 1 Log produces 4 Planks in 10 seconds. Planks are intentionally not a separate Skill Tree discovery in this slice; no duplicate unlock or Crafting Point path was added.
+- Added focused tests for Hamlet gating, construction cost/payment, construction blocking, timed processing and missing-input feedback. No save schema or Supabase migration was required.
+- Browser-verified the production route at `http://127.0.0.1:5176/Minecraft-Idle-Game/`: locked Sawmill before Hamlet; unlocked Production category; valid Sawmill placement; construction-in-progress modal; completed building; Logs-to-Planks affordability and one-slot busy state; timed completion into Settlement Storage; and reload continuity while processing was active. No application console errors were observed; existing Phase 3 minecart/storage behavior remains covered by the regression suite and prior browser record.
+
 ## Phase 1 Target Outcomes
 
 - [x] Settlement Hub levels are authoritative global progression.
@@ -283,11 +312,11 @@ Phase 4A: 103 tests passed; production build and `git diff --check` passed; brow
 
 ## Next Work
 
-Phase 4A is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4B - Sawmill vertical slice**. Do not begin Phase 4B in this task.
+Phase 4B is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4C - Stonecutter and Furnace chains**. Do not begin Phase 4C in this task.
 
-Next incomplete roadmap sub-phase: Phase 4B - Sawmill vertical slice. Phase 4A is complete; Phase 3 — Real Mine Economy is complete.
+Next incomplete roadmap sub-phase: Phase 4C - Stonecutter and Furnace chains. Phase 4A and Phase 4B are complete; Phase 3 — Real Mine Economy is complete.
 
-Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A is complete and pushed; do not begin Phase 4B in this task.
+Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A and Phase 4B are complete and pushed; do not begin Phase 4C in this task.
 
 ## Phase 3 implementation sub-phases
 

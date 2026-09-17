@@ -287,7 +287,7 @@ button { font: inherit; }
 .world-actions .world-menu-button img { width: 34px; height: 34px; }
 .world-actions .world-menu-button:nth-child(1) img { width: 52px; height: 42px; object-position: center 58%; }
 #build-mode-toggle { position: relative; z-index: 5; display: grid; place-content: start; width: 90px; min-width: 90px; height: 90px; min-height: 90px; padding: 0; overflow: visible; transition: width .36s ease; }
-#build-mode-toggle.is-expanded { width: 660px; }
+#build-mode-toggle.is-expanded { width: 780px; }
 .actual-toggle { display: grid; width: 84px; min-width: 84px; height: 84px; min-height: 84px; place-items: center; padding: 7px; color: var(--ink); border: 0; background: transparent; cursor: pointer; font-weight: 900; font-size: 10px; line-height: 1; }
 .actual-toggle img { width: 42px; height: 42px; object-fit: contain; image-rendering: pixelated; }
 .actual-toggle:focus-visible { outline: 3px solid #41682f; outline-offset: -5px; border-radius: 14px; }
@@ -326,7 +326,8 @@ button { font: inherit; }
 .build-drawer-page > :nth-child(5) { transition-delay: .05s; }
 .build-drawer-page > :nth-child(6) { transition-delay: 0s; }
 .build-drawer-page--categories > :nth-child(7) { transition-delay: 0s; }
-#build-mode-toggle.is-expanded .build-mode-drawer { width: 550px; pointer-events: auto; }
+.build-drawer-page--categories > :nth-child(8) { transition-delay: 0s; }
+#build-mode-toggle.is-expanded .build-mode-drawer { width: 680px; pointer-events: auto; }
 #build-mode-toggle.is-expanded .build-mode-drawer[data-view='categories'] .build-drawer-page--categories,
 #build-mode-toggle.is-expanded .build-mode-drawer[data-view='items'] .build-drawer-page--items { opacity: 1; pointer-events: auto; transform: translateX(0); }
 #build-mode-toggle.is-expanded .build-mode-drawer[data-view='categories'] .build-drawer-page--categories > *,
@@ -338,6 +339,7 @@ button { font: inherit; }
 #build-mode-toggle.is-expanded .build-drawer-page > :nth-child(5) { transition-delay: .20s; }
 #build-mode-toggle.is-expanded .build-drawer-page > :nth-child(6) { transition-delay: .25s; }
 #build-mode-toggle.is-expanded .build-drawer-page--categories > :nth-child(7) { opacity: 1; transform: translateX(0) scale(1); transition-delay: .30s; }
+#build-mode-toggle.is-expanded .build-drawer-page--categories > :nth-child(8) { opacity: 1; transform: translateX(0) scale(1); transition-delay: .35s; }
 
 #mining-mode-toggle { position: relative; z-index: 5; display: grid; place-content: start; width: 90px; min-width: 90px; height: 90px; min-height: 90px; padding: 0; overflow: visible; transition: width .36s ease; }
 #mining-mode-toggle.is-expanded { width: 580px; }
@@ -481,10 +483,19 @@ button { font: inherit; }
 .debug-action button:disabled { cursor: default; opacity: .72; }
 .debug-status { display: block; margin-top: 8px; }
 .clear-world-button { color: #fff8dd !important; border-color: #8c4c25 !important; background: #bd6335 !important; box-shadow: 0 3px 0 #8c4c25 !important; }
+.processing-card { width: min(390px, calc(100vw - 32px)); }
+.processing-building-summary { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 14px; padding: 9px 11px; border: 1px solid rgba(89,51,26,.16); border-radius: 9px; background: #fff4c9; }
+.processing-building-summary strong { color: var(--ink); font-size: 17px; }
+.processing-building-summary small { color: #725f44; font-size: 10px; font-weight: 900; }
+.processing-recipe { display: grid; gap: 4px; margin-top: 12px; padding: 11px; border: 2px solid rgba(89,51,26,.16); border-radius: 10px; background: rgba(255,244,201,.65); }
+.processing-recipe strong { color: var(--ink); font-size: 15px; }
+.processing-recipe small { color: #725f44; font-size: 10px; font-weight: 800; }
+.processing-job { margin: 14px 0 4px; color: var(--ink) !important; font-weight: 900; }
+.processing-collect { color: var(--ink) !important; border-color: #b6a584 !important; background: #fff4c9 !important; box-shadow: 0 3px 0 rgba(89,51,26,.16) !important; }
 
 @media (max-width: 760px) {
   #build-mode-toggle { width: 64px; min-width: 64px; height: 64px; min-height: 64px; }
-  #build-mode-toggle.is-expanded { width: 500px; }
+  #build-mode-toggle.is-expanded { width: 600px; }
   .actual-toggle { width: 64px; min-width: 64px; height: 58px; min-height: 58px; padding: 5px; font-size: 8px; }
   .actual-toggle img { width: 30px; height: 30px; }
   .build-mode-drawer { left: 64px; height: 62px; }
@@ -497,7 +508,7 @@ button { font: inherit; }
   .build-mode-drawer .path-item-icon { width: 30px; height: 30px; font-size: 24px; }
   .build-action-stack { flex-basis: 58px; width: 58px; height: 62px; gap: 4px; }
   .build-mode-drawer .build-action-button { width: 58px; height: 26px; min-height: 26px; border-radius: 8px; font-size: 8px; }
-  #build-mode-toggle.is-expanded .build-mode-drawer { width: 436px; }
+  #build-mode-toggle.is-expanded .build-mode-drawer { width: 510px; }
   #mining-mode-toggle { width: 64px; min-width: 64px; height: 64px; min-height: 64px; }
   #mining-mode-toggle.is-expanded { width: 437px; }
   .mining-mode-drawer { left: 64px; height: 62px; }

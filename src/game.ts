@@ -362,7 +362,10 @@ export const BUILDING_DEFINITIONS: Readonly<Record<WorldPlacementKind, BuildingD
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 50,
   },
   sawmill: {
-    kind: 'sawmill', name: 'Sawmill', maxLevel: 1, buildCost: {}, upgradeCosts: [],
+    // A modest early production-building cost keeps Planks meaningful without
+    // making the first processing building depend on Emeralds or Crafting
+    // Points. The Sawmill is available from the Hamlet Build Mode gate.
+    kind: 'sawmill', name: 'Sawmill', maxLevel: 1, buildCost: { logs: 10, cobblestone: 20 }, upgradeCosts: [],
     buildDurationMs: 10_000, upgradeDurationMs: 15_000, settlementProgressOnBuild: 100, settlementProgressOnUpgrade: 0,
   },
   furnace: {
@@ -823,7 +826,7 @@ export const WORLD_PLACEMENT_DEFINITIONS: Readonly<Record<WorldPlacementKind, { 
   smithy: { width: 2, depth: 2, requiresPath: true },
 };
 
-export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
+export type BuildItemId = 'mine' | 'path' | 'path-upgrade' | 'farm' | 'sawmill' | 'smithing' | 'houses' | 'animals' | 'science';
 export type UnlockPrerequisiteKind = 'skill' | 'settlement-stage' | 'level' | 'resource';
 
 export interface UnlockPrerequisite {
@@ -847,6 +850,7 @@ export const BUILD_ITEM_UNLOCKS: readonly BuildItemUnlockDefinition[] = [
   { id: 'path', label: 'Path', prerequisites: [] },
   { id: 'path-upgrade', label: 'Path Upgrade', prerequisites: [{ kind: 'resource', id: 'cobblestone', required: 8, label: '8 cobblestone' }] },
   { id: 'farm', label: 'Farm', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-crops', required: 1, label: 'Crops skill' }] },
+  { id: 'sawmill', label: 'Sawmill', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }] },
   { id: 'smithing', label: 'Smithing', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'tools-tool-bench', required: 1, label: 'Tool Bench skill' }] },
   { id: 'houses', label: 'Houses', prerequisites: [{ kind: 'settlement-stage', id: 'hamlet', required: 1, label: 'Settlement Hub: Hamlet' }, { kind: 'skill', id: 'life-villager-housing', required: 1, label: 'Villager Housing skill' }] },
   { id: 'animals', label: 'Animals', prerequisites: [{ kind: 'settlement-stage', id: 'village', required: 1, label: 'Settlement Hub: Village' }, { kind: 'skill', id: 'life-animals', required: 1, label: 'Animals skill' }] },

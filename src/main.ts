@@ -16,6 +16,10 @@ import {
   canMovePathCell,
   canMoveWorldPlacement,
   canPlaceMine,
+  canPlaceWorldPlacement,
+  canAffordResourceCost,
+  createWorldPlacement,
+  collectProcessingOutput,
   canAffordSkillNode,
   completeConstructionProjects,
   CONSTRUCTION_DURATIONS_MS,
@@ -62,6 +66,9 @@ import {
   getLivingEntityPlan,
   getMineProductionVisualKind,
   getMineCartTravelState,
+  getProcessingJobStatus,
+  getProcessingRecipesForBuilding,
+  getBuildingDefinition,
   collectMineStorage,
   getMeadowFeaturePlan,
   getNextPathTier,
@@ -77,7 +84,9 @@ import {
   moveWorldPlacement,
   queueSettlementHubUpgrade,
   queueSettlementStorageUpgrade,
+  queueBuildingConstruction,
   reconcileElapsedProgress,
+  startProcessingJob,
   // debugUnlockFullSkillTree,
   loadState,
   saveState as saveLocalState,
@@ -504,6 +513,12 @@ interface PathPlacementPreview {
   upgrade: boolean;
 }
 
+interface BuildingPlacementPreview {
+  x: number;
+  z: number;
+  valid: boolean;
+}
+
 function getPathMaterial(tier: PathCell['tier']): THREE.Material {
   return tier === 'cobblestone' ? cobblestoneMaterial : tier === 'stone' ? stoneMaterial : pathMaterial;
 }
@@ -529,6 +544,110 @@ const pathGhostMaterial = new THREE.MeshStandardMaterial({
 addFeatureCube(pathGhostGroup, pathGhostMaterial, [1, 0.06, 1], [0, 0.52, 0]);
 pathGhostGroup.visible = false;
 meadowFeatureRoot.add(pathGhostGroup);
+
+interface BuildingVisual {
+  placementId: string;
+  kind: 'sawmill';
+  group: THREE.Group;
+}
+
+const buildingVisualRoot = new THREE.Group();
+world.add(buildingVisualRoot);
+const buildingVisuals = new Map<string, BuildingVisual>();
+
+function createBuildingMaterial(colour: number, ghost: boolean): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color: ghost ? 0x79c56d : colour,
+    roughness: 0.9,
+    transparent: ghost,
+    opacity: ghost ? 0.5 : 1,
+    depthWrite: !ghost,
+    emissive: ghost ? 0x315b39 : 0x000000,
+    emissiveIntensity: ghost ? 0.25 : 0,
+  });
+}
+
+function addBuildingCube(
+  parent: THREE.Group,
+  material: THREE.Material,
+  size: [number, number, number],
+  position: [number, number, number],
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0] * BLOCK_SIZE, size[1] * BLOCK_SIZE, size[2] * BLOCK_SIZE),
+    material,
+  );
+  mesh.position.set(position[0] * BLOCK_SIZE, position[1] * BLOCK_SIZE, position[2] * BLOCK_SIZE);
+  mesh.castShadow = !parent.userData.isGhost;
+  mesh.receiveShadow = !parent.userData.isGhost;
+  parent.add(mesh);
+  return mesh;
+}
+
+function createSawmillVisual(ghost = false): THREE.Group {
+  const group = new THREE.Group();
+  group.userData.isGhost = ghost;
+  const wood = createBuildingMaterial(0x80522f, ghost);
+  const darkWood = createBuildingMaterial(0x4c2e20, ghost);
+  const stone = createBuildingMaterial(0x777d7a, ghost);
+  addBuildingCube(group, wood, [1.75, 0.25, 1.75], [0, 0.63, 0]);
+  [-0.7, 0.7].forEach((x) => [-0.7, 0.7].forEach((z) => addBuildingCube(group, darkWood, [0.14, 1.1, 0.14], [x, 1.16, z])));
+  addBuildingCube(group, wood, [1.9, 0.18, 1.9], [0, 1.78, 0]);
+  addBuildingCube(group, darkWood, [1.28, 0.16, 0.28], [0, 1.03, -0.52]);
+  const blade = new THREE.Mesh(new THREE.CylinderGeometry(BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.08, 12), stone);
+  blade.rotation.z = Math.PI / 2;
+  blade.position.set(0, BLOCK_SIZE * 1.18, BLOCK_SIZE * 0.16);
+  blade.castShadow = !ghost;
+  blade.receiveShadow = !ghost;
+  group.add(blade);
+  return group;
+}
+
+const sawmillGhostVisual = createSawmillVisual(true);
+sawmillGhostVisual.visible = false;
+buildingVisualRoot.add(sawmillGhostVisual);
+
+function setSawmillGhostValid(valid: boolean): void {
+  sawmillGhostVisual.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => {
+      if (!(material instanceof THREE.MeshStandardMaterial)) return;
+      material.color.set(valid ? 0x79c56d : 0xd86c62);
+      material.emissive.set(valid ? 0x315b39 : 0x6b2c2c);
+    });
+  });
+}
+
+function setBuildingRotation(group: THREE.Group, direction: WorldDirection): void {
+  group.rotation.y = direction === 'east'
+    ? Math.PI / 2
+    : direction === 'west'
+      ? -Math.PI / 2
+      : direction === 'north'
+        ? Math.PI
+        : 0;
+}
+
+function updatePlacedBuildingScene(): void {
+  const visibleSurfaceCells = new Set(getWorldSurfaceCells(state).map((cell) => `${cell.x},${cell.z}`));
+  const activeIds = new Set<string>();
+  state.placements.forEach((placement) => {
+    if (placement.kind !== 'sawmill') return;
+    activeIds.add(placement.id);
+    let visual = buildingVisuals.get(placement.id);
+    if (!visual) {
+      visual = { placementId: placement.id, kind: 'sawmill', group: createSawmillVisual() };
+      buildingVisuals.set(placement.id, visual);
+      buildingVisualRoot.add(visual.group);
+    }
+    visual.group.userData.placementId = placement.id;
+    visual.group.position.set(placement.x * BLOCK_SIZE, 0, placement.z * BLOCK_SIZE);
+    setBuildingRotation(visual.group, placement.direction);
+    visual.group.visible = visibleSurfaceCells.has(`${placement.x},${placement.z}`);
+  });
+  buildingVisuals.forEach((visual, id) => { if (!activeIds.has(id)) visual.group.visible = false; });
+}
 
 function ensurePathVisual(cell: PathCell): void {
   if (pathVisuals.some((visual) => visual.cell.x === cell.x && visual.cell.z === cell.z)) return;
@@ -766,6 +885,7 @@ function updateWorldScene(): void {
     if (visible) oreTargets.push(node.mesh);
   });
   updateMeadowScene();
+  updatePlacedBuildingScene();
   updateLivingWorld();
   updateWorldFloor();
 }
@@ -1425,16 +1545,17 @@ function setActionVisual(root: THREE.Object3D, mode: ActionVisualMode): void {
 
 function samePlacedItem(a: PlacedItemTarget | null, b: PlacedItemTarget | null): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
-  return a.kind === 'mine'
-    ? a.id === (b as Extract<PlacedItemTarget, { kind: 'mine' }>).id
-    : a.x === (b as Extract<PlacedItemTarget, { kind: 'path' }>).x && a.z === (b as Extract<PlacedItemTarget, { kind: 'path' }>).z;
+  if (a.kind === 'mine' || a.kind === 'building') return a.id === (b as Extract<PlacedItemTarget, { kind: typeof a.kind }>).id;
+  return a.x === (b as Extract<PlacedItemTarget, { kind: 'path' }>).x && a.z === (b as Extract<PlacedItemTarget, { kind: 'path' }>).z;
 }
 
 function syncPlacementActionVisuals(): void {
   const movePreviewValid = selectedMoveItem && moveHoverCell
     ? selectedMoveItem.kind === 'mine'
       ? canMoveWorldPlacement(state, selectedMoveItem.id, moveHoverCell.x, moveHoverCell.z)
-      : canMovePathCell(state, selectedMoveItem.x, selectedMoveItem.z, moveHoverCell.x, moveHoverCell.z)
+      : selectedMoveItem.kind === 'building'
+        ? canMoveWorldPlacement(state, selectedMoveItem.id, moveHoverCell.x, moveHoverCell.z)
+        : canMovePathCell(state, selectedMoveItem.x, selectedMoveItem.z, moveHoverCell.x, moveHoverCell.z)
     : false;
   const modeFor = (target: PlacedItemTarget): ActionVisualMode => {
     if (pendingDestroyItem && samePlacedItem(pendingDestroyItem, target)) return 'destroy';
@@ -1444,6 +1565,7 @@ function syncPlacementActionVisuals(): void {
   };
 
   mineVisuals.forEach((visual, id) => setActionVisual(visual.group, modeFor({ kind: 'mine', id })));
+  buildingVisuals.forEach((visual, id) => setActionVisual(visual.group, modeFor({ kind: 'building', id })));
   pathVisuals.forEach((visual) => {
     const target = { kind: 'path', x: visual.cell.x, z: visual.cell.z } as const;
     setActionVisual(visual.surface, modeFor(target));
@@ -1460,6 +1582,13 @@ function syncPlacementActionVisuals(): void {
     const x = moveHoverCell?.x ?? mine?.x;
     const z = moveHoverCell?.z ?? mine?.z;
     if (visual && x !== undefined && z !== undefined) visual.group.position.set(x * BLOCK_SIZE, 0, z * BLOCK_SIZE);
+  }
+  const selectedBuilding = selectedMoveItem?.kind === 'building' ? selectedMoveItem : null;
+  if (selectedBuilding) {
+    const visual = buildingVisuals.get(selectedBuilding.id);
+    if (visual && moveHoverCell) {
+      visual.group.position.set(moveHoverCell.x * BLOCK_SIZE, 0, moveHoverCell.z * BLOCK_SIZE);
+    }
   }
 }
 
@@ -1617,6 +1746,15 @@ const placementDestroyTitle = document.querySelector<HTMLElement>('#placement-de
 const placementDestroyMessage = document.querySelector<HTMLElement>('#placement-destroy-message')!;
 const placementDestroyCancel = document.querySelector<HTMLButtonElement>('#placement-destroy-cancel')!;
 const placementDestroyConfirm = document.querySelector<HTMLButtonElement>('#placement-destroy-confirm')!;
+const sawmillLevelEl = document.querySelector<HTMLElement>('#sawmill-level')!;
+const sawmillRecipeEl = document.querySelector<HTMLElement>('#sawmill-recipe')!;
+const sawmillInputEl = document.querySelector<HTMLElement>('#sawmill-input')!;
+const sawmillOutputEl = document.querySelector<HTMLElement>('#sawmill-output')!;
+const sawmillDurationEl = document.querySelector<HTMLElement>('#sawmill-duration')!;
+const sawmillJobEl = document.querySelector<HTMLElement>('#sawmill-job')!;
+const sawmillStatusEl = document.querySelector<HTMLElement>('#sawmill-status')!;
+const sawmillStartButton = document.querySelector<HTMLButtonElement>('#sawmill-start')!;
+const sawmillCollectButton = document.querySelector<HTMLButtonElement>('#sawmill-collect')!;
 const pauseMenuButton = document.querySelector<HTMLButtonElement>('#pause-menu-button')!;
 const resumeButton = document.querySelector<HTMLButtonElement>('#resume-button')!;
 // Debug Menu temporarily disabled. Keep the wiring commented out for later.
@@ -1647,16 +1785,17 @@ const skillTreeZoomInButton = document.querySelector<HTMLButtonElement>('#skill-
 const skillTreeZoomLevel = document.querySelector<HTMLElement>('#skill-tree-zoom-level')!;
 const skillTreeBranchLegend = document.querySelector<HTMLElement>('#skill-tree-branch-legend')!;
 let hoveredOre: OreNode | null = null;
-type BuildMode = 'mine' | 'path' | 'path-upgrade' | null;
+type BuildMode = 'mine' | 'path' | 'path-upgrade' | 'sawmill' | null;
 type BuildAction = 'move' | 'destroy' | null;
 const BUILD_ITEM_MODES: Partial<Record<BuildItemId, Exclude<BuildMode, null>>> = {
   mine: 'mine',
   path: 'path',
   'path-upgrade': 'path-upgrade',
+  sawmill: 'sawmill',
 };
-type PlacedItemTarget = { kind: 'mine'; id: string } | { kind: 'path'; x: number; z: number };
+type PlacedItemTarget = { kind: 'mine'; id: string } | { kind: 'path'; x: number; z: number } | { kind: 'building'; id: string };
 type ActionVisualMode = 'none' | 'hover' | 'move' | 'move-invalid' | 'destroy';
-type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
+type BuildDrawerCategory = 'root' | 'mining' | 'paths' | 'production' | 'farm' | 'smithing' | 'houses' | 'animals' | 'science';
 type BuildDrawerView = 'categories' | 'items';
 type MiningDrawerCategory = 'mines' | 'rails' | 'storage';
 let buildMode: BuildMode = null;
@@ -1671,6 +1810,7 @@ let miningDrawerCategory: MiningDrawerCategory = 'mines';
 let miningDrawerView: BuildDrawerView = 'categories';
 let minePlacementPreview: MinePlacementPreview | null = null;
 let pathPlacementPreview: PathPlacementPreview | null = null;
+let sawmillPlacementPreview: BuildingPlacementPreview | null = null;
 let selectedMineRailLength: MineRailLength = DEFAULT_MINE_RAIL_LENGTH;
 let xpFlashTimeout = 0;
 const SKILL_TREE_STAGE_SIZE = 1600;
@@ -1689,6 +1829,7 @@ type DrawerKind = 'build' | 'mining' | null;
 let activeDrawer: DrawerKind = null;
 const TRADER_EMERALD_COST = 25;
 let offlineMineReports: MineProductionReport[] = [];
+let selectedSawmillId: string | null = null;
 const mineCollectionFeedback = new Map<string, string>();
 const mineCollectionFeedbackTimers = new Map<string, number>();
 offlineMineReports = initialReconciliation.mineResult.mineReports.filter((report) => report.trips > 0 || report.paused);
@@ -2065,6 +2206,7 @@ function updateBuildUi(): void {
   const buildCategoryItems: Partial<Record<Exclude<BuildDrawerCategory, 'root'>, BuildItemId>> = {
     mining: 'mine',
     paths: 'path',
+    production: 'sawmill',
     farm: 'farm',
     smithing: 'smithing',
     houses: 'houses',
@@ -2092,7 +2234,7 @@ function updateBuildUi(): void {
     button.setAttribute('aria-pressed', String(isActive));
     button.classList.toggle('selected', isActive);
   });
-  const activeBuildItem = buildMode === 'mine' ? 'mine' : buildMode === 'path' ? 'path' : buildMode === 'path-upgrade' ? 'path-upgrade' : null;
+  const activeBuildItem = buildMode === 'mine' ? 'mine' : buildMode === 'path' ? 'path' : buildMode === 'path-upgrade' ? 'path-upgrade' : buildMode === 'sawmill' ? 'sawmill' : null;
   buildCategoryItemButtons.forEach((button) => {
     const item = button.dataset.buildItem;
     const itemCategory = button.dataset.buildItemCategory as BuildDrawerCategory | undefined;
@@ -2141,6 +2283,16 @@ function updateBuildUi(): void {
     buildStatusEl.textContent = buildMode === 'mine'
       ? 'Place the mine rail endpoint directly against a path · rail length auto-selected'
       : state.mines.length > 0 ? 'Select Mine to dispatch a cart' : 'Select Mine to place your free mine';
+    return;
+  }
+  if (buildDrawerCategory === 'production') {
+    const definition = getBuildingDefinition('sawmill');
+    const costLabel = Object.entries(definition.buildCost).map(([resource, amount]) => `${amount} ${resource}`).join(' + ');
+    buildStatusEl.textContent = buildMode === 'sawmill'
+      ? sawmillPlacementPreview?.valid
+        ? `Place Sawmill · ${costLabel} · click an open path-connected block`
+        : `Sawmill needs ${costLabel} and an open path-connected 2×2 footprint`
+      : 'Select Sawmill to place a path-connected processing building';
     return;
   }
   if (buildMode === 'path') {
@@ -2198,6 +2350,52 @@ function formatMineResourceAmounts(resources: Readonly<Record<string, number>>):
     .filter(([, amount]) => amount > 0)
     .map(([resource, amount]) => `${amount} ${resource}`)
     .join(' · ');
+}
+
+function formatProcessingCost(cost: Readonly<Record<string, number>>): string {
+  return Object.entries(cost).map(([resource, amount]) => `${amount} ${resource}`).join(' + ');
+}
+
+function updateSawmillUi(now = Date.now()): void {
+  const sawmill = state.placements.find((placement) => placement.id === selectedSawmillId && placement.kind === 'sawmill')
+    ?? state.placements.find((placement) => placement.kind === 'sawmill');
+  const recipe = getProcessingRecipesForBuilding('sawmill')[0];
+  if (!recipe) return;
+  if (sawmill) selectedSawmillId = sawmill.id;
+  sawmillLevelEl.textContent = sawmill ? `Level ${sawmill.level}` : 'Not built';
+  sawmillRecipeEl.textContent = `${recipe.inputs.logs} Logs → ${recipe.outputs.planks} Planks`;
+  sawmillInputEl.textContent = `Input: ${formatProcessingCost(recipe.inputs)}`;
+  sawmillOutputEl.textContent = `Output: ${formatProcessingCost(recipe.outputs)}`;
+  sawmillDurationEl.textContent = `Time: ${Math.ceil(recipe.durationMs / 1000)}s`;
+  const job = sawmill ? state.processingJobs.find((candidate) => candidate.buildingId === sawmill.id) : null;
+  sawmillCollectButton.hidden = job?.status !== 'ready';
+  sawmillCollectButton.dataset.processingJob = job?.id ?? '';
+  if (job?.status === 'active') {
+    const remaining = Math.max(0, Math.ceil((job.completesAt - now) / 1000));
+    sawmillJobEl.textContent = `Processing · ${remaining}s remaining`;
+    sawmillStatusEl.textContent = 'The Sawmill is busy. One processing slot is active.';
+    sawmillStartButton.disabled = true;
+  } else if (job?.status === 'ready') {
+    const pending = formatProcessingCost(job.pendingOutputs);
+    sawmillJobEl.textContent = `Output waiting · ${pending}`;
+    sawmillStatusEl.textContent = 'Settlement Storage is full. Free capacity, then collect the Planks.';
+    sawmillStartButton.disabled = true;
+  } else if (!sawmill) {
+    sawmillJobEl.textContent = 'Build a Sawmill to begin processing.';
+    sawmillStatusEl.textContent = 'Use Build Mode → Production → Sawmill.';
+    sawmillStartButton.disabled = true;
+  } else if (sawmill.constructionState !== 'complete') {
+    sawmillJobEl.textContent = 'Construction in progress';
+    sawmillStatusEl.textContent = 'A builder must finish the Sawmill before processing can begin.';
+    sawmillStartButton.disabled = true;
+  } else {
+    const status = getProcessingJobStatus(state, recipe.id, sawmill.id);
+    sawmillJobEl.textContent = 'Available · 1 processing slot';
+    sawmillStatusEl.textContent = status.ready
+      ? 'Ready to start.'
+      : `Cannot start: ${status.missing.join(' · ')}`;
+    sawmillStartButton.disabled = !status.ready;
+  }
 }
 
 function setMineCollectionFeedback(mineId: string, message: string): void {
@@ -2433,6 +2631,11 @@ function setBuildMode(nextMode: BuildMode): void {
     buildDrawerCategory = 'paths';
     buildDrawerView = 'items';
   }
+  if (nextMode === 'sawmill') {
+    activeDrawer = 'build';
+    buildDrawerCategory = 'production';
+    buildDrawerView = 'items';
+  }
   app.dataset.activeDrawer = activeDrawer ?? '';
   buildModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'build'));
   miningModeToggle.setAttribute('aria-pressed', String(activeDrawer === 'mining'));
@@ -2440,8 +2643,10 @@ function setBuildMode(nextMode: BuildMode): void {
   syncMiningModeDrawer();
   minePlacementPreview = null;
   pathPlacementPreview = null;
+  sawmillPlacementPreview = null;
   updateMineGhostVisual(null);
   updatePathGhostVisual(null);
+  updateSawmillGhostVisual(null);
   canvas.classList.toggle('is-building', buildMode !== null);
   updateUi();
 }
@@ -2456,6 +2661,7 @@ function setBuildAction(nextAction: BuildAction): void {
   buildMode = null;
   minePlacementPreview = null;
   pathPlacementPreview = null;
+  sawmillPlacementPreview = null;
   activeDrawer = buildAction ? 'build' : activeDrawer;
   if (buildAction) {
     buildDrawerCategory = 'root';
@@ -2464,6 +2670,7 @@ function setBuildAction(nextAction: BuildAction): void {
   app.dataset.activeDrawer = activeDrawer ?? '';
   updateMineGhostVisual(null);
   updatePathGhostVisual(null);
+  updateSawmillGhostVisual(null);
   canvas.classList.remove('is-building');
   updateUi();
 }
@@ -2573,6 +2780,7 @@ function updateUi(): void {
   if (storyStageLabel) storyStageLabel.textContent = settlementStage.name;
   updateCurrentTool();
   updateConstructionUi();
+  updateSawmillUi();
   updateMineUi();
   updateBuildUi();
   syncPlacementActionVisuals();
@@ -2688,13 +2896,19 @@ function getPlacedItemAtPointer(event: PointerEvent): PlacedItemTarget | null {
   const pathTargets = pathVisuals
     .filter((visual) => visual.group.visible)
     .map((visual) => visual.surface);
-  const hit = raycaster.intersectObjects([...mineTargets, ...pathTargets], true)[0];
+  const buildingTargets = Array.from(buildingVisuals.values())
+    .filter((visual) => visual.group.visible)
+    .map((visual) => visual.group);
+  const hit = raycaster.intersectObjects([...mineTargets, ...buildingTargets, ...pathTargets], true)[0];
   if (!hit) return null;
 
   let current: THREE.Object3D | null = hit.object;
   while (current) {
     const placementId = current.userData.placementId;
-    if (typeof placementId === 'string') return { kind: 'mine', id: placementId };
+    if (typeof placementId === 'string') {
+      if (buildingVisuals.has(placementId)) return { kind: 'building', id: placementId };
+      return { kind: 'mine', id: placementId };
+    }
     current = current.parent;
   }
   const pathVisual = pathVisuals.find((visual) => visual.surface === hit.object);
@@ -2703,6 +2917,10 @@ function getPlacedItemAtPointer(event: PointerEvent): PlacedItemTarget | null {
 
 function getPlacedItemLabel(target: PlacedItemTarget): string {
   if (target.kind === 'path') return 'path tile';
+  if (target.kind === 'building') {
+    const placement = state.placements.find((candidate) => candidate.id === target.id);
+    return placement?.kind === 'sawmill' ? 'Sawmill' : 'placed building';
+  }
   const mineIndex = state.mines.findIndex((mine) => mine.id === target.id);
   return mineIndex >= 0 ? `Mine ${mineIndex + 1}` : 'placed item';
 }
@@ -2734,7 +2952,7 @@ function cancelDestroyConfirmation(): void {
 function confirmDestroyPlacement(): void {
   if (!pendingDestroyItem) return;
   const target = pendingDestroyItem;
-  const destroyed = target.kind === 'mine'
+  const destroyed = target.kind === 'mine' || target.kind === 'building'
     ? destroyWorldPlacement(state, target.id)
     : destroyPathCell(state, target.x, target.z);
   if (!destroyed) {
@@ -2772,14 +2990,16 @@ function handleBuildActionPointerDown(event: PointerEvent): void {
     moveHoverCell = getSurfaceCellAtPointer(event) ?? (
       target.kind === 'mine'
         ? state.mines.find((mine) => mine.id === target.id) ?? null
-        : target
+        : target.kind === 'building'
+          ? state.placements.find((placement) => placement.id === target.id) ?? null
+          : target
     );
     updateUi();
     return;
   }
   const destination = getSurfaceCellAtPointer(event);
   if (!destination || target) return;
-  const moved = selectedMoveItem.kind === 'mine'
+  const moved = selectedMoveItem.kind === 'mine' || selectedMoveItem.kind === 'building'
     ? moveWorldPlacement(state, selectedMoveItem.id, destination.x, destination.z)
     : movePathCell(state, selectedMoveItem.x, selectedMoveItem.z, destination.x, destination.z);
   if (!moved) return;
@@ -2878,10 +3098,44 @@ function getPathUpgradeAtPointer(event: PointerEvent): PathPlacementPreview | nu
   return { x: visual.cell.x, z: visual.cell.z, valid, upgrade: true };
 }
 
+function getNextSawmillId(): string {
+  let index = 1;
+  while (state.placements.some((placement) => placement.id === `sawmill-${index}`)) index += 1;
+  return `sawmill-${index}`;
+}
+
+function getSawmillPlacementAtPointer(event: PointerEvent): BuildingPlacementPreview | null {
+  const cell = getSurfaceCellAtPointer(event);
+  if (!cell) return null;
+  const definition = getBuildingDefinition('sawmill');
+  const placement = createWorldPlacement('sawmill', getNextSawmillId(), cell.x, cell.z, 'south');
+  const unlock = getBuildItemUnlockStatus(state, 'sawmill');
+  return {
+    ...cell,
+    valid: unlock.unlocked
+      && canAffordResourceCost(state.resources, definition.buildCost)
+      && canPlaceWorldPlacement(state, placement),
+  };
+}
+
+function updateSawmillGhostVisual(preview: BuildingPlacementPreview | null): void {
+  const visible = buildMode === 'sawmill' && Boolean(preview);
+  sawmillGhostVisual.visible = visible;
+  if (!visible || !preview) return;
+  sawmillGhostVisual.position.set(preview.x * BLOCK_SIZE, 0, preview.z * BLOCK_SIZE);
+  setBuildingRotation(sawmillGhostVisual, 'south');
+  setSawmillGhostValid(preview.valid);
+}
+
 function updateBuildPlacementPreview(event: PointerEvent): void {
   if (buildMode === 'mine') {
     minePlacementPreview = getAvailableMineSites(state) > 0 ? getMinePlacementAtPointer(event) : null;
     updateMineGhostVisual(minePlacementPreview);
+    return;
+  }
+  if (buildMode === 'sawmill') {
+    sawmillPlacementPreview = getSawmillPlacementAtPointer(event);
+    updateSawmillGhostVisual(sawmillPlacementPreview);
     return;
   }
   if (buildMode === 'path') pathPlacementPreview = getPathPlacementAtPointer(event);
@@ -2918,6 +3172,11 @@ function beginNewMinePlacement(): void {
   // supplied by mine-site skills and settlement stages.
   if (getAvailableMineSites(state) <= 0) return;
   setBuildMode(buildMode === 'mine' ? null : 'mine');
+}
+
+function beginSawmillPlacement(): void {
+  if (!getBuildItemUnlockStatus(state, 'sawmill').unlocked) return;
+  setBuildMode(buildMode === 'sawmill' ? null : 'sawmill');
 }
 
 function dispatchCart(): void {
@@ -2960,6 +3219,21 @@ canvas.addEventListener('pointerdown', (event) => {
       }
       return;
     }
+    if (buildMode === 'sawmill') {
+      const preview = getSawmillPlacementAtPointer(event);
+      if (preview?.valid) {
+        const placement = createWorldPlacement('sawmill', getNextSawmillId(), preview.x, preview.z, 'south');
+        if (queueBuildingConstruction(state, placement, Date.now())) {
+          selectedSawmillId = placement.id;
+          setBuildMode(null);
+          updateWorldScene();
+          updateUi();
+          saveState(localStorage, state);
+          openWorldModal('sawmill-modal');
+        }
+      }
+      return;
+    }
     if (buildMode === 'path') {
       const placement = getPathPlacementAtPointer(event);
       if (placement?.valid && buildPathCell(state, placement.x, placement.z)) {
@@ -2979,6 +3253,13 @@ canvas.addEventListener('pointerdown', (event) => {
         updateUi();
         saveState(localStorage, state);
       }
+      return;
+    }
+    const clickedPlacement = getPlacedItemAtPointer(event);
+    if (clickedPlacement?.kind === 'building') {
+      selectedSawmillId = clickedPlacement.id;
+      openWorldModal('sawmill-modal');
+      updateSawmillUi();
       return;
     }
     const ore = hoveredOre ?? getOreAtPointer(event);
@@ -3158,6 +3439,7 @@ buildCategoryItemButtons.forEach((button) => {
     if (mode === 'mine') beginNewMinePlacement();
     if (mode === 'path') pathButton.click();
     if (mode === 'path-upgrade') pathUpgradeButton.click();
+    if (mode === 'sawmill') beginSawmillPlacement();
   });
 });
 miningCategoryButtons.forEach((button) => {
@@ -3245,6 +3527,23 @@ storyButton.addEventListener('click', () => openWorldModal('story-modal'));
 settlementHubButton.addEventListener('click', () => openWorldModal('settlement-hub-modal'));
 settlementHubUpgradeButton.addEventListener('click', () => {
   if (!queueSettlementHubUpgrade(state)) return;
+  updateUi();
+  saveState(localStorage, state);
+});
+sawmillStartButton.addEventListener('click', () => {
+  const sawmill = state.placements.find((placement) => placement.id === selectedSawmillId && placement.kind === 'sawmill')
+    ?? state.placements.find((placement) => placement.kind === 'sawmill');
+  const recipe = getProcessingRecipesForBuilding('sawmill')[0];
+  if (!sawmill || !recipe || !startProcessingJob(state, recipe.id, sawmill.id, Date.now())) return;
+  updateSawmillUi();
+  saveState(localStorage, state);
+});
+sawmillCollectButton.addEventListener('click', () => {
+  const jobId = sawmillCollectButton.dataset.processingJob;
+  if (!jobId) return;
+  const transfer = collectProcessingOutput(state, jobId);
+  if (Object.keys(transfer.transferred).length === 0) return;
+  updateSawmillUi();
   updateUi();
   saveState(localStorage, state);
 });

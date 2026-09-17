@@ -61,6 +61,7 @@
             <div class="build-drawer-page build-drawer-page--categories" data-build-page="categories">
               <button class="build-category" type="button" data-build-category="mining">Mining</button>
               <button class="build-category" type="button" data-build-category="paths">Paths</button>
+              <button class="build-category" type="button" data-build-category="production">Production</button>
               <button class="build-category" type="button" data-build-category="farm">Farm</button>
               <button class="build-category" type="button" data-build-category="smithing">Smithing</button>
               <button class="build-category" type="button" data-build-category="houses">Houses</button>
@@ -75,6 +76,7 @@
               <button class="build-category-item selected" type="button" data-build-item="mine" data-build-item-category="mining"><img src="/assets/ui/minethumb.png" alt="" /><span>Mine</span></button>
               <button class="build-category-item" type="button" data-build-item="path" data-build-item-category="paths"><span class="path-item-icon">▦</span><span>Path</span></button>
               <button class="build-category-item" type="button" data-build-item="path-upgrade" data-build-item-category="paths"><span class="path-item-icon">↑</span><span>Upgrade</span></button>
+              <button class="build-category-item" type="button" data-build-item="sawmill" data-build-item-category="production"><span class="build-item-icon">⚒</span><span>Sawmill</span></button>
               <button class="build-category-item" type="button" data-build-item="farm" data-build-item-category="farm"><span class="build-item-icon">⌂</span><span>Farm</span></button>
               <button class="build-category-item" type="button" data-build-item="smithing" data-build-item-category="smithing"><span class="build-item-icon">⚒</span><span>Smithing</span></button>
               <button class="build-category-item" type="button" data-build-item="houses" data-build-item-category="houses"><span class="build-item-icon">⌂</span><span>Houses</span></button>
@@ -258,6 +260,25 @@
             <button id="placement-destroy-cancel" class="modal-secondary" type="button">Cancel</button>
             <button id="placement-destroy-confirm" class="modal-danger" type="button">Destroy</button>
           </div>
+        </div>
+      </section>
+
+      <section id="sawmill-modal" class="modal world-modal" role="dialog" aria-modal="true" aria-labelledby="sawmill-title" hidden>
+        <div class="modal-card panel processing-card">
+          <button class="modal-close" type="button" data-close-modal="sawmill-modal" aria-label="Close Sawmill">×</button>
+          <p class="eyebrow">PRODUCTION</p>
+          <h2 id="sawmill-title">Sawmill</h2>
+          <div class="processing-building-summary"><strong id="sawmill-level">Not built</strong><small>1 processing slot</small></div>
+          <div class="processing-recipe">
+            <strong id="sawmill-recipe">1 Logs → 4 Planks</strong>
+            <small id="sawmill-input">Input: 1 logs</small>
+            <small id="sawmill-output">Output: 4 planks</small>
+            <small id="sawmill-duration">Time: 10s</small>
+          </div>
+          <p id="sawmill-job" class="processing-job" aria-live="polite">Build a Sawmill to begin processing.</p>
+          <small id="sawmill-status" class="trader-status" aria-live="polite"></small>
+          <button id="sawmill-start" class="modal-primary" type="button">Start Logs → Planks</button>
+          <button id="sawmill-collect" class="modal-secondary processing-collect" type="button" hidden>Collect Planks</button>
         </div>
       </section>
 

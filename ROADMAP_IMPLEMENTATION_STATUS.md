@@ -9,7 +9,7 @@
 
 **Phase 4 — Processing**
 
-Status: In progress; Phase 3 audit passed and Phase 4A is in progress.
+Status: In progress; Phase 3 audit passed and Phase 4A is complete.
 
 ## Current Sub-Phase
 

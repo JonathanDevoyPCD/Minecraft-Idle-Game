@@ -100,10 +100,21 @@ export type MineCargoKind = 'stone' | 'coal' | 'iron' | 'gold' | 'diamond';
 export type MineRailLength = 2 | 3 | 4;
 export type MineStorageFillState = 'empty' | 'low' | 'medium' | 'full';
 
+export interface MineProductionReport {
+  mineId: string;
+  trips: number;
+  resources: Record<string, number>;
+  storageAmount: number;
+  storageCapacity: number;
+  storageFillState: MineStorageFillState;
+  paused: boolean;
+}
+
 export interface MineProductionResult {
   trips: number;
   xp: number;
   resources: Record<string, number>;
+  mineReports: MineProductionReport[];
 }
 
 export interface ResourceTransferResult {
@@ -1541,8 +1552,30 @@ function depositMineCargo(
   return acceptedTotal;
 }
 
+function createMineProductionResult(): MineProductionResult {
+  return { trips: 0, xp: 0, resources: {}, mineReports: [] };
+}
+
+function createMineProductionReport(
+  mine: MineSite,
+  trips: number,
+  resources: Record<string, number>,
+  storageCapacity: number,
+): MineProductionReport {
+  const storageAmount = getMineStorageAmount(mine);
+  return {
+    mineId: mine.id,
+    trips,
+    resources: { ...resources },
+    storageAmount,
+    storageCapacity,
+    storageFillState: getMineStorageFillState(storageAmount, storageCapacity),
+    paused: storageAmount >= storageCapacity,
+  };
+}
+
 export function advanceMineOperations(state: GameState, now = Date.now(), random = Math.random): MineProductionResult {
-  const result: MineProductionResult = { trips: 0, xp: 0, resources: {} };
+  const result = createMineProductionResult();
   state.mines.forEach((mine) => {
     mine.cartCount = 1;
     mine.storageCarts = 0;
@@ -1554,6 +1587,7 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
       // Persist the pause watermark without rewinding the cart's phase. A
       // collection action can resume from this exact delivery boundary.
       mine.lastUpdatedAt = now;
+      result.mineReports.push(createMineProductionReport(mine, 0, {}, storageCapacity));
       return;
     }
     const elapsed = Math.max(0, Math.min(8 * 60 * 60 * 1000, now - mine.lastUpdatedAt));
@@ -1565,14 +1599,16 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     mine.lastUpdatedAt = now;
     if (completedArrivals <= 0) {
       mine.progressMs = totalProgress;
+      result.mineReports.push(createMineProductionReport(mine, 0, {}, storageCapacity));
       return;
     }
 
     let acceptedTrips = 0;
     let storageAmount = currentStorage;
+    const mineResult = createMineProductionResult();
     for (let trip = 0; trip < completedArrivals; trip += 1) {
       const cargo = generateMineCartCargo(state, random, getMineCartCapacity(state), mine);
-      const acceptedAmount = depositMineCargo(mine, cargo, storageCapacity - storageAmount, result);
+      const acceptedAmount = depositMineCargo(mine, cargo, storageCapacity - storageAmount, mineResult);
       if (acceptedAmount <= 0) break;
       storageAmount += acceptedAmount;
       acceptedTrips += 1;
@@ -1580,6 +1616,8 @@ export function advanceMineOperations(state: GameState, now = Date.now(), random
     mine.completedTrips += acceptedTrips;
     result.trips += acceptedTrips;
     result.xp += acceptedTrips * (getMineLevel(mine) >= 2 ? 3 : 2);
+    Object.entries(mineResult.resources).forEach(([resource, amount]) => addMineResource(result, resource, amount));
+    result.mineReports.push(createMineProductionReport(mine, acceptedTrips, mineResult.resources, storageCapacity));
     // If storage filled during an elapsed interval, park at the delivery
     // boundary rather than carrying unprocessed trips through the pause.
     mine.progressMs = acceptedTrips < completedArrivals ? 0 : totalProgress - completedArrivals * tripDuration;
@@ -1609,12 +1647,12 @@ export function collectMineStorage(state: GameState, mineId: string, now = Date.
 }
 
 export function dispatchMineCart(state: GameState, now = Date.now()): MineProductionResult {
-  if (state.mines.length === 0) return { trips: 0, xp: 0, resources: {} };
+  if (state.mines.length === 0) return createMineProductionResult();
   state.mines.forEach((mine) => {
     mine.lastUpdatedAt = now;
     mine.progressMs = 0;
   });
-  return { trips: 0, xp: 0, resources: {} };
+  return createMineProductionResult();
 }
 
 export function collectOreBonus(state: GameState, resource: string, amount = 1): number {

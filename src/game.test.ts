@@ -823,6 +823,60 @@ describe('Villagers - Idle World Game progression', () => {
     expect(getStoredResourceTotal(state)).toBe(500);
   });
 
+  it('reports each offline mine delivery without bypassing local storage', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+
+    const restored = reconcileElapsedProgress(state, 1000 + MINE_TRIP_DURATION_MS * 2 + 500, () => 0.01);
+
+    expect(restored.mineResult.mineReports).toHaveLength(1);
+    expect(restored.mineResult.mineReports[0]).toMatchObject({
+      mineId: 'starter-mine',
+      trips: 2,
+      resources: { cobblestone: 2 },
+      storageAmount: 2,
+      storageCapacity: 100,
+      storageFillState: 'low',
+      paused: false,
+    });
+    expect(state.mines[0].inventory).toEqual({ cobblestone: 2 });
+    expect(state.resources).toEqual({ dirt: 0, cobblestone: 0 });
+  });
+
+  it('reports an offline mine paused at capacity and preserves its final delivery boundary', () => {
+    const state = freshState(1000);
+    unlockStarterMine(state, 1000);
+    const mine = state.mines[0];
+    mine.inventory = { cobblestone: 99 };
+
+    const restored = reconcileElapsedProgress(state, 1000 + MINE_TRIP_DURATION_MS * 2, () => 0.01);
+
+    expect(restored.mineResult.mineReports[0]).toMatchObject({
+      trips: 1,
+      resources: { cobblestone: 1 },
+      storageAmount: 100,
+      storageCapacity: 100,
+      storageFillState: 'full',
+      paused: true,
+    });
+    expect(mine.progressMs).toBe(0);
+    expect(mine.lastUpdatedAt).toBe(1000 + MINE_TRIP_DURATION_MS * 2);
+    expect(reconcileElapsedProgress(state, 1000 + MINE_TRIP_DURATION_MS * 2).mineResult.mineReports[0].trips).toBe(0);
+  });
+
+  it('keeps offline mine reports isolated for multiple mines', () => {
+    const state = freshState(1000);
+    state.settlementHub.level = 4;
+    unlockStarterMine(state, 1000, 0, 1, 'south', 2);
+    unlockStarterMine(state, 1000, 1, -1, 'south', 4);
+
+    const restored = reconcileElapsedProgress(state, 1000 + MINE_TRIP_DURATION_MS, () => 0.01);
+
+    expect(restored.mineResult.mineReports.map((report) => report.mineId)).toEqual(['starter-mine', 'mine-2']);
+    expect(restored.mineResult.mineReports.every((report) => report.trips === 1)).toBe(true);
+    expect(state.mines.map((mine) => mine.inventory)).toEqual([{ cobblestone: 1 }, { cobblestone: 1 }]);
+  });
+
   it('derives mine storage fullness from typed local contents and pauses at capacity', () => {
     const state = freshState(1000);
     unlockStarterMine(state, 1000);

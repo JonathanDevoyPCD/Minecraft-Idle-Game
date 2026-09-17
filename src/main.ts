@@ -88,6 +88,7 @@ import {
   type BuildItemId,
   type LivingEntityPlan,
   type MineCargoKind,
+  type MineProductionReport,
   type MineRailLength,
   type MineStorageFillState,
   type MeadowFeature,
@@ -1528,7 +1529,7 @@ let lastOrbitX = 0;
 let lastOrbitY = 0;
 const initialReconciliation = reconcileElapsedProgress(state, Date.now());
 const offlineXp = initialReconciliation.offlineXp;
-if (initialReconciliation.completedProjects.length > 0 || initialReconciliation.mineResult.trips > 0 || offlineXp > 0) {
+if (initialReconciliation.completedProjects.length > 0 || initialReconciliation.mineResult.mineReports.length > 0 || offlineXp > 0) {
   saveState(localStorage, state);
 }
 updateWorldScene();
@@ -1686,9 +1687,12 @@ let selectedSkillNodeId: string | null = null;
 type DrawerKind = 'build' | 'mining' | null;
 let activeDrawer: DrawerKind = null;
 const TRADER_EMERALD_COST = 25;
+let offlineMineReports: MineProductionReport[] = [];
+const mineCollectionFeedback = new Map<string, string>();
+const mineCollectionFeedbackTimers = new Map<string, number>();
+offlineMineReports = initialReconciliation.mineResult.mineReports.filter((report) => report.trips > 0 || report.paused);
 
 if (offlineXp > 0) {
-  addXp(state, offlineXp);
   document.querySelector('#offline-xp')!.textContent = `${offlineXp.toLocaleString()} XP`;
   offlineModal.hidden = false;
 }
@@ -2188,12 +2192,49 @@ function formatMineStorageTime(durationMs: number): string {
   return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 }
 
+function formatMineResourceAmounts(resources: Readonly<Record<string, number>>): string {
+  return Object.entries(resources)
+    .filter(([, amount]) => amount > 0)
+    .map(([resource, amount]) => `${amount} ${resource}`)
+    .join(' · ');
+}
+
+function setMineCollectionFeedback(mineId: string, message: string): void {
+  mineCollectionFeedback.set(mineId, message);
+  const previousTimer = mineCollectionFeedbackTimers.get(mineId);
+  if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+  const timer = window.setTimeout(() => {
+    if (mineCollectionFeedback.get(mineId) !== message) return;
+    mineCollectionFeedback.delete(mineId);
+    mineCollectionFeedbackTimers.delete(mineId);
+    updateMiningUi();
+  }, 4500);
+  mineCollectionFeedbackTimers.set(mineId, timer);
+}
+
 function updateMiningUi(): void {
   syncMiningModeDrawer();
 
   miningMineList.replaceChildren();
   miningRailList.replaceChildren();
   miningStorageList.replaceChildren();
+  if (offlineMineReports.length > 0) {
+    const feedbackTile = document.createElement('article');
+    feedbackTile.className = 'mining-info-tile mining-info-tile--storage mining-info-tile--feedback';
+    const feedbackTitle = document.createElement('strong');
+    feedbackTitle.textContent = 'While you were away';
+    feedbackTile.append(feedbackTitle);
+    offlineMineReports.forEach((report) => {
+      const feedback = document.createElement('small');
+      const delivery = report.trips > 0
+        ? `Mine ${state.mines.findIndex((mine) => mine.id === report.mineId) + 1}: ${report.trips} ${report.trips === 1 ? 'delivery' : 'deliveries'}`
+          + (formatMineResourceAmounts(report.resources) ? ` · ${formatMineResourceAmounts(report.resources)}` : '')
+        : `Mine ${state.mines.findIndex((mine) => mine.id === report.mineId) + 1}: no delivery`;
+      feedback.textContent = report.paused ? `${delivery} · storage full, production paused` : delivery;
+      feedbackTile.append(feedback);
+    });
+    miningStorageList.append(feedbackTile);
+  }
   const settlementStorageStatus = getSettlementStorageUpgradeStatus(state);
   const settlementStorageTile = document.createElement('article');
   settlementStorageTile.className = 'mining-info-tile mining-info-tile--storage settlement-storage-tile';
@@ -2324,6 +2365,9 @@ function updateMiningUi(): void {
       storageTarget.textContent = `Target fill ${formatMineStorageTime(summary.storageFillDurationMs)} for ${summary.storageFillTarget} ore`;
       const storageTime = document.createElement('small');
       storageTime.textContent = fillState === 'full' ? 'Production paused · collect to resume' : `Trip cycle ${formatMineStorageTime(tripDuration)}`;
+      const collectionFeedback = document.createElement('small');
+      collectionFeedback.textContent = mineCollectionFeedback.get(mine.id)
+        ?? (summary.productionPaused ? 'Paused at capacity' : amount > 0 ? 'Ready to collect' : 'Awaiting first delivery');
       const collectButton = document.createElement('button');
       collectButton.className = 'storage-upgrade-button';
       collectButton.type = 'button';
@@ -2352,7 +2396,7 @@ function updateMiningUi(): void {
           ? `Upgrade this mine storage to ${storageStatus.definition.capacity}`
           : `Locked: ${storageStatus.missing.join(' · ')}`
         : 'Mine storage is fully upgraded';
-      storageTile.append(storageTitle, storageAmount, storageContents, storageSummary, storageTarget, storageTime, collectButton, storageUpgrade);
+      storageTile.append(storageTitle, storageAmount, storageContents, storageSummary, storageTarget, storageTime, collectionFeedback, collectButton, storageUpgrade);
       miningStorageList.append(storageTile);
     });
   }
@@ -3139,7 +3183,12 @@ miningDrawer.addEventListener('click', (event) => {
     const mineId = collectButton.dataset.mineStorageCollect;
     if (!mineId) return;
     const collection = collectMineStorage(state, mineId);
-    if (Object.keys(collection.transferred).length === 0) return;
+    const transferred = formatMineResourceAmounts(collection.transferred);
+    const overflow = formatMineResourceAmounts(collection.overflow);
+    if (!transferred && !overflow) return;
+    setMineCollectionFeedback(mineId, transferred
+      ? `Collected ${transferred}${overflow ? ` · ${overflow} stayed in mine` : ''}`
+      : `Settlement storage full · ${overflow} stayed in mine`);
     updateWorldScene();
     updateUi();
     saveState(localStorage, state);
@@ -3313,6 +3362,7 @@ void playerSaveSync.initialize(state, hasLocalSave).then((remoteState) => {
   localStorage.setItem(SAVE_KEY, JSON.stringify(remoteState));
   state = loadState(localStorage);
   const remoteReconciliation = reconcileElapsedProgress(state, Date.now());
+  offlineMineReports = remoteReconciliation.mineResult.mineReports.filter((report) => report.trips > 0 || report.paused);
   saveState(localStorage, state);
   if (remoteReconciliation.offlineXp > 0) {
     document.querySelector('#offline-xp')!.textContent = `${remoteReconciliation.offlineXp.toLocaleString()} XP`;

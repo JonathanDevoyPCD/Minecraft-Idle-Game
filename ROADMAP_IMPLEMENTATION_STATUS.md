@@ -9,13 +9,13 @@
 
 **Phase 3 — Real Mine Economy**
 
-Status: Phase 3C-C complete; Phase 3D is next.
+Status: Complete; Phase 3D is complete.
 
 ## Current Sub-Phase
 
-**Phase 3C-C - Mine progression presentation and balancing**
+**Phase 3D - Offline mine economy and final Mining UI**
 
-Status: Complete; Phase 3D is next.
+Status: Complete.
 
 ## Current-repo audit
 
@@ -234,7 +234,7 @@ Phase 3C-B: 93 tests passed; production build and `git diff --check` passed; bro
 
 ## Next Work
 
-Next incomplete roadmap sub-phase: Phase 3D — Offline mine economy and final Mining UI.
+Next incomplete roadmap phase: Phase 4 — Processing. Phase 3 — Real Mine Economy is complete.
 
 Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed.
 
@@ -254,6 +254,32 @@ Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into co
 4. **Phase 3D - Offline mine economy and final Mining UI**
    - Reconcile offline trips using the same local-inventory, capacity and full-pause rules.
    - Expose typed contents, capacity, fullness, pause state and collection feedback in the Mining menu.
+
+## Phase 3D implementation plan
+
+1. Extend the existing mine-production result with a typed per-mine report containing accepted deliveries, accepted resources, local storage amount/capacity and whether production is paused at capacity.
+2. Keep `reconcileElapsedProgress` as the single restore entry point for local and Supabase-shaped saves, and surface its per-mine reports as concise return/paused feedback without creating a second production simulation.
+3. Make the Mines, Rails and Storage panels consume the existing shared `getMineOperationsSummary` plus per-mine reports; show typed local contents, capacity/fullness, pause state and the latest collection result in the Storage panel.
+4. Add focused tests for offline elapsed trips, capacity pause, multi-mine report isolation, collection feedback and save-watermark idempotency. No schema or Supabase contract migration is expected.
+
+## Phase 3D acceptance criteria
+
+- [x] Offline reconciliation advances mine trips through the same local-inventory, capacity and full-pause rules as active play.
+- [x] Offline production never bypasses mine-local storage or directly increases settlement resources.
+- [x] Each mine's Mining views expose typed contents, capacity, fullness, cart/trip details and paused state from shared read models.
+- [x] Restore feedback identifies per-mine deliveries and full-storage pauses; manual collection feedback identifies transferred and overflow resources.
+- [x] One cart per mine, smooth repeated movement, orientation/rail routing and save/reload continuity remain intact.
+- [x] No save schema, Supabase contract or Phase 4+ system is introduced.
+- [x] `npm test`, `npm run build`, `git diff --check` and browser verification pass.
+
+## Phase 3D completion record
+
+- Extended the existing `advanceMineOperations` result with isolated typed reports for every mine, including accepted deliveries/resources, local storage amount/capacity, fullness and pause state.
+- Kept `reconcileElapsedProgress` as the only restore simulation for local and Supabase-shaped saves, so offline deliveries use the same weighted cargo, local-inventory, capacity and full-pause rules as active play.
+- Added restore feedback to Mining > Storage for per-mine offline deliveries and full-storage pauses, plus timed manual collection feedback for transferred and overflow resources.
+- Persisted reconciled mine clock state whenever restored mines are present and removed the initial shell's duplicate offline-XP award; the game-layer reconciliation remains the sole XP authority.
+- Added coverage for offline delivery reports, capacity-limited pause reports, multiple-mine isolation and restore idempotency. No save schema, Supabase contract or runtime minecart migration was required.
+- Browser-verified controlled offline restoration, Mining > Storage feedback, manual collection into Settlement Storage, repeated production, cart screenshots across time and reload continuity. Supabase requests were intentionally blocked in the isolated QA session; no application exceptions were observed.
 
 ## Phase 3A implementation plan
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { PLAYABLE_GRID_LINE_OPACITY, PLAYABLE_SIZE, TILE_SIZE, WORLD_SIZE, WORLD_SPAN } from './world-config';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { PLAYABLE_GRID_LINE_OPACITY, PLAYABLE_SIZE, TILE_SIZE, WORLD_CENTER_CELL, WORLD_ENTRANCES, WORLD_HALF_SPAN, WORLD_SIZE, WORLD_SPAN, type WorldEntranceDefinition, type WorldSide } from './world-config';
 import { createBorderDecorationPlan, getWorldPosition, type WorldCell } from './world-grid';
 
 const SURFACE_THICKNESS = 0.72;
@@ -13,6 +14,89 @@ export const SHALLOW_WATER_TINT = 0x83d6dc;
 export const DEEP_WATER_TINT = 0x2f86ad;
 const ISLAND_COASTLINE_VARIATION = 0.12;
 const OCEAN_LEVEL = -0.34;
+const DOCK_SECTION_COUNT = 2;
+const DOCK_SECTION_LENGTH = TILE_SIZE * 2;
+const DOCK_TOTAL_LENGTH = DOCK_SECTION_COUNT * DOCK_SECTION_LENGTH;
+const DOCK_WATER_OVERLAP = TILE_SIZE;
+const DOCK_DECK_HEIGHT = 0.08;
+const DOCK_LAMP_POLE_HEIGHT = TILE_SIZE * 1.2;
+
+export interface IslandDockPlacement {
+  side: WorldSide;
+  rotationY: number;
+  centerX: number;
+  centerZ: number;
+  outwardX: number;
+  outwardZ: number;
+  tangentX: number;
+  tangentZ: number;
+  sectionCenters: Array<{ x: number; z: number }>;
+  lampX: number;
+  lampZ: number;
+}
+
+export function getDockModelScale(modelSize: THREE.Vector3): THREE.Vector3 {
+  return new THREE.Vector3(
+    TILE_SIZE / Math.max(modelSize.x, 0.001),
+    DOCK_SECTION_LENGTH / Math.max(modelSize.z, 0.001),
+    DOCK_SECTION_LENGTH / Math.max(modelSize.z, 0.001),
+  );
+}
+
+export function getDockModelDeckTopY(root: THREE.Object3D, modelSize: THREE.Vector3): number {
+  let deckTopY = Number.NEGATIVE_INFINITY;
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const meshBounds = new THREE.Box3().setFromObject(object);
+    const meshSize = meshBounds.getSize(new THREE.Vector3());
+    const isBroadDeckBoard = meshSize.x >= modelSize.x * 0.75
+      && meshSize.z <= modelSize.z * 0.12
+      && meshSize.y <= modelSize.y * 0.12;
+    if (isBroadDeckBoard) deckTopY = Math.max(deckTopY, meshBounds.max.y);
+  });
+
+  return Number.isFinite(deckTopY) ? deckTopY : modelSize.y / 2;
+}
+
+export function createIslandDockPlacements(
+  entrances: readonly WorldEntranceDefinition[] = WORLD_ENTRANCES,
+): IslandDockPlacement[] {
+  const outerDockRadius = WORLD_HALF_SPAN + ISLAND_BEACH_WIDTH + DOCK_WATER_OVERLAP;
+  const dockCenterRadius = outerDockRadius - DOCK_TOTAL_LENGTH / 2;
+  const sideOrientation: Record<WorldSide, { rotationY: number; outwardX: number; outwardZ: number; tangentX: number; tangentZ: number }> = {
+    north: { rotationY: Math.PI, outwardX: 0, outwardZ: -1, tangentX: -1, tangentZ: 0 },
+    east: { rotationY: Math.PI / 2, outwardX: 1, outwardZ: 0, tangentX: 0, tangentZ: -1 },
+    south: { rotationY: 0, outwardX: 0, outwardZ: 1, tangentX: 1, tangentZ: 0 },
+    west: { rotationY: -Math.PI / 2, outwardX: -1, outwardZ: 0, tangentX: 0, tangentZ: 1 },
+  };
+
+  return entrances.map(({ side, center }) => {
+    const orientation = sideOrientation[side];
+    const alongX = side === 'north' || side === 'south';
+    const entranceCell = alongX
+      ? getWorldPosition(center, WORLD_CENTER_CELL)
+      : getWorldPosition(WORLD_CENTER_CELL, center);
+    const centerX = (alongX ? entranceCell.x : 0) + orientation.outwardX * dockCenterRadius;
+    const centerZ = (alongX ? 0 : entranceCell.z) + orientation.outwardZ * dockCenterRadius;
+    const halfSection = DOCK_SECTION_LENGTH / 2;
+    const sectionCenters = [-halfSection, halfSection].map((offset) => ({
+      x: centerX + orientation.outwardX * offset,
+      z: centerZ + orientation.outwardZ * offset,
+    }));
+    const lampAlongDock = DOCK_TOTAL_LENGTH / 2 - TILE_SIZE * 0.55;
+    const lampAcrossDock = TILE_SIZE * 0.36;
+
+    return {
+      side,
+      ...orientation,
+      centerX,
+      centerZ,
+      sectionCenters,
+      lampX: centerX + orientation.outwardX * lampAlongDock + orientation.tangentX * lampAcrossDock,
+      lampZ: centerZ + orientation.outwardZ * lampAlongDock + orientation.tangentZ * lampAcrossDock,
+    };
+  });
+}
 
 export interface WorldSceneResources {
   dispose: () => void;
@@ -289,10 +373,229 @@ function addBorderDressing(
 
 }
 
+interface DockLampResources {
+  geometries: {
+    pole: THREE.BoxGeometry;
+    arm: THREE.BoxGeometry;
+    lanternCore: THREE.BoxGeometry;
+    lanternTop: THREE.BoxGeometry;
+    lanternBottom: THREE.BoxGeometry;
+    lanternFrame: THREE.BoxGeometry;
+    handle: THREE.BoxGeometry;
+  };
+  wood: THREE.MeshStandardMaterial;
+  frame: THREE.MeshStandardMaterial;
+  light: THREE.MeshStandardMaterial;
+}
+
+function addBoxPart(
+  group: THREE.Group,
+  geometry: THREE.BoxGeometry,
+  material: THREE.Material,
+  name: string,
+  x: number,
+  y: number,
+  z: number,
+): void {
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+}
+
+function createDockLampResources(
+  geometries: THREE.BufferGeometry[],
+  materials: THREE.Material[],
+  textures: THREE.Texture[],
+): DockLampResources {
+  const poleThickness = TILE_SIZE * 0.12;
+  const lanternSize = TILE_SIZE * 0.31;
+  const lanternHeight = TILE_SIZE * 0.29;
+  const frameThickness = TILE_SIZE * 0.045;
+  const woodTexture = loadGrassTexture('oak_planks.png', 1, 1);
+  const wood = new THREE.MeshStandardMaterial({ map: woodTexture, color: 0xc29a5e, roughness: 1 });
+  const frame = new THREE.MeshStandardMaterial({ color: 0x374149, roughness: 0.82, metalness: 0.08 });
+  const light = new THREE.MeshStandardMaterial({
+    color: 0xf8fcff,
+    emissive: 0xffffff,
+    emissiveIntensity: 1.35,
+    roughness: 0.42,
+    toneMapped: false,
+  });
+  const resources: DockLampResources = {
+    geometries: {
+      pole: new THREE.BoxGeometry(poleThickness, DOCK_LAMP_POLE_HEIGHT, poleThickness),
+      arm: new THREE.BoxGeometry(poleThickness * 0.86, poleThickness * 0.86, TILE_SIZE * 0.62),
+      lanternCore: new THREE.BoxGeometry(lanternSize * 0.57, lanternHeight * 0.64, lanternSize * 0.57),
+      lanternTop: new THREE.BoxGeometry(lanternSize, frameThickness, lanternSize),
+      lanternBottom: new THREE.BoxGeometry(lanternSize * 0.82, frameThickness, lanternSize * 0.82),
+      lanternFrame: new THREE.BoxGeometry(frameThickness, lanternHeight, frameThickness),
+      handle: new THREE.BoxGeometry(frameThickness * 1.1, TILE_SIZE * 0.1, frameThickness * 1.1),
+    },
+    wood,
+    frame,
+    light,
+  };
+  geometries.push(...Object.values(resources.geometries));
+  materials.push(wood, frame, light);
+  textures.push(woodTexture);
+  return resources;
+}
+
+function createDockLamp(
+  placement: IslandDockPlacement,
+  lamp: DockLampResources,
+  parent: THREE.Group,
+  deckSurfaceOffsetY: number,
+): void {
+  const group = new THREE.Group();
+  group.name = `island-dock-${placement.side}-lamp`;
+  const poleHeight = DOCK_LAMP_POLE_HEIGHT;
+  const lanternCenterY = poleHeight * 0.64;
+  const lanternCenterZ = TILE_SIZE * 0.53;
+  const lanternSize = TILE_SIZE * 0.31;
+  const lanternHeight = TILE_SIZE * 0.29;
+  const frameThickness = TILE_SIZE * 0.045;
+  const frameOffset = lanternSize / 2 - frameThickness / 2;
+
+  addBoxPart(group, lamp.geometries.pole, lamp.wood, 'oak-lamp-post', 0, poleHeight / 2, 0);
+  addBoxPart(group, lamp.geometries.arm, lamp.wood, 'oak-lamp-arm', 0, poleHeight * 0.88, TILE_SIZE * 0.31);
+  addBoxPart(group, lamp.geometries.lanternCore, lamp.light, 'white-emissive-lantern-core', 0, lanternCenterY, lanternCenterZ);
+  addBoxPart(group, lamp.geometries.lanternTop, lamp.frame, 'lantern-dark-top-cap', 0, lanternCenterY + lanternHeight / 2, lanternCenterZ);
+  addBoxPart(group, lamp.geometries.lanternBottom, lamp.frame, 'lantern-dark-bottom-cap', 0, lanternCenterY - lanternHeight / 2, lanternCenterZ);
+  for (const xSign of [-1, 1]) {
+    for (const zSign of [-1, 1]) {
+      addBoxPart(
+        group,
+        lamp.geometries.lanternFrame,
+        lamp.frame,
+        'lantern-dark-corner-frame',
+        xSign * frameOffset,
+        lanternCenterY,
+        lanternCenterZ + zSign * frameOffset,
+      );
+    }
+  }
+  addBoxPart(group, lamp.geometries.handle, lamp.frame, 'lantern-top-handle', 0, lanternCenterY + lanternHeight / 2 + TILE_SIZE * 0.075, lanternCenterZ);
+
+  const lightSource = new THREE.PointLight(0xf8fcff, 1.65, TILE_SIZE * 6, 2);
+  lightSource.name = `island-dock-${placement.side}-white-point-light`;
+  lightSource.position.set(0, lanternCenterY, lanternCenterZ);
+  lightSource.castShadow = false;
+  group.add(lightSource);
+
+  const dockBaseY = DOCK_DECK_HEIGHT - deckSurfaceOffsetY;
+  const worldOffsetX = placement.lampX - placement.centerX;
+  const worldOffsetZ = placement.lampZ - placement.centerZ;
+  group.position.set(
+    worldOffsetX * placement.tangentX + worldOffsetZ * placement.tangentZ,
+    DOCK_DECK_HEIGHT - dockBaseY,
+    worldOffsetX * placement.outwardX + worldOffsetZ * placement.outwardZ,
+  );
+  parent.add(group);
+}
+
+function disposeGltfResources(root: THREE.Object3D): void {
+  const disposedGeometries = new Set<THREE.BufferGeometry>();
+  const disposedMaterials = new Set<THREE.Material>();
+  const disposedTextures = new Set<THREE.Texture>();
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    disposedGeometries.add(object.geometry);
+    const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    meshMaterials.forEach((material) => {
+      disposedMaterials.add(material);
+      Object.values(material).forEach((value) => {
+        if (value instanceof THREE.Texture) disposedTextures.add(value);
+      });
+    });
+  });
+  disposedGeometries.forEach((geometry) => geometry.dispose());
+  disposedMaterials.forEach((material) => material.dispose());
+  disposedTextures.forEach((texture) => texture.dispose());
+}
+
+function addDockAreas(
+  scene: THREE.Scene,
+  geometries: THREE.BufferGeometry[],
+  materials: THREE.Material[],
+  textures: THREE.Texture[],
+  isDisposed: () => boolean,
+): void {
+  const loader = new GLTFLoader();
+  loader.load(
+    `${import.meta.env.BASE_URL}assets/models/environment/dock/low-poly_island_dock_platform.glb`,
+    (gltf) => {
+      if (isDisposed()) {
+        disposeGltfResources(gltf.scene);
+        return;
+      }
+
+      const bounds = new THREE.Box3().setFromObject(gltf.scene);
+      const modelSize = bounds.getSize(new THREE.Vector3());
+      const modelCenter = bounds.getCenter(new THREE.Vector3());
+      const modelScale = getDockModelScale(modelSize);
+      const deckSurfaceOffsetY = (getDockModelDeckTopY(gltf.scene, modelSize) - modelCenter.y) * modelScale.y;
+      const dockBaseY = DOCK_DECK_HEIGHT - deckSurfaceOffsetY;
+      const sharedGeometries = new Set<THREE.BufferGeometry>();
+      const sharedMaterials = new Set<THREE.Material>();
+      const sharedTextures = new Set<THREE.Texture>();
+
+      gltf.scene.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        sharedGeometries.add(object.geometry);
+        const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        meshMaterials.forEach((material) => {
+          sharedMaterials.add(material);
+          Object.values(material).forEach((value) => {
+            if (value instanceof THREE.Texture) sharedTextures.add(value);
+          });
+        });
+      });
+      geometries.push(...sharedGeometries);
+      materials.push(...sharedMaterials);
+      textures.push(...sharedTextures);
+
+      const lamp = createDockLampResources(geometries, materials, textures);
+      for (const placement of createIslandDockPlacements()) {
+        const dock = new THREE.Group();
+        dock.name = `island-dock-${placement.side}`;
+        dock.position.set(placement.centerX, dockBaseY, placement.centerZ);
+        dock.rotation.y = placement.rotationY;
+        for (const [index, localZ] of [-DOCK_SECTION_LENGTH / 2, DOCK_SECTION_LENGTH / 2].entries()) {
+          const section = new THREE.Group();
+          section.name = `island-dock-${placement.side}-section-${index + 1}`;
+          section.position.z = localZ;
+          const model = gltf.scene.clone(true);
+          model.scale.copy(modelScale);
+          model.position.set(
+            -modelCenter.x * modelScale.x,
+            -modelCenter.y * modelScale.y,
+            -modelCenter.z * modelScale.z,
+          );
+          section.add(model);
+          dock.add(section);
+        }
+        createDockLamp(placement, lamp, dock, deckSurfaceOffsetY);
+        scene.add(dock);
+      }
+    },
+    undefined,
+    (error) => {
+      if (!isDisposed()) console.error('Could not load the decorative island dock model.', error);
+    },
+  );
+}
+
 export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[]): WorldSceneResources {
   const geometries: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
   const textures: THREE.Texture[] = [];
+  let disposed = false;
 
   const worldTexture = loadGrassTexture('grass_block_top.png', WORLD_SIZE, WORLD_SIZE);
   const clearingTexture = loadGrassTexture('grass_block_top.png', PLAYABLE_SIZE, PLAYABLE_SIZE);
@@ -390,12 +693,14 @@ export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[])
   scene.add(playableGridLines);
 
   addBorderDressing(scene, grid, geometries, materials, textures);
+  addDockAreas(scene, geometries, materials, textures, () => disposed);
 
   return {
     update: (elapsedSeconds) => {
       foamMaterial.uniforms.uTime.value = elapsedSeconds % 240;
     },
     dispose: () => {
+      disposed = true;
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
       for (const texture of textures) texture.dispose();

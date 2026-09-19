@@ -5,6 +5,25 @@
 - Design source of truth: `GAME_DESIGN_ROADMAP.md`
 - Repository working rules: `AGENTS.md`
 
+## Active Direction Override — 2026-09-19
+
+The user has temporarily stopped production-roadmap development and authorized a fresh visual/world foundation on the isolated `/testing/` page. Keep all work for this direction inside `testing/` and testing-specific modules under `src/testing/`; do not change the production game page or resume Phase 4D until the user explicitly redirects work. This override changes the active task, not the historical completion records below.
+
+- Current active slice: fixed-isometric world-only staging foundation.
+- Scope: logical 60×60 grid, 50×50 buildable center, 5-cell nonbuildable border, reserved cardinal border entrances, restrained deterministic border dressing, fixed isometric camera, desktop drag-pan and wheel zoom with hard world bounds.
+- Save migration: none; this page has no game state or save integration.
+- Production roadmap: Phase 4D remains deferred, not started.
+
+### Testing World Foundation completion record
+
+- Replaced only `testing/index.html` with a world-only canvas page and isolated its styles and runtime under `testing/` and `src/testing/`; the production page and gameplay systems were not changed.
+- Added deterministic 60x60 logical cells with a centered 50x50 buildable area and a 5-cell non-buildable border. Reserved 3-cell-wide north/east/south/west corridors are represented in grid helpers and excluded from decorative instances.
+- Rendered the world as one textured grass/dirt slab plus a subtle playable clearing. Reused the existing grass, dirt, oak log and oak leaves textures; border trees and rocks use instanced meshes rather than one render object per cell.
+- Added a fixed orthographic isometric camera, smooth bounded wheel zoom, left-drag pan, viewport-responsive sizing and zoom-aware hard clamping against the complete world footprint. No rotation/orbit interaction is registered.
+- Added grid and camera tests for dimensions, buildability, entrance corridors, deterministic dressing, coordinate mapping, zoom-dependent bounds, all four drag directions and hard clamping.
+- No save migration or gameplay systems were added.
+- Browser-verified `/Minecraft-Idle-Game/testing/` at 1024x768 and 1440x900: centered initial view, full-map zoom-out, close zoom, drags to all four viewport corners while zoomed in, no exposed void, no rotation on right-drag, one canvas with empty body text, and no console errors or warnings. Visual review showed the map remains covered by terrain at the tested bounds; the local browser measured 61 animation frames over 1.0 second at 1024x768.
+
 ## Current Phase
 
 **Phase 4 — Processing**
@@ -349,11 +368,11 @@ Phase 4C: 110 tests passed; production build and `git diff --check` passed; brow
 
 ## Next Work
 
-Phase 4C is complete and pushed. The next incomplete roadmap sub-phase is **Phase 4D - Smithy and tool crafting**. Do not begin Phase 4D in this task.
+The active user-approved work is the isolated `/testing/` visual/world foundation described above. Production roadmap work is paused; Phase 4D - Smithy and tool crafting remains the next production-roadmap sub-phase but must not resume until the user explicitly redirects work.
 
-Next incomplete roadmap sub-phase: Phase 4D - Smithy and tool crafting. Phase 4A, Phase 4B and Phase 4C are complete; Phase 3 — Real Mine Economy is complete.
+Next active task: user review of the testing-world foundation; refine only the staging page if requested. Next production-roadmap sub-phase (deferred): Phase 4D - Smithy and tool crafting. Phase 4A, Phase 4B and Phase 4C are complete; Phase 3 — Real Mine Economy is complete.
 
-Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A, Phase 4B and Phase 4C are complete and pushed; do not begin Phase 4D in this task.
+Phase 1 and Phase 2 Economy Cleanup are complete. Phase 2 has been split into coherent cleanup slices; Phase 2A, 2B-A, 2B-B, 2B-C, 2B-D, 2C-A, 2C-B and 2C-C are complete and pushed. Phase 4A, Phase 4B and Phase 4C are complete and pushed. These records remain historical; Phase 4D is deferred by the active direction override.
 
 ## Phase 3 implementation sub-phases
 

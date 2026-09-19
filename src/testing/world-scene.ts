@@ -7,6 +7,10 @@ const PLAYABLE_SPAN = TILE_SIZE * PLAYABLE_SIZE;
 const PLAYABLE_GRID_LINE_HEIGHT = 0.014;
 export const ISLAND_BEACH_WIDTH = TILE_SIZE * 3.5;
 export const ISLAND_COASTLINE_SEGMENTS = 128;
+export const BEACH_SAND_TINT = 0xf5ebd8;
+export const SHORE_FOAM_TINT = 0xffffff;
+export const SHALLOW_WATER_TINT = 0x83d6dc;
+export const DEEP_WATER_TINT = 0x2f86ad;
 const ISLAND_COASTLINE_VARIATION = 0.12;
 const OCEAN_LEVEL = -0.34;
 
@@ -77,6 +81,64 @@ export function createCoastalBandGeometry(
   return geometry;
 }
 
+export function createShallowWaterGeometry(): THREE.BufferGeometry {
+  const geometry = createCoastalBandGeometry(ISLAND_BEACH_WIDTH + 0.02, ISLAND_BEACH_WIDTH + 8);
+  const shallowColor = new THREE.Color(SHALLOW_WATER_TINT);
+  const deepColor = new THREE.Color(DEEP_WATER_TINT);
+  const colors: number[] = [];
+
+  for (let index = 0; index <= ISLAND_COASTLINE_SEGMENTS; index += 1) {
+    colors.push(shallowColor.r, shallowColor.g, shallowColor.b, deepColor.r, deepColor.g, deepColor.b);
+  }
+
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+
+function createShorelineFoamMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uFoamColor: { value: new THREE.Color(SHORE_FOAM_TINT) },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform vec3 uFoamColor;
+      varying vec2 vUv;
+
+      void main() {
+        float along = vUv.x * 6.2831853;
+        float contour = sin(along * 5.0 - uTime * 0.52)
+          + 0.38 * sin(along * 17.0 + uTime * 0.31)
+          + 0.22 * sin(along * 31.0 - uTime * 0.18);
+        float washFront = 0.49 + contour * 0.075 + 0.115 * sin(uTime * 0.46);
+        float radialDistance = vUv.y - washFront;
+        float shorewardWash = 1.0 - smoothstep(0.13, 0.52, abs(radialDistance + 0.14));
+        float foamCrest = 1.0 - smoothstep(0.025, 0.14, abs(radialDistance));
+        float brokenCrest = smoothstep(-0.22, 0.38, sin(along * 12.0 + sin(along * 3.0 + uTime * 0.2) * 0.72 - uTime * 0.43));
+        float foamFingers = 1.0 - smoothstep(0.035, 0.17, abs(radialDistance + 0.15 + 0.035 * sin(along * 23.0 + uTime * 0.36)));
+        float fingerBreakup = smoothstep(-0.16, 0.54, sin(along * 27.0 + sin(along * 5.0 - uTime * 0.28) * 0.42 - uTime * 0.58));
+        float pulse = 0.86 + 0.14 * sin(uTime * 0.58 + along * 2.0);
+        float alpha = max(shorewardWash * 0.44, max(foamCrest * brokenCrest, foamFingers * fingerBreakup * 0.48)) * pulse;
+        if (alpha < 0.025) discard;
+        gl_FragColor = vec4(uFoamColor, alpha);
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+}
+
 function createCoastlineShape(): THREE.Shape {
   const points = createIslandCoastlinePoints();
   const shape = new THREE.Shape();
@@ -126,37 +188,6 @@ function loadSandTexture(): THREE.Texture {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.repeat.set(18, 1);
-  return texture;
-}
-
-function createFoamTexture(): THREE.DataTexture {
-  const width = 128;
-  const height = 16;
-  const data = new Uint8Array(width * height * 4);
-
-  for (let x = 0; x < width; x += 1) {
-    const center = 7.5 + Math.sin(x * 0.19) * 1.3 + Math.sin(x * 0.43) * 0.7;
-    const gap = Math.sin(x * 0.11 + 0.8) > 0.72;
-    for (let y = 0; y < height; y += 1) {
-      const pixel = (y * width + x) * 4;
-      const distance = Math.abs(y - center);
-      if (!gap && distance < 1.9) {
-        data[pixel] = 196;
-        data[pixel + 1] = 237;
-        data[pixel + 2] = 224;
-        data[pixel + 3] = Math.round(220 * (1 - distance / 2.2));
-      }
-    }
-  }
-
-  const texture = new THREE.DataTexture(data, width, height, THREE.RGBAFormat);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearFilter;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.repeat.set(18, 1);
-  texture.needsUpdate = true;
   return texture;
 }
 
@@ -268,31 +299,24 @@ export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[])
   const sideTexture = loadGrassTexture('grass_block_side.png', WORLD_SIZE, 1);
   const dirtTexture = loadGrassTexture('dirt.png', WORLD_SIZE, 1);
   const sandTexture = loadSandTexture();
-  const foamTexture = createFoamTexture();
-  textures.push(worldTexture, clearingTexture, sideTexture, dirtTexture, sandTexture, foamTexture);
+  textures.push(worldTexture, clearingTexture, sideTexture, dirtTexture, sandTexture);
 
   const worldTopMaterial = new THREE.MeshStandardMaterial({ map: worldTexture, color: 0x789d4c, roughness: 1 });
   const clearingMaterial = new THREE.MeshStandardMaterial({ map: clearingTexture, color: 0x8abd51, roughness: 1 });
   const sideMaterial = new THREE.MeshStandardMaterial({ map: sideTexture, roughness: 1 });
   const dirtMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 1 });
-  const sandMaterial = new THREE.MeshStandardMaterial({ map: sandTexture, color: 0xe7d28b, roughness: 1, side: THREE.DoubleSide });
+  const sandMaterial = new THREE.MeshStandardMaterial({ map: sandTexture, color: BEACH_SAND_TINT, roughness: 1, side: THREE.DoubleSide });
   const islandSideMaterial = new THREE.MeshStandardMaterial({ map: dirtTexture, color: 0xc0a66d, roughness: 1 });
-  const oceanMaterial = new THREE.MeshStandardMaterial({ color: 0x5fabc2, roughness: 0.48, metalness: 0.02 });
-  const foamMaterial = new THREE.MeshBasicMaterial({
-    map: foamTexture,
-    transparent: true,
-    opacity: 0.52,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
+  const oceanMaterial = new THREE.MeshBasicMaterial({ color: DEEP_WATER_TINT, toneMapped: false });
+  const shallowWaterMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+  const foamMaterial = createShorelineFoamMaterial();
   const gridLineMaterial = new THREE.LineBasicMaterial({
     color: 0x344d27,
     transparent: true,
     opacity: PLAYABLE_GRID_LINE_OPACITY,
     depthWrite: false,
   });
-  materials.push(worldTopMaterial, clearingMaterial, sideMaterial, dirtMaterial, sandMaterial, islandSideMaterial, oceanMaterial, foamMaterial, gridLineMaterial);
+  materials.push(worldTopMaterial, clearingMaterial, sideMaterial, dirtMaterial, sandMaterial, islandSideMaterial, oceanMaterial, shallowWaterMaterial, foamMaterial, gridLineMaterial);
 
   const oceanGeometry = new THREE.PlaneGeometry(WORLD_SPAN * 7, WORLD_SPAN * 7);
   geometries.push(oceanGeometry);
@@ -316,6 +340,13 @@ export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[])
   islandBody.name = 'natural-island-coast-skirt';
   scene.add(islandBody);
 
+  const shallowWaterGeometry = createShallowWaterGeometry();
+  geometries.push(shallowWaterGeometry);
+  const shallowWater = new THREE.Mesh(shallowWaterGeometry, shallowWaterMaterial);
+  shallowWater.position.y = OCEAN_LEVEL + 0.002;
+  shallowWater.name = 'shallow-to-deep-water-transition';
+  scene.add(shallowWater);
+
   const ground = new THREE.Mesh(
     new THREE.BoxGeometry(WORLD_SPAN, SURFACE_THICKNESS, WORLD_SPAN),
     [dirtMaterial, dirtMaterial, worldTopMaterial, dirtMaterial, sideMaterial, sideMaterial],
@@ -334,11 +365,11 @@ export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[])
   beach.name = 'textured-sand-beach';
   scene.add(beach);
 
-  const foamGeometry = createCoastalBandGeometry(ISLAND_BEACH_WIDTH - 0.05, ISLAND_BEACH_WIDTH + 0.65);
+  const foamGeometry = createCoastalBandGeometry(ISLAND_BEACH_WIDTH - 0.32, ISLAND_BEACH_WIDTH + 0.93);
   geometries.push(foamGeometry);
   const foam = new THREE.Mesh(foamGeometry, foamMaterial);
-  foam.position.y = OCEAN_LEVEL + 0.006;
-  foam.name = 'subtle-animated-shoreline-foam';
+  foam.position.y = 0.014;
+  foam.name = 'stylized-animated-shoreline-foam-v2';
   scene.add(foam);
 
   const clearing = new THREE.Mesh(new THREE.PlaneGeometry(PLAYABLE_SPAN, PLAYABLE_SPAN), clearingMaterial);
@@ -362,7 +393,7 @@ export function createWorldScene(scene: THREE.Scene, grid: readonly WorldCell[])
 
   return {
     update: (elapsedSeconds) => {
-      foamTexture.offset.x = (elapsedSeconds * 0.008) % 1;
+      foamMaterial.uniforms.uTime.value = elapsedSeconds % 240;
     },
     dispose: () => {
       for (const geometry of geometries) geometry.dispose();

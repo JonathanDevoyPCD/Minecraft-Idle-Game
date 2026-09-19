@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BORDER_SIZE, ENTRANCE_WIDTH, PLAYABLE_SIZE, TILE_SIZE, WORLD_CELL_COUNT, WORLD_SIZE, WORLD_SPAN } from './world-config';
 import { countWorldZones, createBorderDecorationPlan, createWorldGrid, getEntranceCells, getWorldCell, getWorldPosition, isReservedEntranceCell, validateWorldGrid } from './world-grid';
-import { createCoastalBandGeometry, createIslandCoastlinePoints, createPlayableGridLinePositions, ISLAND_BEACH_WIDTH, ISLAND_COASTLINE_SEGMENTS } from './world-scene';
+import { BEACH_SAND_TINT, createCoastalBandGeometry, createIslandCoastlinePoints, createPlayableGridLinePositions, createShallowWaterGeometry, DEEP_WATER_TINT, ISLAND_BEACH_WIDTH, ISLAND_COASTLINE_SEGMENTS, SHALLOW_WATER_TINT, SHORE_FOAM_TINT } from './world-scene';
 
 describe('testing world foundation grid', () => {
   it('creates a deterministic 60 by 60 grid with a 50 by 50 buildable center', () => {
@@ -78,5 +78,18 @@ describe('testing world foundation grid', () => {
     expect(band.getAttribute('uv').count).toBe(band.getAttribute('position').count);
     expect(band.boundingBox?.max.x).toBeGreaterThan(WORLD_SPAN / 2 + ISLAND_BEACH_WIDTH - 0.2);
     band.dispose();
+  });
+
+  it('uses the approved sand/foam colors and grades shallow water into deep ocean', () => {
+    expect(BEACH_SAND_TINT).toBe(0xf5ebd8);
+    expect(SHORE_FOAM_TINT).toBe(0xffffff);
+    expect(SHALLOW_WATER_TINT).not.toBe(DEEP_WATER_TINT);
+
+    const water = createShallowWaterGeometry();
+    const colors = water.getAttribute('color');
+    expect(colors.count).toBe((ISLAND_COASTLINE_SEGMENTS + 1) * 2);
+    expect(colors.getY(0)).toBeGreaterThan(colors.getY(1));
+    expect(colors.getZ(0)).toBeGreaterThan(colors.getZ(1));
+    water.dispose();
   });
 });

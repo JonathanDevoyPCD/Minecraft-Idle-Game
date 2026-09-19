@@ -40,11 +40,20 @@ The user has temporarily stopped production-roadmap development and authorized a
 
 ### Testing island shoreline presentation — 2026-09-19
 
-- Added an outer textured sand beach, a low-poly shoreline skirt and surrounding calm water to the isolated testing world. A single small scrolling DataTexture provides a restrained animated foam edge.
+- Added an outer textured sand beach, a low-poly shoreline skirt and surrounding calm water to the isolated testing world. The initial subtle foam pass was superseded by the V2 wash below.
 - Kept the 60×60 logical/rendered grass world, its 50×50 playable center, 5-tile border, reserved entrances, playable grid lines, camera orientation, zoom/pan controls and gameplay unchanged. Beach/coast geometry is visual-only and sits outside the world-grid bounds.
 - Acceptance: original world/grid assertions remain unchanged; coastline geometry remains outside the 60×60 slab; at default/close/far zoom and all pan edges the island remains surrounded by water without a large exposed canvas void; shoreline foam movement is subtle; browser console stays clean.
 - Browser-verified the centered island, close zoom and drag-pan, and zoom-out after panning; water surrounds the visual landmass, the sand/coast boundary and thin animated foam line render, and the 50×50 grid remains inside its clearing. Sampled browser frames continued changing at the shoreline; console had zero errors or warnings.
 - No save migration or production-game changes.
+
+### Stylized animated shoreline V2 — 2026-09-19
+
+- Set the beach `MeshStandardMaterial` tint to `#F5EBD8` while retaining the sand texture.
+- Replaced the faint scrolling foam texture with a single lightweight UV-driven shader band. Its white `#FFFFFF` crest has a broken angular mask and a time-varying radial front to create a restrained push/pull wash.
+- Added a 128-segment vertex-colour shallow-water ring blending turquoise `#83D6DC` into the deep-ocean `#2F86AD` plane. No water dependency, simulation, gameplay, grid, map, or camera changes.
+- Preserved the already modified sand texture asset and recorded it with the requested colour update.
+- Browser verified `/Minecraft-Idle-Game/testing/` at default and close zoom, then panned to a visible coastline section. The `#F5EBD8` textured beach, wider wash, segmented white crest, and turquoise-to-deep-blue water transition render while the 50×50 grid and fixed camera remain intact. Two settled screenshots taken 1.4 seconds apart had different frame hashes, confirming animation with the camera at rest; no exposed water gaps or console errors/warnings were observed.
+- Unit tests cover the exact palette, unchanged grid dimensions, shoreline extents and shallow-to-deep colour direction.
 
 ## Current Phase
 

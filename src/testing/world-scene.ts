@@ -35,6 +35,26 @@ export interface IslandDockPlacement {
   lampZ: number;
 }
 
+export interface DockLampSupport {
+  mesh: THREE.Mesh;
+  centerX: number;
+  centerZ: number;
+  width: number;
+  depth: number;
+}
+
+export interface DockLampLocalPosition {
+  /** Offset across the dock from its center, in normalized world units. */
+  x: number;
+  /** Offset toward the outer end from the center of the complete dock. */
+  z: number;
+}
+
+export interface DockDeckFinishes {
+  base: THREE.MeshBasicMaterial;
+  planks: THREE.MeshBasicMaterial[];
+}
+
 export function getDockModelScale(modelSize: THREE.Vector3): THREE.Vector3 {
   return new THREE.Vector3(
     TILE_SIZE / Math.max(modelSize.x, 0.001),
@@ -43,8 +63,8 @@ export function getDockModelScale(modelSize: THREE.Vector3): THREE.Vector3 {
   );
 }
 
-export function getDockModelDeckTopY(root: THREE.Object3D, modelSize: THREE.Vector3): number {
-  let deckTopY = Number.NEGATIVE_INFINITY;
+export function getDockModelDeckBoards(root: THREE.Object3D, modelSize: THREE.Vector3): THREE.Mesh[] {
+  const boards: THREE.Mesh[] = [];
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
     const meshBounds = new THREE.Box3().setFromObject(object);
@@ -52,14 +72,143 @@ export function getDockModelDeckTopY(root: THREE.Object3D, modelSize: THREE.Vect
     const isBroadDeckBoard = meshSize.x >= modelSize.x * 0.75
       && meshSize.z <= modelSize.z * 0.12
       && meshSize.y <= modelSize.y * 0.12;
-    if (isBroadDeckBoard) deckTopY = Math.max(deckTopY, meshBounds.max.y);
+    if (isBroadDeckBoard) boards.push(object);
   });
 
+  return boards;
+}
+
+function getDockDeckLongitudinalRails(root: THREE.Object3D, modelSize: THREE.Vector3): Set<THREE.Mesh> {
+  const deckRails = new Set<THREE.Mesh>();
+  const modelCenter = new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3());
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const bounds = new THREE.Box3().setFromObject(object);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const isDeckLevelLongitudinalBeam = size.z >= modelSize.z * 0.75
+      && size.x <= modelSize.x * 0.12
+      && size.y <= modelSize.y * 0.08
+      && center.y >= modelCenter.y + modelSize.y * 0.25;
+    if (isDeckLevelLongitudinalBeam) deckRails.add(object);
+  });
+  return deckRails;
+}
+
+export function getDockModelDeckTopY(root: THREE.Object3D, modelSize: THREE.Vector3): number {
+  const deckTopY = getDockModelDeckBoards(root, modelSize)
+    .reduce((top, board) => Math.max(top, new THREE.Box3().setFromObject(board).max.y), Number.NEGATIVE_INFINITY);
   return Number.isFinite(deckTopY) ? deckTopY : modelSize.y / 2;
+}
+
+export function getDockLampSupport(root: THREE.Object3D, modelSize: THREE.Vector3): DockLampSupport | null {
+  const modelBounds = new THREE.Box3().setFromObject(root);
+  const modelCenter = modelBounds.getCenter(new THREE.Vector3());
+  const candidates: Array<DockLampSupport & { outerZ: number }> = [];
+
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const bounds = new THREE.Box3().setFromObject(object);
+    const size = bounds.getSize(new THREE.Vector3());
+    const isFullHeightSupportLeg = size.y >= modelSize.y * 0.9
+      && size.x <= modelSize.x * 0.2
+      && size.z <= modelSize.z * 0.08;
+    if (!isFullHeightSupportLeg) return;
+
+    const center = bounds.getCenter(new THREE.Vector3());
+    candidates.push({
+      mesh: object,
+      centerX: center.x - modelCenter.x,
+      centerZ: center.z - modelCenter.z,
+      width: size.x,
+      depth: size.z,
+      outerZ: center.z,
+    });
+  });
+
+  if (candidates.length === 0) return null;
+
+  // Mount to the outboard leg, choosing the positive-X side consistently.
+  const furthestZ = Math.max(...candidates.map(({ outerZ }) => outerZ));
+  const endLegs = candidates.filter(({ outerZ }) => Math.abs(outerZ - furthestZ) <= modelSize.z * 0.01);
+  const selected = endLegs.reduce((rightmost, candidate) => candidate.centerX > rightmost.centerX ? candidate : rightmost);
+  return { mesh: selected.mesh, centerX: selected.centerX, centerZ: selected.centerZ, width: selected.width, depth: selected.depth };
+}
+
+export function applyDockSupportTimber(
+  root: THREE.Object3D,
+  modelSize: THREE.Vector3,
+  support: DockLampSupport,
+): DockDeckFinishes {
+  const supportMaterial = Array.isArray(support.mesh.material)
+    ? support.mesh.material[0]
+    : support.mesh.material;
+
+  // Warm low-poly timber palette based on the reference.
+  const base = new THREE.MeshBasicMaterial({
+    color: 0xcfb58b,
+  });
+  base.name = 'dock-light-deck-timber-finish';
+
+  const plankColors = [
+    0xd8c19b,
+    0xcfb58b,
+    0xe0c9a4,
+  ];
+
+  const planks = plankColors.map((color, index) => {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+    });
+
+    material.name = `dock-light-deck-plank-${index + 1}`;
+    return material;
+  });
+
+  const deckRails = getDockDeckLongitudinalRails(root, modelSize);
+  const deckBoards = getDockModelDeckBoards(root, modelSize);
+  const plankIndices = new Map(
+    deckBoards.map((board, index) => [board, index]),
+  );
+
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+
+    const meshMaterials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+
+    if (!meshMaterials.some((material) => material.name.startsWith('Wood.'))) {
+      return;
+    }
+
+    object.receiveShadow = false;
+
+    const plankIndex = plankIndices.get(object);
+
+    const material =
+      plankIndex !== undefined
+        ? planks[plankIndex % planks.length]
+        : deckRails.has(object)
+          ? base
+          : supportMaterial;
+
+    object.material = Array.isArray(object.material)
+      ? object.material.map((source) =>
+          source.name.startsWith('Wood.') ? material : source,
+        )
+      : material;
+  });
+
+  return { base, planks };
 }
 
 export function createIslandDockPlacements(
   entrances: readonly WorldEntranceDefinition[] = WORLD_ENTRANCES,
+  lampPosition: DockLampLocalPosition = {
+    x: TILE_SIZE * 0.36,
+    z: DOCK_TOTAL_LENGTH / 2 - TILE_SIZE * 0.55,
+  },
 ): IslandDockPlacement[] {
   const outerDockRadius = WORLD_HALF_SPAN + ISLAND_BEACH_WIDTH + DOCK_WATER_OVERLAP;
   const dockCenterRadius = outerDockRadius - DOCK_TOTAL_LENGTH / 2;
@@ -83,17 +232,14 @@ export function createIslandDockPlacements(
       x: centerX + orientation.outwardX * offset,
       z: centerZ + orientation.outwardZ * offset,
     }));
-    const lampAlongDock = DOCK_TOTAL_LENGTH / 2 - TILE_SIZE * 0.55;
-    const lampAcrossDock = TILE_SIZE * 0.36;
-
     return {
       side,
       ...orientation,
       centerX,
       centerZ,
       sectionCenters,
-      lampX: centerX + orientation.outwardX * lampAlongDock + orientation.tangentX * lampAcrossDock,
-      lampZ: centerZ + orientation.outwardZ * lampAlongDock + orientation.tangentZ * lampAcrossDock,
+      lampX: centerX + orientation.outwardX * lampPosition.z + orientation.tangentX * lampPosition.x,
+      lampZ: centerZ + orientation.outwardZ * lampPosition.z + orientation.tangentZ * lampPosition.x,
     };
   });
 }
@@ -383,7 +529,7 @@ interface DockLampResources {
     lanternFrame: THREE.BoxGeometry;
     handle: THREE.BoxGeometry;
   };
-  wood: THREE.MeshStandardMaterial;
+  wood: THREE.Material;
   frame: THREE.MeshStandardMaterial;
   light: THREE.MeshStandardMaterial;
 }
@@ -408,14 +554,13 @@ function addBoxPart(
 function createDockLampResources(
   geometries: THREE.BufferGeometry[],
   materials: THREE.Material[],
-  textures: THREE.Texture[],
+  wood: THREE.Material,
+  poleWidth: number,
+  poleDepth: number,
 ): DockLampResources {
-  const poleThickness = TILE_SIZE * 0.12;
   const lanternSize = TILE_SIZE * 0.31;
   const lanternHeight = TILE_SIZE * 0.29;
   const frameThickness = TILE_SIZE * 0.045;
-  const woodTexture = loadGrassTexture('oak_planks.png', 1, 1);
-  const wood = new THREE.MeshStandardMaterial({ map: woodTexture, color: 0xc29a5e, roughness: 1 });
   const frame = new THREE.MeshStandardMaterial({ color: 0x374149, roughness: 0.82, metalness: 0.08 });
   const light = new THREE.MeshStandardMaterial({
     color: 0xf8fcff,
@@ -426,8 +571,8 @@ function createDockLampResources(
   });
   const resources: DockLampResources = {
     geometries: {
-      pole: new THREE.BoxGeometry(poleThickness, DOCK_LAMP_POLE_HEIGHT, poleThickness),
-      arm: new THREE.BoxGeometry(poleThickness * 0.86, poleThickness * 0.86, TILE_SIZE * 0.62),
+      pole: new THREE.BoxGeometry(poleWidth, DOCK_LAMP_POLE_HEIGHT, poleDepth),
+      arm: new THREE.BoxGeometry(poleWidth * 0.86, poleDepth * 0.86, TILE_SIZE * 0.62),
       lanternCore: new THREE.BoxGeometry(lanternSize * 0.57, lanternHeight * 0.64, lanternSize * 0.57),
       lanternTop: new THREE.BoxGeometry(lanternSize, frameThickness, lanternSize),
       lanternBottom: new THREE.BoxGeometry(lanternSize * 0.82, frameThickness, lanternSize * 0.82),
@@ -439,8 +584,7 @@ function createDockLampResources(
     light,
   };
   geometries.push(...Object.values(resources.geometries));
-  materials.push(wood, frame, light);
-  textures.push(woodTexture);
+  materials.push(frame, light);
   return resources;
 }
 
@@ -497,6 +641,23 @@ function createDockLamp(
   parent.add(group);
 }
 
+export function createDockDeckGapBacking(
+  wood: THREE.Material,
+  deckSurfaceY: number,
+  deckWidth: number,
+): THREE.Mesh {
+  const thickness = TILE_SIZE * 0.025;
+  const backing = new THREE.Mesh(
+    new THREE.BoxGeometry(deckWidth * 0.99, thickness, DOCK_TOTAL_LENGTH * 0.985),
+    wood,
+  );
+  backing.name = 'light-timber-underlay-fills-deck-board-gaps';
+  backing.position.y = deckSurfaceY - TILE_SIZE * 0.03 - thickness / 2;
+  backing.castShadow = false;
+  backing.receiveShadow = false;
+  return backing;
+}
+
 function disposeGltfResources(root: THREE.Object3D): void {
   const disposedGeometries = new Set<THREE.BufferGeometry>();
   const disposedMaterials = new Set<THREE.Material>();
@@ -537,35 +698,58 @@ function addDockAreas(
       const modelSize = bounds.getSize(new THREE.Vector3());
       const modelCenter = bounds.getCenter(new THREE.Vector3());
       const modelScale = getDockModelScale(modelSize);
-      const deckSurfaceOffsetY = (getDockModelDeckTopY(gltf.scene, modelSize) - modelCenter.y) * modelScale.y;
-      const dockBaseY = DOCK_DECK_HEIGHT - deckSurfaceOffsetY;
+      const lampSupport = getDockLampSupport(gltf.scene, modelSize);
+      if (!lampSupport) {
+        disposeGltfResources(gltf.scene);
+        console.error('Could not locate a dock support leg for its mounted lamp.');
+        return;
+      }
+      const sourceMaterials = new Set<THREE.Material>();
       const sharedGeometries = new Set<THREE.BufferGeometry>();
-      const sharedMaterials = new Set<THREE.Material>();
       const sharedTextures = new Set<THREE.Texture>();
-
       gltf.scene.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
         object.castShadow = true;
-        object.receiveShadow = true;
         sharedGeometries.add(object.geometry);
         const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
         meshMaterials.forEach((material) => {
-          sharedMaterials.add(material);
+          sourceMaterials.add(material);
           Object.values(material).forEach((value) => {
             if (value instanceof THREE.Texture) sharedTextures.add(value);
           });
         });
       });
+      const supportMaterial = Array.isArray(lampSupport.mesh.material) ? lampSupport.mesh.material[0] : lampSupport.mesh.material;
+      const deckFinishes = applyDockSupportTimber(gltf.scene, modelSize, lampSupport);
+      const deckBoards = getDockModelDeckBoards(gltf.scene, modelSize);
+      const deckWidth = Math.max(...deckBoards.map((board) => new THREE.Box3().setFromObject(board).getSize(new THREE.Vector3()).x)) * modelScale.x;
+      const deckSurfaceOffsetY = (getDockModelDeckTopY(gltf.scene, modelSize) - modelCenter.y) * modelScale.y;
+      const dockBaseY = DOCK_DECK_HEIGHT - deckSurfaceOffsetY;
+      sourceMaterials.add(deckFinishes.base);
+      deckFinishes.planks.forEach((material) => sourceMaterials.add(material));
       geometries.push(...sharedGeometries);
-      materials.push(...sharedMaterials);
+      materials.push(...sourceMaterials);
       textures.push(...sharedTextures);
 
-      const lamp = createDockLampResources(geometries, materials, textures);
-      for (const placement of createIslandDockPlacements()) {
+      const lamp = createDockLampResources(
+        geometries,
+        materials,
+        supportMaterial,
+        lampSupport.width * modelScale.x,
+        lampSupport.depth * modelScale.z,
+      );
+      const lampPosition = {
+        x: lampSupport.centerX * modelScale.x,
+        z: DOCK_SECTION_LENGTH / 2 + lampSupport.centerZ * modelScale.z,
+      };
+      for (const placement of createIslandDockPlacements(WORLD_ENTRANCES, lampPosition)) {
         const dock = new THREE.Group();
         dock.name = `island-dock-${placement.side}`;
         dock.position.set(placement.centerX, dockBaseY, placement.centerZ);
         dock.rotation.y = placement.rotationY;
+        const deckBacking = createDockDeckGapBacking(deckFinishes.base, deckSurfaceOffsetY, deckWidth);
+        dock.add(deckBacking);
+        geometries.push(deckBacking.geometry);
         for (const [index, localZ] of [-DOCK_SECTION_LENGTH / 2, DOCK_SECTION_LENGTH / 2].entries()) {
           const section = new THREE.Group();
           section.name = `island-dock-${placement.side}-section-${index + 1}`;
@@ -577,6 +761,15 @@ function addDockAreas(
             -modelCenter.y * modelScale.y,
             -modelCenter.z * modelScale.z,
           );
+          model.traverse((object) => {
+            if (!(object instanceof THREE.Mesh)) return;
+            object.receiveShadow = false;
+            const meshMaterials = Array.isArray(object.material) ? object.material : [object.material];
+            if (!meshMaterials.some((material) => material.name.startsWith('Wood.'))) return;
+            object.material = Array.isArray(object.material)
+              ? object.material.map((material) => material.name.startsWith('Wood.') ? supportMaterial : material)
+              : supportMaterial;
+          });
           section.add(model);
           dock.add(section);
         }

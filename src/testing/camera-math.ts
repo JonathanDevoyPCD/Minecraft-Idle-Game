@@ -4,6 +4,7 @@ import {
   CAMERA_PITCH,
   CAMERA_YAW,
   WORLD_HALF_SPAN,
+  CAMERA_PAN_BOUNDARY_PADDING,
 } from './world-config';
 
 export interface CameraPanBounds {
@@ -53,7 +54,7 @@ export function getCameraPanBounds(
   aspect: number,
   baseViewHeight: number,
   zoom: number,
-  worldHalfSpan = WORLD_HALF_SPAN,
+  worldHalfSpan = WORLD_HALF_SPAN + CAMERA_PAN_BOUNDARY_PADDING,
   panRangeMultiplier = CAMERA_PAN_RANGE_MULTIPLIER,
 ): CameraPanBounds {
   const corners = getGroundPlaneViewportCorners(aspect, baseViewHeight, zoom);

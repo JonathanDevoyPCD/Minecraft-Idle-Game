@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_PAN_RANGE_MULTIPLIER, getBaseCameraViewHeight, WORLD_HALF_SPAN } from './world-config';
+import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_PAN_BOUNDARY_PADDING, CAMERA_PAN_RANGE_MULTIPLIER, CAMERA_START_ZOOM, getBaseCameraViewHeight, WORLD_HALF_SPAN } from './world-config';
 import { clampCameraTarget, getCameraPanBounds, getGroundPlaneViewportCorners, getPanTargetDelta, smoothlyClampCameraTarget } from './camera-math';
 
 describe('testing world camera math', () => {
   it('keeps a wide initial isometric view centered and fits the map at desktop aspects', () => {
     for (const aspect of [4 / 3, 16 / 9, 21 / 9]) {
       const viewHeight = getBaseCameraViewHeight(aspect);
-      const bounds = getCameraPanBounds(aspect, viewHeight, 1);
+      const bounds = getCameraPanBounds(aspect, viewHeight, CAMERA_START_ZOOM);
       expect(bounds.minX).toBe(0);
       expect(bounds.maxX).toBe(0);
       expect(bounds.minZ).toBe(0);
@@ -40,10 +40,11 @@ describe('testing world camera math', () => {
   it('supports a configurable camera pan range multiplier', () => {
     const aspect = 4 / 3;
     const height = getBaseCameraViewHeight(aspect);
-    const normal = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 1);
+    const configuredWorldHalfSpan = WORLD_HALF_SPAN + CAMERA_PAN_BOUNDARY_PADDING;
+    const normal = getCameraPanBounds(aspect, height, 5, configuredWorldHalfSpan, 1);
     const configured = getCameraPanBounds(aspect, height, 5);
-    const expanded = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 1.5);
-    const tightened = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 0.5);
+    const expanded = getCameraPanBounds(aspect, height, 5, configuredWorldHalfSpan, 1.5);
+    const tightened = getCameraPanBounds(aspect, height, 5, configuredWorldHalfSpan, 0.5);
     expect(configured.maxX).toBeCloseTo(normal.maxX * CAMERA_PAN_RANGE_MULTIPLIER);
     expect(expanded.maxX).toBeGreaterThan(normal.maxX);
     expect(expanded.minX).toBeLessThan(normal.minX);

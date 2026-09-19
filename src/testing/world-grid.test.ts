@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BORDER_SIZE, ENTRANCE_WIDTH, PLAYABLE_SIZE, WORLD_CELL_COUNT, WORLD_SIZE } from './world-config';
+import { BORDER_SIZE, ENTRANCE_WIDTH, PLAYABLE_SIZE, TILE_SIZE, WORLD_CELL_COUNT, WORLD_SIZE, WORLD_SPAN } from './world-config';
 import { countWorldZones, createBorderDecorationPlan, createWorldGrid, getEntranceCells, getWorldCell, getWorldPosition, isReservedEntranceCell, validateWorldGrid } from './world-grid';
+import { createCoastalBandGeometry, createIslandCoastlinePoints, createPlayableGridLinePositions, ISLAND_BEACH_WIDTH, ISLAND_COASTLINE_SEGMENTS } from './world-scene';
 
 describe('testing world foundation grid', () => {
   it('creates a deterministic 60 by 60 grid with a 50 by 50 buildable center', () => {
@@ -44,5 +45,38 @@ describe('testing world foundation grid', () => {
   it('converts logical cells to stable centered world positions at the project tile scale', () => {
     expect(getWorldPosition(29, 29)).toEqual({ x: -0.45, z: -0.45 });
     expect(getWorldPosition(30, 30)).toEqual({ x: 0.45, z: 0.45 });
+  });
+
+  it('places playable grid lines on all 50-tile boundaries and nowhere in the border', () => {
+    const positions = createPlayableGridLinePositions();
+    const halfSpan = PLAYABLE_SIZE * TILE_SIZE / 2;
+    expect(positions).toHaveLength((PLAYABLE_SIZE + 1) * 12);
+    const xs = Array.from({ length: positions.length / 3 }, (_, index) => positions[index * 3]);
+    const zs = Array.from({ length: positions.length / 3 }, (_, index) => positions[index * 3 + 2]);
+    expect(Math.min(...xs)).toBeCloseTo(-halfSpan);
+    expect(Math.max(...xs)).toBeCloseTo(halfSpan);
+    expect(Math.min(...zs)).toBeCloseTo(-halfSpan);
+    expect(Math.max(...zs)).toBeCloseTo(halfSpan);
+  });
+
+  it('adds a soft visual island coastline outside the unchanged 60-tile world', () => {
+    const coastline = createIslandCoastlinePoints();
+    expect(coastline).toHaveLength(ISLAND_COASTLINE_SEGMENTS);
+    expect(WORLD_SIZE).toBe(PLAYABLE_SIZE + BORDER_SIZE * 2);
+    expect(WORLD_SPAN).toBeCloseTo(54);
+    coastline.forEach((point) => {
+      expect(Math.hypot(point.x, point.y)).toBeGreaterThan(WORLD_SPAN / 2 + ISLAND_BEACH_WIDTH - 0.2);
+    });
+    expect(Math.min(...coastline.map(({ x }) => x))).toBeLessThan(-WORLD_SPAN / 2 - ISLAND_BEACH_WIDTH + 0.2);
+    expect(Math.max(...coastline.map(({ x }) => x))).toBeGreaterThan(WORLD_SPAN / 2 + ISLAND_BEACH_WIDTH - 0.2);
+  });
+
+  it('builds a lightweight, continuous beach/foam band outside the playable world', () => {
+    const band = createCoastalBandGeometry(-0.035, ISLAND_BEACH_WIDTH);
+    expect(band.getAttribute('position').count).toBe((ISLAND_COASTLINE_SEGMENTS + 1) * 2);
+    expect(band.getIndex()?.count).toBe(ISLAND_COASTLINE_SEGMENTS * 6);
+    expect(band.getAttribute('uv').count).toBe(band.getAttribute('position').count);
+    expect(band.boundingBox?.max.x).toBeGreaterThan(WORLD_SPAN / 2 + ISLAND_BEACH_WIDTH - 0.2);
+    band.dispose();
   });
 });

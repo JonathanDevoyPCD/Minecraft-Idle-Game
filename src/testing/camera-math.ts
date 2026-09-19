@@ -1,5 +1,6 @@
 import {
   CAMERA_PAN_SAFE_FRAME_RATIO,
+  CAMERA_PAN_RANGE_MULTIPLIER,
   CAMERA_PITCH,
   CAMERA_YAW,
   WORLD_HALF_SPAN,
@@ -53,6 +54,7 @@ export function getCameraPanBounds(
   baseViewHeight: number,
   zoom: number,
   worldHalfSpan = WORLD_HALF_SPAN,
+  panRangeMultiplier = CAMERA_PAN_RANGE_MULTIPLIER,
 ): CameraPanBounds {
   const corners = getGroundPlaneViewportCorners(aspect, baseViewHeight, zoom);
   const minFootprintX = Math.min(...corners.map(({ x }) => x));
@@ -63,14 +65,25 @@ export function getCameraPanBounds(
   const maxX = worldHalfSpan - maxFootprintX;
   const minZ = -worldHalfSpan - minFootprintZ;
   const maxZ = worldHalfSpan - maxFootprintZ;
+  const safeRangeMultiplier = Number.isFinite(panRangeMultiplier) ? Math.max(0, panRangeMultiplier) : 1;
 
   // When the safe frame is wider than the full world, keep the camera centered
   // instead of allowing a pan that would strand the world off-screen.
+  // The multiplier deliberately expands/contracts travel around that center;
+  // higher values can expose more of the surrounding background at map edges.
+  const scaleRange = (minimum: number, maximum: number): [number, number] => {
+    if (minimum > maximum) return [0, 0];
+    const center = (minimum + maximum) / 2;
+    const halfRange = (maximum - minimum) / 2 * safeRangeMultiplier;
+    return [center - halfRange, center + halfRange];
+  };
+  const [panMinX, panMaxX] = scaleRange(minX, maxX);
+  const [panMinZ, panMaxZ] = scaleRange(minZ, maxZ);
   return {
-    minX: minX <= maxX ? minX : 0,
-    maxX: minX <= maxX ? maxX : 0,
-    minZ: minZ <= maxZ ? minZ : 0,
-    maxZ: minZ <= maxZ ? maxZ : 0,
+    minX: panMinX,
+    maxX: panMaxX,
+    minZ: panMinZ,
+    maxZ: panMaxZ,
   };
 }
 

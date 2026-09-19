@@ -32,6 +32,20 @@ The user has temporarily stopped production-roadmap development and authorized a
 - Browser-verified `/Minecraft-Idle-Game/testing/` at 1024x768 and 1440x900: min zoom centered with bounds fixed at zero; medium zoom reached north, south, east and west; max zoom reached all four edges and all four corners; zooming out from an edge eased the target back to center; resize recomputed the pan range; right-drag did not rotate the camera. Browser console reported zero errors and warnings.
 - Added tests for projected corner containment, useful medium-zoom travel at 4:3, increasing range at close zoom and smooth re-clamping. No gameplay, grid dimensions, assets, save data or migrations changed.
 
+### Testing world grid and pan tuning — 2026-09-19
+
+- Added a thin grid overlay at every tile boundary across only the 50×50 playable clearing, with 0.3 material opacity; the surrounding 5-tile border remains ungridded.
+- Added `CAMERA_PAN_RANGE_MULTIPLIER` in `src/testing/world-config.ts` as the manual pan-distance control. `1.0` uses calculated bounds, values above 1 allow more travel/overscan, and values below 1 tighten travel. Default is 1.25; maximum zoom is 10.
+- No gameplay state, world dimensions, production files, or save data changed.
+
+### Testing island shoreline presentation — 2026-09-19
+
+- Added an outer textured sand beach, a low-poly shoreline skirt and surrounding calm water to the isolated testing world. A single small scrolling DataTexture provides a restrained animated foam edge.
+- Kept the 60×60 logical/rendered grass world, its 50×50 playable center, 5-tile border, reserved entrances, playable grid lines, camera orientation, zoom/pan controls and gameplay unchanged. Beach/coast geometry is visual-only and sits outside the world-grid bounds.
+- Acceptance: original world/grid assertions remain unchanged; coastline geometry remains outside the 60×60 slab; at default/close/far zoom and all pan edges the island remains surrounded by water without a large exposed canvas void; shoreline foam movement is subtle; browser console stays clean.
+- Browser-verified the centered island, close zoom and drag-pan, and zoom-out after panning; water surrounds the visual landmass, the sand/coast boundary and thin animated foam line render, and the 50×50 grid remains inside its clearing. Sampled browser frames continued changing at the shoreline; console had zero errors or warnings.
+- No save migration or production-game changes.
+
 ## Current Phase
 
 **Phase 4 — Processing**

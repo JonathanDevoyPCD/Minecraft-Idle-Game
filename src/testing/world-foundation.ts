@@ -148,6 +148,7 @@ function render(now: number): void {
   const deltaSeconds = Math.min((now - lastFrameAt) / 1000, 0.05);
   lastFrameAt = now;
   updateZoom(deltaSeconds);
+  worldResources.update(now / 1000);
   updateCameraTransform();
   renderer.render(scene, camera);
   window.requestAnimationFrame(render);

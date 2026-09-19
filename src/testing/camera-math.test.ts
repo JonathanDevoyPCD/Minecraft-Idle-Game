@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, getBaseCameraViewHeight, WORLD_HALF_SPAN } from './world-config';
+import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, CAMERA_PAN_RANGE_MULTIPLIER, getBaseCameraViewHeight, WORLD_HALF_SPAN } from './world-config';
 import { clampCameraTarget, getCameraPanBounds, getGroundPlaneViewportCorners, getPanTargetDelta, smoothlyClampCameraTarget } from './camera-math';
 
 describe('testing world camera math', () => {
@@ -37,12 +37,26 @@ describe('testing world camera math', () => {
     expect(closeZoom.maxZ).toBeGreaterThan(mediumZoom.maxZ);
   });
 
+  it('supports a configurable camera pan range multiplier', () => {
+    const aspect = 4 / 3;
+    const height = getBaseCameraViewHeight(aspect);
+    const normal = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 1);
+    const configured = getCameraPanBounds(aspect, height, 5);
+    const expanded = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 1.5);
+    const tightened = getCameraPanBounds(aspect, height, 5, WORLD_HALF_SPAN, 0.5);
+    expect(configured.maxX).toBeCloseTo(normal.maxX * CAMERA_PAN_RANGE_MULTIPLIER);
+    expect(expanded.maxX).toBeGreaterThan(normal.maxX);
+    expect(expanded.minX).toBeLessThan(normal.minX);
+    expect(tightened.maxX).toBeLessThan(normal.maxX);
+    expect(tightened.minX).toBeGreaterThan(normal.minX);
+  });
+
   it('projects all four safe-frame frustum corners onto ground before deriving pan limits', () => {
     const aspect = 16 / 9;
     const height = getBaseCameraViewHeight(aspect);
     const zoom = 2.5;
     const corners = getGroundPlaneViewportCorners(aspect, height, zoom);
-    const bounds = getCameraPanBounds(aspect, height, zoom);
+    const bounds = getCameraPanBounds(aspect, height, zoom, WORLD_HALF_SPAN, 1);
     expect(corners).toHaveLength(4);
     expect(bounds.maxX).toBeGreaterThan(0);
     expect(bounds.maxZ).toBeGreaterThan(0);

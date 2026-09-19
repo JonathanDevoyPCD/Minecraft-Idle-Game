@@ -10,7 +10,7 @@
 The user has temporarily stopped production-roadmap development and authorized a fresh visual/world foundation on the isolated `/testing/` page. Keep all work for this direction inside `testing/` and testing-specific modules under `src/testing/`; do not change the production game page or resume Phase 4D until the user explicitly redirects work. This override changes the active task, not the historical completion records below.
 
 - Current active slice: fixed-isometric world-only staging foundation.
-- Scope: logical 60×60 grid, 50×50 buildable center, 5-cell nonbuildable border, reserved cardinal border entrances, restrained deterministic border dressing, fixed isometric camera, desktop drag-pan and wheel zoom with hard world bounds.
+- Scope: logical 60×60 grid, 50×50 buildable center, 5-cell nonbuildable border, reserved cardinal border entrances, restrained deterministic border dressing, fixed isometric camera, desktop drag-pan and wheel zoom with projection-based world bounds.
 - Save migration: none; this page has no game state or save integration.
 - Production roadmap: Phase 4D remains deferred, not started.
 
@@ -19,10 +19,18 @@ The user has temporarily stopped production-roadmap development and authorized a
 - Replaced only `testing/index.html` with a world-only canvas page and isolated its styles and runtime under `testing/` and `src/testing/`; the production page and gameplay systems were not changed.
 - Added deterministic 60x60 logical cells with a centered 50x50 buildable area and a 5-cell non-buildable border. Reserved 3-cell-wide north/east/south/west corridors are represented in grid helpers and excluded from decorative instances.
 - Rendered the world as one textured grass/dirt slab plus a subtle playable clearing. Reused the existing grass, dirt, oak log and oak leaves textures; border trees and rocks use instanced meshes rather than one render object per cell.
-- Added a fixed orthographic isometric camera, smooth bounded wheel zoom, left-drag pan, viewport-responsive sizing and zoom-aware hard clamping against the complete world footprint. No rotation/orbit interaction is registered.
+- Added a fixed orthographic isometric camera, smooth bounded wheel zoom, left-drag pan, viewport-responsive sizing and zoom-aware projection-based clamping. No rotation/orbit interaction is registered.
 - Added grid and camera tests for dimensions, buildability, entrance corridors, deterministic dressing, coordinate mapping, zoom-dependent bounds, all four drag directions and hard clamping.
 - No save migration or gameplay systems were added.
-- Browser-verified `/Minecraft-Idle-Game/testing/` at 1024x768 and 1440x900: centered initial view, full-map zoom-out, close zoom, drags to all four viewport corners while zoomed in, no exposed void, no rotation on right-drag, one canvas with empty body text, and no console errors or warnings. Visual review showed the map remains covered by terrain at the tested bounds; the local browser measured 61 animation frames over 1.0 second at 1024x768.
+- Browser-verified `/Minecraft-Idle-Game/testing/` at 1024x768 and 1440x900: centered initial view, full-map zoom-out, close zoom, all four corner directions, no large void beyond modest peripheral overscan, no rotation on right-drag, one canvas with empty body text, and no console errors or warnings. The local browser measured 61 animation frames over 1.0 second at 1024x768.
+
+### Testing camera clamp follow-up — 2026-09-19
+
+- Root cause: deriving limits from the full viewport's projected ground footprint counted peripheral diagonal corners against the square world bounds. At medium zoom on common desktop aspects, that footprint nearly consumed the world half-span and collapsed practical pan travel.
+- Replaced the extent approximation with projection of all four corners of a 78%-sized viewport safe frame onto the ground plane using the fixed camera yaw and pitch. The safe frame remains within the rendered 60x60 world; only a modest outer margin can show the existing background, while target limits expand as zoom increases.
+- Zoom changes smoothly re-clamp the current target toward newly tightened limits; resize recomputes the frustum and bounds. Low zoom remains centered, 4:3 medium zoom keeps more than 3 world units of travel per axis, and max zoom provides substantially more.
+- Browser-verified `/Minecraft-Idle-Game/testing/` at 1024x768 and 1440x900: min zoom centered with bounds fixed at zero; medium zoom reached north, south, east and west; max zoom reached all four edges and all four corners; zooming out from an edge eased the target back to center; resize recomputed the pan range; right-drag did not rotate the camera. Browser console reported zero errors and warnings.
+- Added tests for projected corner containment, useful medium-zoom travel at 4:3, increasing range at close zoom and smooth re-clamping. No gameplay, grid dimensions, assets, save data or migrations changed.
 
 ## Current Phase
 

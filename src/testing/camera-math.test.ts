@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, getBaseCameraViewHeight } from './world-config';
-import { clampCameraTarget, getCameraPanBounds, getPanTargetDelta } from './camera-math';
+import { CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM, getBaseCameraViewHeight, WORLD_HALF_SPAN } from './world-config';
+import { clampCameraTarget, getCameraPanBounds, getGroundPlaneViewportCorners, getPanTargetDelta, smoothlyClampCameraTarget } from './camera-math';
 
 describe('testing world camera math', () => {
   it('keeps a wide initial isometric view centered and fits the map at desktop aspects', () => {
@@ -21,9 +21,53 @@ describe('testing world camera math', () => {
     const mediumZoom = getCameraPanBounds(aspect, height, 2.5);
     const highZoom = getCameraPanBounds(aspect, height, CAMERA_MAX_ZOOM);
     expect(lowZoom.maxX).toBe(0);
-    expect(mediumZoom.maxX).toBeGreaterThanOrEqual(lowZoom.maxX);
+    expect(mediumZoom.maxX).toBeGreaterThan(lowZoom.maxX);
     expect(highZoom.maxX).toBeGreaterThan(mediumZoom.maxX);
     expect(highZoom.maxZ).toBeGreaterThan(mediumZoom.maxZ);
+  });
+
+  it('retains useful medium-zoom panning on a 4:3 desktop viewport', () => {
+    const aspect = 4 / 3;
+    const height = getBaseCameraViewHeight(aspect);
+    const mediumZoom = getCameraPanBounds(aspect, height, 2.5);
+    const closeZoom = getCameraPanBounds(aspect, height, CAMERA_MAX_ZOOM);
+    expect(mediumZoom.maxX).toBeGreaterThan(3);
+    expect(mediumZoom.maxZ).toBeGreaterThan(3);
+    expect(closeZoom.maxX).toBeGreaterThan(mediumZoom.maxX);
+    expect(closeZoom.maxZ).toBeGreaterThan(mediumZoom.maxZ);
+  });
+
+  it('projects all four safe-frame frustum corners onto ground before deriving pan limits', () => {
+    const aspect = 16 / 9;
+    const height = getBaseCameraViewHeight(aspect);
+    const zoom = 2.5;
+    const corners = getGroundPlaneViewportCorners(aspect, height, zoom);
+    const bounds = getCameraPanBounds(aspect, height, zoom);
+    expect(corners).toHaveLength(4);
+    expect(bounds.maxX).toBeGreaterThan(0);
+    expect(bounds.maxZ).toBeGreaterThan(0);
+    corners.forEach(({ x, z }) => {
+      expect(bounds.maxX + x).toBeLessThanOrEqual(WORLD_HALF_SPAN + 1e-8);
+      expect(bounds.maxX + x).toBeGreaterThanOrEqual(-WORLD_HALF_SPAN - 1e-8);
+      expect(bounds.maxZ + z).toBeLessThanOrEqual(WORLD_HALF_SPAN + 1e-8);
+      expect(bounds.maxZ + z).toBeGreaterThanOrEqual(-WORLD_HALF_SPAN - 1e-8);
+    });
+  });
+
+  it('smoothly returns a target into bounds after zooming out near an edge', () => {
+    const bounds = { minX: -3, maxX: 3, minZ: -4, maxZ: 4 };
+    const start = { x: 15, z: -12 };
+    const firstStep = smoothlyClampCameraTarget(start, bounds, 1 / 60, 9);
+    expect(firstStep.x).toBeLessThan(start.x);
+    expect(firstStep.x).toBeGreaterThan(bounds.maxX);
+    expect(firstStep.z).toBeGreaterThan(start.z);
+    expect(firstStep.z).toBeLessThan(bounds.minZ);
+    let target = start;
+    for (let frame = 0; frame < 180; frame += 1) {
+      target = smoothlyClampCameraTarget(target, bounds, 1 / 60, 9);
+    }
+    expect(target.x).toBeCloseTo(bounds.maxX, 4);
+    expect(target.z).toBeCloseTo(bounds.minZ, 4);
   });
 
   it('hard clamps pan and maps pointer drag to fixed-orientation ground movement', () => {

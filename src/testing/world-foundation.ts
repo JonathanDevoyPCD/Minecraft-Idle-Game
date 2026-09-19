@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { clampCameraTarget, getCameraPanBounds, getPanTargetDelta } from './camera-math';
+import { clampCameraTarget, getCameraPanBounds, getPanTargetDelta, smoothlyClampCameraTarget } from './camera-math';
 import {
+  CAMERA_CLAMP_SMOOTHING,
   CAMERA_MAX_ZOOM,
   CAMERA_MIN_ZOOM,
   CAMERA_PITCH,
@@ -63,9 +64,11 @@ function updateCameraTransform(): void {
   camera.lookAt(cameraTarget);
 }
 
-function clampCamera(): void {
+function clampCamera(smooth = false, deltaSeconds = 0): void {
   const bounds = getCameraPanBounds(viewportAspect, baseViewHeight, viewZoom);
-  const clamped = clampCameraTarget(cameraTarget, bounds);
+  const clamped = smooth
+    ? smoothlyClampCameraTarget(cameraTarget, bounds, deltaSeconds, CAMERA_CLAMP_SMOOTHING)
+    : clampCameraTarget(cameraTarget, bounds);
   cameraTarget.x = clamped.x;
   cameraTarget.z = clamped.z;
 }
@@ -92,7 +95,7 @@ function updateZoom(deltaSeconds: number): void {
   if (Math.abs(targetZoom - viewZoom) < 0.0005) viewZoom = targetZoom;
   camera.zoom = viewZoom;
   camera.updateProjectionMatrix();
-  clampCamera();
+  clampCamera(true, deltaSeconds);
 }
 
 canvas.addEventListener('pointerdown', (event) => {

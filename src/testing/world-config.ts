@@ -29,6 +29,10 @@ export const CAMERA_MIN_ZOOM = 0.78;
 export const CAMERA_MAX_ZOOM = 5;
 export const CAMERA_START_ZOOM = 1;
 export const CAMERA_ZOOM_SMOOTHING = 12;
+export const CAMERA_CLAMP_SMOOTHING = 9;
+// Keep most of the projected viewport over the rendered world while leaving
+// modest overscan for the diagonal corners and useful medium-zoom travel.
+export const CAMERA_PAN_SAFE_FRAME_RATIO = 0.78;
 
 export const MAP_PROJECTED_WIDTH = WORLD_SPAN * (Math.abs(Math.sin(CAMERA_YAW)) + Math.abs(Math.cos(CAMERA_YAW)));
 export const MAP_PROJECTED_HEIGHT = MAP_PROJECTED_WIDTH * Math.sin(CAMERA_PITCH);
